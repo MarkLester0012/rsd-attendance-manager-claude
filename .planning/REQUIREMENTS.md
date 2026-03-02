@@ -172,13 +172,77 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| — | — | Pending |
+| AUTH-01 | Phase 1 | Pending |
+| AUTH-02 | Phase 1 | Pending |
+| AUTH-03 | Phase 1 | Pending |
+| AUTH-04 | Phase 1 | Pending |
+| AUTH-05 | Phase 1 | Pending |
+| AUTH-06 | Phase 1 | Pending |
+| NAVT-01 | Phase 1 | Pending |
+| NAVT-02 | Phase 1 | Pending |
+| NAVT-03 | Phase 1 | Pending |
+| NAVT-04 | Phase 1 | Pending |
+| NAVT-05 | Phase 1 | Pending |
+| SEED-01 | Phase 1 | Pending |
+| SEED-02 | Phase 1 | Pending |
+| LEAV-01 | Phase 2 | Pending |
+| LEAV-02 | Phase 2 | Pending |
+| LEAV-03 | Phase 2 | Pending |
+| LEAV-04 | Phase 2 | Pending |
+| LEAV-05 | Phase 2 | Pending |
+| LEAV-06 | Phase 2 | Pending |
+| LEAV-07 | Phase 2 | Pending |
+| LEAV-08 | Phase 2 | Pending |
+| LEAV-09 | Phase 2 | Pending |
+| LEAV-10 | Phase 2 | Pending |
+| LEAV-11 | Phase 2 | Pending |
+| LEAV-12 | Phase 2 | Pending |
+| LEAV-13 | Phase 2 | Pending |
+| LEAV-14 | Phase 2 | Pending |
+| CALR-01 | Phase 2 | Pending |
+| CALR-02 | Phase 2 | Pending |
+| CALR-03 | Phase 2 | Pending |
+| CALR-04 | Phase 2 | Pending |
+| MLVS-01 | Phase 2 | Pending |
+| MLVS-02 | Phase 2 | Pending |
+| MLVS-03 | Phase 2 | Pending |
+| MLVS-04 | Phase 2 | Pending |
+| APRV-01 | Phase 3 | Pending |
+| APRV-02 | Phase 3 | Pending |
+| APRV-03 | Phase 3 | Pending |
+| APRV-04 | Phase 3 | Pending |
+| ATTN-01 | Phase 3 | Pending |
+| ATTN-02 | Phase 3 | Pending |
+| TEAM-01 | Phase 4 | Pending |
+| TEAM-02 | Phase 4 | Pending |
+| TEAM-03 | Phase 4 | Pending |
+| TEAM-04 | Phase 4 | Pending |
+| DEPT-01 | Phase 4 | Pending |
+| DEPT-02 | Phase 4 | Pending |
+| PROJ-01 | Phase 4 | Pending |
+| PROJ-02 | Phase 4 | Pending |
+| PROJ-03 | Phase 4 | Pending |
+| HOLI-01 | Phase 4 | Pending |
+| HOLI-02 | Phase 4 | Pending |
+| PROF-01 | Phase 4 | Pending |
+| PROF-02 | Phase 4 | Pending |
+| DASH-01 | Phase 5 | Pending |
+| DASH-02 | Phase 5 | Pending |
+| DASH-03 | Phase 5 | Pending |
+| DASH-04 | Phase 5 | Pending |
+| DASH-05 | Phase 5 | Pending |
+| ANNC-01 | Phase 5 | Pending |
+| ANNC-02 | Phase 5 | Pending |
+| REPT-01 | Phase 5 | Pending |
+| REPT-02 | Phase 5 | Pending |
+| SUGG-01 | Phase 5 | Pending |
+| SUGG-02 | Phase 5 | Pending |
 
 **Coverage:**
-- v1 requirements: 50 total
-- Mapped to phases: 0
-- Unmapped: 50
+- v1 requirements: 65 total
+- Mapped to phases: 65
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-02*
-*Last updated: 2026-03-02 after initial definition*
+*Last updated: 2026-03-02 after roadmap creation*
