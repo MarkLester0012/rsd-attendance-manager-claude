@@ -1,0 +1,177 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Light theme */
+    --background: 0 0% 100%;
+    --foreground: 240 10% 3.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 240 10% 3.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 10% 3.9%;
+    --primary: 240 5.9% 10%;
+    --primary-foreground: 0 0% 98%;
+    --secondary: 240 4.8% 95.9%;
+    --secondary-foreground: 240 5.9% 10%;
+    --muted: 240 4.8% 95.9%;
+    --muted-foreground: 240 3.8% 46.1%;
+    --accent: 240 4.8% 95.9%;
+    --accent-foreground: 240 5.9% 10%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 5.9% 90%;
+    --input: 240 5.9% 90%;
+    --ring: 240 5.9% 10%;
+    --radius: 0.625rem;
+
+    /* Sidebar - Light */
+    --sidebar: 0 0% 98%;
+    --sidebar-foreground: 240 5.3% 26.1%;
+    --sidebar-border: 240 5.9% 90%;
+    --sidebar-accent: 240 4.8% 95.9%;
+    --sidebar-accent-foreground: 240 5.9% 10%;
+
+    /* Leave type colors */
+    --leave-wfh: 213 94% 56%;
+    --leave-vl: 142 71% 45%;
+    --leave-sl: 27 96% 61%;
+    --leave-pl: 271 76% 53%;
+    --leave-ml: 330 81% 60%;
+    --leave-nw: 240 5% 50%;
+    --leave-ab: 0 84% 60%;
+    --leave-rga: 174 72% 40%;
+    --leave-spl: 45 93% 47%;
+
+    /* Status colors */
+    --status-approved: 142 71% 45%;
+    --status-pending: 45 93% 47%;
+    --status-rejected: 0 84% 60%;
+  }
+
+  .dark {
+    --background: 240 10% 3.9%;
+    --foreground: 0 0% 98%;
+    --card: 240 10% 5.5%;
+    --card-foreground: 0 0% 98%;
+    --popover: 240 10% 5.5%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 0 0% 98%;
+    --primary-foreground: 240 5.9% 10%;
+    --secondary: 240 3.7% 15.9%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 240 3.7% 15.9%;
+    --muted-foreground: 240 5% 64.9%;
+    --accent: 240 3.7% 15.9%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 3.7% 15.9%;
+    --input: 240 3.7% 15.9%;
+    --ring: 240 4.9% 83.9%;
+
+    /* Sidebar - Dark */
+    --sidebar: 240 10% 5.5%;
+    --sidebar-foreground: 240 4.8% 95.9%;
+    --sidebar-border: 240 3.7% 15.9%;
+    --sidebar-accent: 240 3.7% 15.9%;
+    --sidebar-accent-foreground: 240 4.8% 95.9%;
+
+    /* Leave type colors - slightly adjusted for dark mode readability */
+    --leave-wfh: 213 94% 62%;
+    --leave-vl: 142 71% 52%;
+    --leave-sl: 27 96% 65%;
+    --leave-pl: 271 76% 62%;
+    --leave-ml: 330 81% 65%;
+    --leave-nw: 240 5% 60%;
+    --leave-ab: 0 84% 65%;
+    --leave-rga: 174 72% 50%;
+    --leave-spl: 45 93% 55%;
+
+    /* Status colors */
+    --status-approved: 142 71% 52%;
+    --status-pending: 45 93% 55%;
+    --status-rejected: 0 84% 65%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* Scrollbar styling */
+@layer utilities {
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--muted)) transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: hsl(var(--muted));
+    border-radius: 3px;
+  }
+}
+
+/* Glass effect utilities */
+@layer utilities {
+  .glass {
+    background: hsl(var(--card) / 0.6);
+    backdrop-filter: blur(16px);
+    border: 1px solid hsl(var(--border) / 0.5);
+  }
+
+  .glass-strong {
+    background: hsl(var(--card) / 0.8);
+    backdrop-filter: blur(24px);
+    border: 1px solid hsl(var(--border) / 0.3);
+  }
+}
+
+/* Floating orb animations for login */
+@keyframes float-1 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  25% { transform: translate(100px, -80px) scale(1.15); }
+  50% { transform: translate(-60px, -140px) scale(0.95); }
+  75% { transform: translate(80px, -60px) scale(1.05); }
+}
+
+@keyframes float-2 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  25% { transform: translate(-80px, 60px) scale(1.1); }
+  50% { transform: translate(100px, 100px) scale(0.9); }
+  75% { transform: translate(-120px, -40px) scale(1.08); }
+}
+
+@keyframes float-3 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  25% { transform: translate(60px, 100px) scale(0.95); }
+  50% { transform: translate(-100px, 60px) scale(1.12); }
+  75% { transform: translate(40px, -80px) scale(1.0); }
+}
+
+@keyframes float-4 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  25% { transform: translate(-50px, -100px) scale(1.08); }
+  50% { transform: translate(80px, -60px) scale(0.92); }
+  75% { transform: translate(-30px, 80px) scale(1.05); }
+}
+
+.orb-1 { animation: float-1 25s ease-in-out infinite; }
+.orb-2 { animation: float-2 30s ease-in-out infinite; }
+.orb-3 { animation: float-3 28s ease-in-out infinite; }
+.orb-4 { animation: float-4 22s ease-in-out infinite; }

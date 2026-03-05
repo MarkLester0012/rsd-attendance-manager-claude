@@ -1,0 +1,32 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(where claude)",
+      "Bash(echo $env:PATH)",
+      "Bash($env:PATH)",
+      "Bash(Get-Command claude -ErrorAction SilentlyContinue)",
+      "Read(//c/Users/RSD/.claude/**)",
+      "Read(//c/Users/RSD/**)",
+      "Bash(~/.local/bin/claude.exe --version)",
+      "Bash(echo $SHELL)",
+      "Bash(echo $PATH)",
+      "Bash(claude --version)",
+      "Bash(ls \"$HOME/.local/bin/claude.exe\")",
+      "WebFetch(domain:github.com)",
+      "Bash(claude mcp:*)",
+      "Bash(node:*)",
+      "Skill(gsd:new-project)",
+      "Skill(gsd:resume-work)",
+      "Skill(gsd:plan-phase)",
+      "WebSearch",
+      "Bash(npm install:*)",
+      "Bash(mkdir:*)",
+      "Bash(npx shadcn@latest:*)",
+      "mcp__plugin_context7_context7__resolve-library-id",
+      "mcp__plugin_context7_context7__query-docs",
+      "Bash(npx next:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
