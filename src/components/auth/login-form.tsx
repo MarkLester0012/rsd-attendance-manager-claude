@@ -9,7 +9,11 @@ import { Label } from "@/components/ui/label";
 import { Loader2, Mail, Lock } from "lucide-react";
 import { toast } from "sonner";
 
-export function LoginForm() {
+interface LoginFormProps {
+  onLoginSuccess?: () => void;
+}
+
+export function LoginForm({ onLoginSuccess }: LoginFormProps) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -31,8 +35,12 @@ export function LoginForm() {
         return;
       }
 
-      router.push("/dashboard");
-      router.refresh();
+      if (onLoginSuccess) {
+        onLoginSuccess();
+      } else {
+        router.push("/dashboard");
+        router.refresh();
+      }
     } catch {
       toast.error("An unexpected error occurred");
     } finally {

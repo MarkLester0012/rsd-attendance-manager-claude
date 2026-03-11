@@ -1,6 +1,23 @@
+"use client";
+
+import { useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { LoginForm } from "@/components/auth/login-form";
 
 export default function LoginPage() {
+  const [transitioning, setTransitioning] = useState(false);
+  const router = useRouter();
+
+  const handleLoginSuccess = useCallback(() => {
+    setTransitioning(true);
+
+    // Navigate after animation completes
+    setTimeout(() => {
+      router.push("/dashboard");
+      router.refresh();
+    }, 800);
+  }, [router]);
+
   return (
     <div className="relative min-h-screen flex items-center justify-center overflow-hidden bg-background">
       {/* Animated floating orbs */}
@@ -11,8 +28,12 @@ export default function LoginPage() {
         <div className="orb-4 absolute top-1/3 right-1/3 h-64 w-64 rounded-full bg-gradient-to-br from-indigo-500/20 to-blue-400/20 blur-3xl" />
       </div>
 
-      {/* Login container */}
-      <div className="relative z-10 w-full max-w-md px-4 animate-fade-in">
+      {/* Zoom-through layer: the whole login content zooms forward */}
+      <div
+        className={`relative z-10 w-full max-w-md px-4 ${
+          transitioning ? "animate-zoom-through pointer-events-none" : "animate-fade-in"
+        }`}
+      >
         {/* Branding */}
         <div className="mb-8 text-center">
           <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 shadow-lg shadow-blue-500/25">
@@ -48,7 +69,7 @@ export default function LoginPage() {
               Sign in to your account
             </p>
           </div>
-          <LoginForm />
+          <LoginForm onLoginSuccess={handleLoginSuccess} />
         </div>
 
         {/* Footer */}
@@ -57,6 +78,13 @@ export default function LoginPage() {
           reserved.
         </p>
       </div>
+
+      {/* Portal flash overlay */}
+      {transitioning && (
+        <div className="fixed inset-0 z-50 animate-portal-flash">
+          <div className="absolute inset-0 bg-gradient-radial from-blue-500/30 via-indigo-500/20 to-background" />
+        </div>
+      )}
     </div>
   );
 }

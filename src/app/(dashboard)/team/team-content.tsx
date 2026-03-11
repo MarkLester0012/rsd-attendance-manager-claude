@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Search, Plus, Pencil, Loader2 } from "lucide-react";
+import { Search, Plus, Pencil, Trash2, Loader2, AlertTriangle } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogFooter,
@@ -23,7 +24,7 @@ import {
 } from "@/components/ui/select";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
-import { registerUser } from "./actions";
+import { registerUser, deleteUser } from "./actions";
 import { LEAVE_TYPES } from "@/lib/constants/leave-types";
 import { getInitials, cn } from "@/lib/utils";
 import type { User, LeaveEntry, Department } from "@/lib/types";
@@ -52,6 +53,8 @@ export function TeamContent({
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
 
   // Edit form state
   const [formName, setFormName] = useState("");
@@ -175,6 +178,23 @@ export function TeamContent({
       toast.error(err.message || "Failed to save");
     } finally {
       setIsSubmitting(false);
+    }
+  }
+
+  async function confirmDelete() {
+    if (!deleteTarget) return;
+    setIsDeleting(true);
+    try {
+      const result = await deleteUser(deleteTarget.id);
+      if (result.error) throw new Error(result.error);
+      toast.success(`${deleteTarget.name} has been deleted`);
+      setDeleteTarget(null);
+      setIsViewOpen(false);
+      window.location.reload();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to delete user");
+    } finally {
+      setIsDeleting(false);
     }
   }
 
@@ -331,8 +351,87 @@ export function TeamContent({
                   </p>
                 </div>
               </div>
+              {isHR && selectedUser.id !== currentUser.id && (
+                <div className="border-t pt-4">
+                  <Button
+                    variant="destructive"
+                    className="w-full gap-2"
+                    onClick={() => {
+                      setIsViewOpen(false);
+                      setDeleteTarget({ id: selectedUser.id, name: selectedUser.name });
+                    }}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    Delete Member
+                  </Button>
+                </div>
+              )}
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => {
+          if (!open) setDeleteTarget(null);
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <AlertTriangle className="h-5 w-5" />
+              Delete Member
+            </DialogTitle>
+            <DialogDescription>
+              This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          {deleteTarget && (
+            <div className="space-y-4 py-2">
+              <div className="flex items-center gap-3 rounded-lg border border-destructive/20 bg-destructive/5 p-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-xs font-bold text-white">
+                  {getInitials(deleteTarget.name)}
+                </div>
+                <div>
+                  <p className="text-sm font-semibold">{deleteTarget.name}</p>
+                </div>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                This will permanently delete this member&apos;s account and all
+                associated data including:
+              </p>
+              <ul className="text-sm text-muted-foreground space-y-1 ml-4 list-disc">
+                <li>Leave requests and history</li>
+                <li>Project memberships</li>
+                <li>Suggestions and upvotes</li>
+                <li>Announcements they authored</li>
+              </ul>
+            </div>
+          )}
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              onClick={() => setDeleteTarget(null)}
+              disabled={isDeleting}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={confirmDelete}
+              disabled={isDeleting}
+              className="gap-2"
+            >
+              {isDeleting ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Trash2 className="h-4 w-4" />
+              )}
+              {isDeleting ? "Deleting..." : "Delete Permanently"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

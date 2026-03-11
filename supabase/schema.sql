@@ -152,6 +152,8 @@ create policy "users_insert" on public.users for insert to authenticated
   with check (exists (select 1 from public.users where auth_id = auth.uid() and role = 'hr') or auth_id = auth.uid());
 create policy "users_update" on public.users for update to authenticated
   using (auth_id = auth.uid() or exists (select 1 from public.users where auth_id = auth.uid() and role = 'hr'));
+create policy "users_delete" on public.users for delete to authenticated
+  using (exists (select 1 from public.users where auth_id = auth.uid() and role = 'hr'));
 
 -- Leaves: users can manage own, leaders/HR can view all, leaders/HR can update status
 create policy "leaves_select" on public.leaves for select to authenticated using (true);
