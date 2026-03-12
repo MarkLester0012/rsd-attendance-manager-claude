@@ -29,7 +29,7 @@ export function Header() {
   const today = format(new Date(), "EEEE, MMMM d, yyyy");
 
   return (
-    <header className="sticky top-0 z-30 flex h-16 items-center gap-4 border-b border-border bg-background/80 backdrop-blur-md px-4 md:px-6">
+    <header className="sticky top-0 z-30 flex h-16 items-center gap-4 border-b border-border bg-card/80 backdrop-blur-md px-4 md:px-6">
       {/* Mobile menu button */}
       <Button
         variant="ghost"
@@ -55,7 +55,7 @@ export function Header() {
         >
           <Bell className="h-5 w-5" />
           {/* Visual only notification dot */}
-          <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-blue-500" />
+          <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-primary" />
         </Button>
       </div>
     </header>

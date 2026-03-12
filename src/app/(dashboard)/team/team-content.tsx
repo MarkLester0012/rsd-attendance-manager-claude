@@ -255,7 +255,7 @@ export function TeamContent({
             >
               <CardContent className="p-4">
                 <div className="flex items-start gap-3">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-xs font-bold text-white">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary dark:bg-gradient-to-br dark:from-blue-500 dark:to-indigo-600 text-xs font-bold text-white">
                     {getInitials(u.name)}
                   </div>
                   <div className="flex-1 min-w-0">
@@ -316,7 +316,7 @@ export function TeamContent({
           {selectedUser && (
             <div className="space-y-4">
               <div className="flex items-center gap-3">
-                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-lg font-bold text-white">
+                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-primary dark:bg-gradient-to-br dark:from-blue-500 dark:to-indigo-600 text-lg font-bold text-white">
                   {getInitials(selectedUser.name)}
                 </div>
                 <div>
@@ -391,7 +391,7 @@ export function TeamContent({
           {deleteTarget && (
             <div className="space-y-4 py-2">
               <div className="flex items-center gap-3 rounded-lg border border-destructive/20 bg-destructive/5 p-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-xs font-bold text-white">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary dark:bg-gradient-to-br dark:from-blue-500 dark:to-indigo-600 text-xs font-bold text-white">
                   {getInitials(deleteTarget.name)}
                 </div>
                 <div>

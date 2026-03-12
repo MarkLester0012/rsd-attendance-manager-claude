@@ -90,7 +90,7 @@ export function LoginForm({ onLoginSuccess }: LoginFormProps) {
 
       <Button
         type="submit"
-        className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white shadow-lg shadow-blue-500/25 transition-all duration-200"
+        className="w-full bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm shadow-primary/20 dark:bg-gradient-to-r dark:from-blue-600 dark:to-indigo-600 dark:hover:from-blue-700 dark:hover:to-indigo-700 dark:text-white dark:shadow-lg dark:shadow-blue-500/25 transition-all duration-200"
         disabled={isLoading}
       >
         {isLoading ? (

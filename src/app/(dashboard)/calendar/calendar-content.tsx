@@ -3,6 +3,7 @@
 import { useState, useCallback, useEffect } from "react";
 import {
   format,
+  parseISO,
   startOfMonth,
   endOfMonth,
   startOfWeek,
@@ -193,7 +194,7 @@ export function CalendarContent({
                           className={cn(
                             "text-xs font-medium",
                             isToday &&
-                              "bg-primary text-primary-foreground rounded-full w-6 h-6 flex items-center justify-center",
+                            "bg-primary text-primary-foreground rounded-full w-6 h-6 flex items-center justify-center",
                             weekend && "text-muted-foreground/50"
                           )}
                         >
@@ -205,14 +206,30 @@ export function CalendarContent({
                       {holiday && isCurrentMonth && (
                         <Tooltip>
                           <TooltipTrigger asChild>
-                            <div className="mt-1 flex items-center gap-1">
-                              <span className="text-[10px]">🎉</span>
-                              <span className="text-[10px] text-red-400 truncate">
-                                {holiday.name}
-                              </span>
+                            <div className="mt-1">
+                              <div className="flex items-center gap-1">
+                                <span className="text-[10px]">🎉</span>
+                                <span className="text-[10px] text-red-400 truncate">
+                                  {holiday.name}
+                                </span>
+                              </div>
+                              {holiday.original_date && holiday.original_date !== holiday.observed_date && (
+                                <div className="text-[9px] text-muted-foreground/70 mt-0.5 pl-[18px] truncate">
+                                  Originally: {format(parseISO(holiday.original_date), "MMM d, yyyy")}
+                                </div>
+                              )}
                             </div>
                           </TooltipTrigger>
-                          <TooltipContent>{holiday.name}</TooltipContent>
+                          <TooltipContent>
+                            <div>
+                              <p>{holiday.name}</p>
+                              {holiday.original_date && holiday.original_date !== holiday.observed_date && (
+                                <p className="text-xs text-muted-foreground">
+                                  Originally: {format(parseISO(holiday.original_date), "MMM d, yyyy")}
+                                </p>
+                              )}
+                            </div>
+                          </TooltipContent>
                         </Tooltip>
                       )}
 

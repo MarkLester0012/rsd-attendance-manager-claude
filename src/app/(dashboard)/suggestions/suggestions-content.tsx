@@ -204,7 +204,7 @@ export function SuggestionsContent({
                           </>
                         ) : (
                           <>
-                            <div className="flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-[9px] font-bold text-white">
+                            <div className="flex h-6 w-6 items-center justify-center rounded-full bg-primary dark:bg-gradient-to-br dark:from-blue-500 dark:to-indigo-600 text-[9px] font-bold text-white">
                               {getInitials(s.user?.name || "?")}
                             </div>
                             <span className="text-sm font-medium">

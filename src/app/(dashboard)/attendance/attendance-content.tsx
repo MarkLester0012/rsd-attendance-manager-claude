@@ -127,7 +127,7 @@ export function AttendanceContent({
           return (
             <Card key={u.id} className="transition-all hover:shadow-md">
               <CardContent className="flex items-center gap-3 p-4">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-xs font-bold text-white">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary dark:bg-gradient-to-br dark:from-blue-500 dark:to-indigo-600 text-xs font-bold text-white">
                   {getInitials(u.name)}
                 </div>
                 <div className="flex-1 min-w-0">

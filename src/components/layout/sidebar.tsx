@@ -17,7 +17,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { Sheet, SheetContent } from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import {
   LayoutDashboard,
   Calendar,
@@ -144,7 +144,7 @@ function SidebarContent({ user, pendingCount }: SidebarProps) {
     <div className="flex h-full flex-col bg-sidebar border-r border-sidebar-border">
       {/* Logo area */}
       <div className="flex h-16 items-center gap-3 px-4 border-b border-sidebar-border">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 text-white text-sm font-bold">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary dark:bg-gradient-to-br dark:from-blue-500 dark:to-indigo-600 text-primary-foreground dark:text-white text-sm font-bold">
           R
         </div>
         {!isCollapsed && (
@@ -265,7 +265,7 @@ function SidebarContent({ user, pendingCount }: SidebarProps) {
             isCollapsed && "justify-center"
           )}
         >
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-[11px] font-bold text-white">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary dark:bg-gradient-to-br dark:from-blue-500 dark:to-indigo-600 text-[11px] font-bold text-primary-foreground dark:text-white">
             {getInitials(user.name)}
           </div>
           {!isCollapsed && (
@@ -320,6 +320,7 @@ export function Sidebar({ user, pendingCount }: SidebarProps) {
       {/* Mobile sidebar */}
       <Sheet open={isMobileOpen} onOpenChange={setMobileOpen}>
         <SheetContent side="left" className="w-64 p-0">
+          <SheetTitle className="sr-only">Navigation Menu</SheetTitle>
           <SidebarContent user={user} pendingCount={pendingCount} />
         </SheetContent>
       </Sheet>

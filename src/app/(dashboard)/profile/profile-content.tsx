@@ -67,7 +67,7 @@ export function ProfileContent({ user }: ProfileContentProps) {
         </CardHeader>
         <CardContent>
           <div className="flex items-center gap-4 mb-6">
-            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-xl font-bold text-white">
+            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary dark:bg-gradient-to-br dark:from-blue-500 dark:to-indigo-600 text-xl font-bold text-white">
               {getInitials(user.name)}
             </div>
             <div>

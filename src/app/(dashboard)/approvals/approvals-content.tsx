@@ -114,7 +114,7 @@ export function ApprovalsContent({
         <CardContent className="p-4">
           <div className="flex items-start gap-3">
             {/* Avatar */}
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-xs font-bold text-white">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary dark:bg-gradient-to-br dark:from-blue-500 dark:to-indigo-600 text-xs font-bold text-white">
               {getInitials(leave.user?.name || "?")}
             </div>
 

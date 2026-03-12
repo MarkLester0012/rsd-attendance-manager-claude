@@ -4,34 +4,34 @@
 
 @layer base {
   :root {
-    /* Light theme */
-    --background: 0 0% 100%;
-    --foreground: 240 10% 3.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 240 10% 3.9%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 240 10% 3.9%;
-    --primary: 240 5.9% 10%;
-    --primary-foreground: 0 0% 98%;
-    --secondary: 240 4.8% 95.9%;
-    --secondary-foreground: 240 5.9% 10%;
-    --muted: 240 4.8% 95.9%;
-    --muted-foreground: 240 3.8% 46.1%;
-    --accent: 240 4.8% 95.9%;
-    --accent-foreground: 240 5.9% 10%;
+    /* Light theme — RSD warm neutral */
+    --background: 0 6% 94%;
+    --foreground: 330 10% 10%;
+    --card: 0 4% 98%;
+    --card-foreground: 330 10% 10%;
+    --popover: 0 4% 98%;
+    --popover-foreground: 330 10% 10%;
+    --primary: 357 75% 45%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 330 6% 23%;
+    --secondary-foreground: 0 7% 97%;
+    --muted: 10 8% 90%;
+    --muted-foreground: 6 4% 40%;
+    --accent: 357 75% 45%;
+    --accent-foreground: 0 0% 100%;
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 0 0% 98%;
-    --border: 240 5.9% 90%;
-    --input: 240 5.9% 90%;
-    --ring: 240 5.9% 10%;
+    --border: 8 10% 85%;
+    --input: 8 10% 85%;
+    --ring: 357 75% 45%;
     --radius: 0.625rem;
 
     /* Sidebar - Light */
-    --sidebar: 0 0% 98%;
-    --sidebar-foreground: 240 5.3% 26.1%;
-    --sidebar-border: 240 5.9% 90%;
-    --sidebar-accent: 240 4.8% 95.9%;
-    --sidebar-accent-foreground: 240 5.9% 10%;
+    --sidebar: 0 6% 95%;
+    --sidebar-foreground: 330 6% 23%;
+    --sidebar-border: 8 10% 85%;
+    --sidebar-accent: 357 60% 95%;
+    --sidebar-accent-foreground: 357 75% 35%;
 
     /* Leave type colors */
     --leave-wfh: 213 94% 56%;
