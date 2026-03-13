@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import Link from "next/link";
-import { format } from "date-fns";
+import { format, parseISO, differenceInCalendarDays } from "date-fns";
 import {
   Calendar,
   Users,
@@ -15,15 +15,27 @@ import {
   Clock,
   Megaphone,
   ChevronDown,
+  CalendarDays,
+  PartyPopper,
 } from "lucide-react";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+  CartesianGrid,
+  Legend,
+} from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { LEAVE_TYPES } from "@/lib/constants/leave-types";
-import type { User, LeaveEntry, Announcement } from "@/lib/types";
+import type { User, LeaveEntry, Announcement, Holiday } from "@/lib/types";
 
 interface DashboardContentProps {
   user: User;
-  recentLeaves: (LeaveEntry & { user?: { name: string } })[];
+  upcomingHolidays: Holiday[];
   announcements: (Announcement & { author?: { name: string } })[];
   userLeaves: LeaveEntry[];
   wfhUsed: number;
@@ -34,7 +46,7 @@ interface DashboardContentProps {
 
 export function DashboardContent({
   user,
-  recentLeaves,
+  upcomingHolidays,
   announcements,
   userLeaves,
   wfhUsed,
@@ -46,7 +58,37 @@ export function DashboardContent({
     .filter((l) => l.leave_type !== "WFH")
     .reduce((sum, l) => sum + l.duration_value, 0);
 
-  // Leave breakdown by type
+  // Monthly leave data for bar chart
+  const monthlyChartData = useMemo(() => {
+    const months: Record<string, Record<string, number>> = {};
+
+    // Initialize all 12 months
+    for (let m = 0; m < 12; m++) {
+      const key = format(new Date(2026, m, 1), "MMM");
+      months[key] = {};
+    }
+
+    userLeaves.forEach((leave) => {
+      const monthKey = format(parseISO(leave.leave_date), "MMM");
+      if (months[monthKey]) {
+        months[monthKey][leave.leave_type] =
+          (months[monthKey][leave.leave_type] || 0) + leave.duration_value;
+      }
+    });
+
+    return Object.entries(months).map(([month, types]) => ({
+      month,
+      ...types,
+    }));
+  }, [userLeaves]);
+
+  // Get unique leave types used for chart bars
+  const usedLeaveTypes = useMemo(() => {
+    const types = new Set(userLeaves.map((l) => l.leave_type));
+    return Array.from(types);
+  }, [userLeaves]);
+
+  // Leave breakdown by type (for summary)
   const leaveBreakdown = userLeaves.reduce(
     (acc, leave) => {
       acc[leave.leave_type] = (acc[leave.leave_type] || 0) + leave.duration_value;
@@ -140,147 +182,256 @@ export function DashboardContent({
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
-        {/* Leave Breakdown */}
+        {/* Leave Breakdown - Monthly Chart + Summary */}
         <Card className="lg:col-span-2">
           <CardHeader className="pb-3">
             <CardTitle className="text-base font-semibold">
               Leave Breakdown
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-3">
-            {Object.entries(leaveBreakdown).length === 0 ? (
+          <CardContent>
+            {userLeaves.length === 0 ? (
               <p className="text-sm text-muted-foreground py-4 text-center">
                 No leaves taken yet
               </p>
             ) : (
-              Object.entries(leaveBreakdown).map(([type, days]) => {
-                const config = LEAVE_TYPES[type as keyof typeof LEAVE_TYPES];
-                const maxDays = type === "WFH" ? 8 : user.leave_balance;
-                const percentage = Math.min((days / maxDays) * 100, 100);
-                return (
-                  <div key={type} className="space-y-1.5">
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="font-medium text-foreground">
-                        {config?.label || type}
-                      </span>
-                      <span className="text-muted-foreground">
-                        {days} day{days !== 1 ? "s" : ""}
-                      </span>
-                    </div>
-                    <div className="h-2 rounded-full bg-muted">
-                      <div
-                        className="h-full rounded-full transition-all duration-500"
-                        style={{
-                          width: `${percentage}%`,
-                          backgroundColor: config
-                            ? `hsl(var(${config.cssVar}))`
-                            : undefined,
+              <div className="space-y-5">
+                {/* Monthly Bar Chart */}
+                <div className="h-[220px] w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart
+                      data={monthlyChartData}
+                      margin={{ top: 5, right: 5, left: -20, bottom: 0 }}
+                    >
+                      <CartesianGrid
+                        strokeDasharray="3 3"
+                        className="stroke-border/50"
+                      />
+                      <XAxis
+                        dataKey="month"
+                        tick={{ fontSize: 11 }}
+                        className="fill-muted-foreground"
+                        tickLine={false}
+                        axisLine={false}
+                      />
+                      <YAxis
+                        tick={{ fontSize: 11 }}
+                        className="fill-muted-foreground"
+                        tickLine={false}
+                        axisLine={false}
+                        allowDecimals={false}
+                      />
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: "hsl(var(--popover))",
+                          border: "1px solid hsl(var(--border))",
+                          borderRadius: "8px",
+                          fontSize: "12px",
+                          color: "hsl(var(--popover-foreground))",
+                        }}
+                        formatter={(value: number, name: string) => {
+                          const config =
+                            LEAVE_TYPES[name as keyof typeof LEAVE_TYPES];
+                          return [
+                            `${value} day${value !== 1 ? "s" : ""}`,
+                            config?.label || name,
+                          ];
                         }}
                       />
-                    </div>
-                  </div>
-                );
-              })
+                      <Legend
+                        formatter={(value: string) => {
+                          const config =
+                            LEAVE_TYPES[value as keyof typeof LEAVE_TYPES];
+                          return (
+                            <span className="text-xs text-muted-foreground">
+                              {config?.label || value}
+                            </span>
+                          );
+                        }}
+                        iconSize={8}
+                        wrapperStyle={{ fontSize: "11px" }}
+                      />
+                      {usedLeaveTypes.map((type) => {
+                        const config =
+                          LEAVE_TYPES[type as keyof typeof LEAVE_TYPES];
+                        return (
+                          <Bar
+                            key={type}
+                            dataKey={type}
+                            stackId="leaves"
+                            fill={
+                              config
+                                ? `hsl(var(${config.cssVar}))`
+                                : "hsl(var(--muted-foreground))"
+                            }
+                            radius={[2, 2, 0, 0]}
+                          />
+                        );
+                      })}
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+
+                {/* Summary by Type */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {Object.entries(leaveBreakdown).map(([type, days]) => {
+                    const config =
+                      LEAVE_TYPES[type as keyof typeof LEAVE_TYPES];
+                    return (
+                      <div
+                        key={type}
+                        className="flex items-center gap-2 rounded-lg border border-border/50 p-2.5"
+                      >
+                        <div
+                          className="h-2.5 w-2.5 rounded-full shrink-0"
+                          style={{
+                            backgroundColor: config
+                              ? `hsl(var(${config.cssVar}))`
+                              : undefined,
+                          }}
+                        />
+                        <div className="min-w-0">
+                          <p className="text-xs font-medium text-foreground truncate">
+                            {config?.label || type}
+                          </p>
+                          <p className="text-[11px] text-muted-foreground">
+                            {days} day{days !== 1 ? "s" : ""}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
             )}
           </CardContent>
         </Card>
 
-        {/* Announcements */}
-        <Card>
+        {/* Announcements - Scrollable */}
+        <Card className="flex flex-col">
           <CardHeader className="pb-3">
             <div className="flex items-center gap-2">
               <Megaphone className="h-4 w-4 text-muted-foreground" />
               <CardTitle className="text-base font-semibold">
                 Announcements
               </CardTitle>
+              {announcements.length > 0 && (
+                <Badge variant="secondary" className="text-[10px] ml-auto">
+                  {announcements.length}
+                </Badge>
+              )}
             </div>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="flex-1 min-h-0">
             {announcements.length === 0 ? (
               <p className="text-sm text-muted-foreground py-4 text-center">
                 No announcements yet
               </p>
             ) : (
-              announcements.map((a) => (
-                <AnnouncementItem key={a.id} announcement={a} />
-              ))
+              <div className="max-h-[320px] overflow-y-auto pr-1 space-y-4 scrollbar-thin">
+                {announcements.map((a) => (
+                  <AnnouncementItem key={a.id} announcement={a} />
+                ))}
+              </div>
             )}
           </CardContent>
         </Card>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
-        {/* Recent Activity */}
+        {/* Upcoming Holidays */}
         <Card className="lg:col-span-2">
           <CardHeader className="pb-3">
-            <CardTitle className="text-base font-semibold">
-              Recent Activity
-            </CardTitle>
+            <div className="flex items-center gap-2">
+              <CalendarDays className="h-4 w-4 text-muted-foreground" />
+              <CardTitle className="text-base font-semibold">
+                Holidays This Month
+              </CardTitle>
+            </div>
           </CardHeader>
           <CardContent>
-            <div className="space-y-3">
-              {recentLeaves.length === 0 ? (
-                <p className="text-sm text-muted-foreground py-4 text-center">
-                  No recent activity
-                </p>
-              ) : (
-                recentLeaves.map((leave) => {
-                  const config =
-                    LEAVE_TYPES[
-                      leave.leave_type as keyof typeof LEAVE_TYPES
-                    ];
+            {upcomingHolidays.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-4 text-center">
+                No holidays this month
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {upcomingHolidays.map((holiday) => {
+                  const daysUntil = differenceInCalendarDays(
+                    parseISO(holiday.observed_date),
+                    new Date()
+                  );
+                  const isThisWeek = daysUntil <= 7;
                   return (
                     <div
-                      key={leave.id}
-                      className="flex items-center gap-3 rounded-lg border border-border/50 p-3"
+                      key={holiday.id}
+                      className={`flex items-center gap-3 rounded-lg border p-3 ${
+                        isThisWeek
+                          ? "border-primary/30 bg-primary/5"
+                          : "border-border/50"
+                      }`}
                     >
                       <div
-                        className="h-2 w-2 rounded-full shrink-0"
-                        style={{
-                          backgroundColor: config
-                            ? `hsl(var(${config.cssVar}))`
-                            : undefined,
-                        }}
-                      />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-foreground truncate">
-                          {leave.user?.name || "Unknown"}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {format(new Date(leave.leave_date), "MMM d, yyyy")}
-                        </p>
-                      </div>
-                      <Badge
-                        variant="secondary"
-                        className="text-[10px] shrink-0"
-                        style={{
-                          backgroundColor: config
-                            ? `hsl(var(${config.cssVar}) / 0.15)`
-                            : undefined,
-                          color: config
-                            ? `hsl(var(${config.cssVar}))`
-                            : undefined,
-                        }}
-                      >
-                        {config?.label || leave.leave_type}
-                      </Badge>
-                      <Badge
-                        variant="outline"
-                        className={`text-[10px] shrink-0 ${
-                          leave.status === "approved"
-                            ? "border-status-approved/30 text-status-approved"
-                            : leave.status === "rejected"
-                              ? "border-status-rejected/30 text-status-rejected"
-                              : "border-status-pending/30 text-status-pending"
+                        className={`flex h-10 w-10 flex-col items-center justify-center rounded-lg shrink-0 ${
+                          isThisWeek
+                            ? "bg-primary/15 text-primary"
+                            : "bg-muted text-muted-foreground"
                         }`}
                       >
-                        {leave.status}
-                      </Badge>
+                        <span className="text-[10px] font-medium leading-none">
+                          {format(parseISO(holiday.observed_date), "MMM")}
+                        </span>
+                        <span className="text-sm font-bold leading-tight">
+                          {format(parseISO(holiday.observed_date), "d")}
+                        </span>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-foreground truncate">
+                          {holiday.name}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {format(
+                            parseISO(holiday.observed_date),
+                            "EEEE, MMMM d"
+                          )}
+                          {holiday.original_date &&
+                            holiday.original_date !== holiday.observed_date && (
+                              <span className="text-muted-foreground/60">
+                                {" "}
+                                (moved from{" "}
+                                {format(parseISO(holiday.original_date), "MMM d")}
+                                )
+                              </span>
+                            )}
+                        </p>
+                      </div>
+                      <div className="shrink-0 text-right">
+                        {daysUntil === 0 ? (
+                          <Badge
+                            variant="secondary"
+                            className="text-[10px] bg-primary/15 text-primary"
+                          >
+                            <PartyPopper className="h-3 w-3 mr-1" />
+                            Today
+                          </Badge>
+                        ) : daysUntil === 1 ? (
+                          <Badge
+                            variant="secondary"
+                            className="text-[10px] bg-primary/15 text-primary"
+                          >
+                            Tomorrow
+                          </Badge>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">
+                            in {daysUntil} days
+                          </span>
+                        )}
+                      </div>
                     </div>
                   );
-                })
-              )}
-            </div>
+                })}
+              </div>
+            )}
           </CardContent>
         </Card>
 

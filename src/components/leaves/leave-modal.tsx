@@ -37,6 +37,7 @@ interface LeaveModalProps {
   onOpenChange: (open: boolean) => void;
   user: User;
   date: Date | null;
+  dates?: Date[] | null;
   existingLeave: LeaveEntry | null;
   onSuccess: () => void;
 }
@@ -46,6 +47,7 @@ export function LeaveModal({
   onOpenChange,
   user,
   date,
+  dates,
   existingLeave,
   onSuccess,
 }: LeaveModalProps) {
@@ -55,6 +57,7 @@ export function LeaveModal({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
+  const isMultiDay = dates && dates.length > 1;
   const isEditMode = !!existingLeave;
   const config = LEAVE_TYPES[leaveType];
 
@@ -83,19 +86,21 @@ export function LeaveModal({
     const supabase = createClient();
 
     try {
-      const dateStr = format(date!, "yyyy-MM-dd");
+      // For multi-day mode, submit for all selected dates
+      const targetDates = isMultiDay ? dates! : [date!];
+      const dateStrs = targetDates.map((d) => format(d, "yyyy-MM-dd"));
 
-      // Overlap check (LEAV-11) — skip for edit mode on same date
+      // Overlap check — check all dates at once
       if (!isEditMode) {
         const { data: existing } = await supabase
           .from("leaves")
-          .select("id")
+          .select("leave_date")
           .eq("user_id", user.id)
-          .eq("leave_date", dateStr)
-          .limit(1);
+          .in("leave_date", dateStrs);
 
         if (existing && existing.length > 0) {
-          toast.error("You already have a leave entry on this date");
+          const conflicting = existing.map((e) => e.leave_date).join(", ");
+          toast.error(`You already have leave entries on: ${conflicting}`);
           setIsSubmitting(false);
           return;
         }
@@ -103,47 +108,56 @@ export function LeaveModal({
 
       // WFH validations
       if (leaveType === "WFH") {
-        // Monthly cap check
-        const startOfMonth = new Date(date!.getFullYear(), date!.getMonth(), 1);
-        const endOfMonth = new Date(
-          date!.getFullYear(),
-          date!.getMonth() + 1,
-          0
-        );
-        const { data: monthWfh } = await supabase
-          .from("leaves")
-          .select("duration_value")
-          .eq("user_id", user.id)
-          .eq("leave_type", "WFH")
-          .eq("status", "approved")
-          .gte("leave_date", format(startOfMonth, "yyyy-MM-dd"))
-          .lte("leave_date", format(endOfMonth, "yyyy-MM-dd"));
-
-        const currentMonthWfh =
-          monthWfh?.reduce((sum, l) => sum + l.duration_value, 0) || 0;
-
-        if (currentMonthWfh + durationValue > WFH_MONTHLY_CAP) {
-          toast.error(
-            `WFH monthly cap reached. Remaining: ${WFH_MONTHLY_CAP - currentMonthWfh} days`
-          );
-          setIsSubmitting(false);
-          return;
+        // Monthly cap check — group dates by month
+        const monthGroups = new Map<string, Date[]>();
+        for (const d of targetDates) {
+          const key = format(d, "yyyy-MM");
+          if (!monthGroups.has(key)) monthGroups.set(key, []);
+          monthGroups.get(key)!.push(d);
         }
 
-        // Daily global cap
-        const { count: dailyWfh } = await supabase
-          .from("leaves")
-          .select("*", { count: "exact", head: true })
-          .eq("leave_date", dateStr)
-          .eq("leave_type", "WFH")
-          .eq("status", "approved");
+        for (const [monthKey, monthDates] of monthGroups) {
+          const [year, month] = monthKey.split("-").map(Number);
+          const startOfMonth = new Date(year, month - 1, 1);
+          const endOfMonth = new Date(year, month, 0);
+          const { data: monthWfh } = await supabase
+            .from("leaves")
+            .select("duration_value")
+            .eq("user_id", user.id)
+            .eq("leave_type", "WFH")
+            .eq("status", "approved")
+            .gte("leave_date", format(startOfMonth, "yyyy-MM-dd"))
+            .lte("leave_date", format(endOfMonth, "yyyy-MM-dd"));
 
-        if ((dailyWfh || 0) >= WFH_DAILY_GLOBAL_CAP) {
-          toast.error(
-            `Daily WFH limit reached (${WFH_DAILY_GLOBAL_CAP} slots). Try another day.`
-          );
-          setIsSubmitting(false);
-          return;
+          const currentMonthWfh =
+            monthWfh?.reduce((sum, l) => sum + l.duration_value, 0) || 0;
+          const addingDays = monthDates.length * durationValue;
+
+          if (currentMonthWfh + addingDays > WFH_MONTHLY_CAP) {
+            toast.error(
+              `WFH monthly cap would be exceeded for ${format(startOfMonth, "MMMM")}. Remaining: ${WFH_MONTHLY_CAP - currentMonthWfh} days`
+            );
+            setIsSubmitting(false);
+            return;
+          }
+        }
+
+        // Daily global cap for each date
+        for (const dateStr of dateStrs) {
+          const { count: dailyWfh } = await supabase
+            .from("leaves")
+            .select("*", { count: "exact", head: true })
+            .eq("leave_date", dateStr)
+            .eq("leave_type", "WFH")
+            .eq("status", "approved");
+
+          if ((dailyWfh || 0) >= WFH_DAILY_GLOBAL_CAP) {
+            toast.error(
+              `Daily WFH limit reached on ${dateStr} (${WFH_DAILY_GLOBAL_CAP} slots). Remove that day and try again.`
+            );
+            setIsSubmitting(false);
+            return;
+          }
         }
       }
 
@@ -159,9 +173,12 @@ export function LeaveModal({
         const totalUsed =
           approvedLeaves?.reduce((sum, l) => sum + l.duration_value, 0) || 0;
         const remaining = user.leave_balance - totalUsed;
+        const totalNeeded = targetDates.length * durationValue;
 
-        if (remaining - durationValue < 0) {
-          toast.error(`Insufficient leave balance. Remaining: ${remaining} days`);
+        if (remaining - totalNeeded < 0) {
+          toast.error(
+            `Insufficient leave balance. Remaining: ${remaining} days, needed: ${totalNeeded} days`
+          );
           setIsSubmitting(false);
           return;
         }
@@ -185,7 +202,8 @@ export function LeaveModal({
         if (error) throw error;
         toast.success("Leave updated successfully");
       } else {
-        const { error } = await supabase.from("leaves").insert({
+        // Insert all dates
+        const rows = dateStrs.map((dateStr) => ({
           user_id: user.id,
           leave_type: leaveType,
           leave_date: dateStr,
@@ -193,14 +211,25 @@ export function LeaveModal({
           duration_value: durationValue,
           reason: reason || null,
           status,
-        });
+        }));
+
+        const { error } = await supabase.from("leaves").insert(rows);
 
         if (error) throw error;
-        toast.success(
-          config.requiresApproval
-            ? "Leave request submitted for approval"
-            : "Leave applied successfully"
-        );
+
+        if (isMultiDay) {
+          toast.success(
+            config.requiresApproval
+              ? `${targetDates.length} leave requests submitted for approval`
+              : `${targetDates.length} leave entries applied successfully`
+          );
+        } else {
+          toast.success(
+            config.requiresApproval
+              ? "Leave request submitted for approval"
+              : "Leave applied successfully"
+          );
+        }
       }
 
       onSuccess();
@@ -242,11 +271,34 @@ export function LeaveModal({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>
-            {isEditMode ? "Edit Leave" : "Apply for Leave"}
+            {isEditMode
+              ? "Edit Leave"
+              : isMultiDay
+                ? "Apply Leave for Multiple Days"
+                : "Apply for Leave"}
           </DialogTitle>
-          <p className="text-sm text-muted-foreground">
-            {format(date, "EEEE, MMMM d, yyyy")}
-          </p>
+          {isMultiDay ? (
+            <div className="space-y-1.5">
+              <p className="text-sm text-muted-foreground">
+                {dates!.length} days selected
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {dates!.map((d) => (
+                  <Badge
+                    key={d.toISOString()}
+                    variant="secondary"
+                    className="text-[11px]"
+                  >
+                    {format(d, "MMM d (EEE)")}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              {format(date, "EEEE, MMMM d, yyyy")}
+            </p>
+          )}
         </DialogHeader>
 
         <div className="space-y-4 py-4">
@@ -349,6 +401,11 @@ export function LeaveModal({
             ) : (
               <Badge variant="secondary">No Balance Deduction</Badge>
             )}
+            {isMultiDay && (
+              <Badge variant="outline">
+                Total: {(dates!.length * durationValue).toFixed(1)} days
+              </Badge>
+            )}
           </div>
         </div>
 
@@ -386,6 +443,8 @@ export function LeaveModal({
               </>
             ) : isEditMode ? (
               "Update Leave"
+            ) : isMultiDay ? (
+              `Submit ${dates!.length} Days`
             ) : (
               "Submit"
             )}

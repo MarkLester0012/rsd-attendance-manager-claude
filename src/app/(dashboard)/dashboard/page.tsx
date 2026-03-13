@@ -14,19 +14,25 @@ export default async function DashboardPage() {
     .eq("auth_id", authUser!.id)
     .single();
 
-  // Get recent leaves
-  const { data: recentLeaves } = await supabase
-    .from("leaves")
-    .select("*, user:users(name, department_id)")
-    .order("created_at", { ascending: false })
-    .limit(5);
+  const today = new Date().toISOString().split("T")[0];
 
-  // Get announcements
+  // Get current month's holidays
+  const startOfMonth = new Date();
+  startOfMonth.setDate(1);
+  const endOfMonth = new Date(startOfMonth.getFullYear(), startOfMonth.getMonth() + 1, 0);
+  const { data: upcomingHolidays } = await supabase
+    .from("holidays")
+    .select("*")
+    .gte("observed_date", startOfMonth.toISOString().split("T")[0])
+    .lte("observed_date", endOfMonth.toISOString().split("T")[0])
+    .order("observed_date", { ascending: true });
+
+  // Get announcements (all recent, scrollable on client)
   const { data: announcements } = await supabase
     .from("announcements")
     .select("*, author:users(name)")
     .order("created_at", { ascending: false })
-    .limit(3);
+    .limit(10);
 
   // Get user's leave stats
   const { data: userLeaves } = await supabase
@@ -36,7 +42,6 @@ export default async function DashboardPage() {
     .eq("status", "approved");
 
   // Get today's attendance
-  const today = new Date().toISOString().split("T")[0];
   const { data: todayLeaves } = await supabase
     .from("leaves")
     .select("*")
@@ -68,8 +73,6 @@ export default async function DashboardPage() {
     .limit(1);
 
   // WFH this month
-  const startOfMonth = new Date();
-  startOfMonth.setDate(1);
   const { data: wfhThisMonth } = await supabase
     .from("leaves")
     .select("duration_value")
@@ -87,7 +90,7 @@ export default async function DashboardPage() {
   return (
     <DashboardContent
       user={user!}
-      recentLeaves={recentLeaves || []}
+      upcomingHolidays={upcomingHolidays || []}
       announcements={announcements || []}
       userLeaves={userLeaves || []}
       wfhUsed={wfhUsed}
