@@ -37,11 +37,22 @@ export default async function CalendarPage() {
     .gte("observed_date", startOfMonth)
     .lte("observed_date", endOfMonth);
 
+  // Get all WFH leaves for the month (all users) for the WFH tracker
+  const { data: monthWfhAll } = await supabase
+    .from("leaves")
+    .select("leave_date, duration_value, user:users!user_id(name)")
+    .eq("leave_type", "WFH")
+    .eq("status", "approved")
+    .gte("leave_date", startOfMonth)
+    .lte("leave_date", endOfMonth)
+    .order("leave_date", { ascending: true });
+
   return (
     <CalendarContent
       user={user!}
       initialLeaves={leaves || []}
       holidays={holidays || []}
+      initialWfhAll={(monthWfhAll || []) as any}
     />
   );
 }
