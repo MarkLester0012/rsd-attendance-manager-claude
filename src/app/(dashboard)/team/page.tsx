@@ -29,11 +29,17 @@ export default async function TeamPage() {
     .order("name");
 
   const today = new Date().toISOString().split("T")[0];
-  const { data: todayLeaves } = await supabase
+  const nextWeek = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+    .toISOString()
+    .split("T")[0];
+
+  const { data: upcomingLeaves } = await supabase
     .from("leaves")
-    .select("*")
-    .eq("leave_date", today)
-    .eq("status", "approved");
+    .select("*, user:users!leaves_user_id_fkey(name, department_id)")
+    .gte("leave_date", today)
+    .lte("leave_date", nextWeek)
+    .eq("status", "approved")
+    .order("leave_date");
 
   const { data: projects } = await supabase
     .from("projects")
@@ -45,7 +51,7 @@ export default async function TeamPage() {
       currentUser={user}
       users={users || []}
       departments={departments || []}
-      todayLeaves={todayLeaves || []}
+      upcomingLeaves={(upcomingLeaves as any[]) || []}
       projects={projects || []}
     />
   );

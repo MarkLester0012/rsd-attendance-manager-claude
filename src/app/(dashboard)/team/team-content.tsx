@@ -1,7 +1,18 @@
 "use client";
 
-import { useState } from "react";
-import { Search, Plus, Pencil, Trash2, Loader2, AlertTriangle } from "lucide-react";
+import { useState, useMemo } from "react";
+import { format } from "date-fns";
+import {
+  Search,
+  Plus,
+  Pencil,
+  Trash2,
+  Loader2,
+  AlertTriangle,
+  Users,
+  Building2,
+  CalendarClock,
+} from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -26,14 +37,18 @@ import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { registerUser, deleteUser } from "./actions";
 import { LEAVE_TYPES } from "@/lib/constants/leave-types";
-import { getInitials, cn } from "@/lib/utils";
+import { getInitials } from "@/lib/utils";
 import type { User, LeaveEntry, Department } from "@/lib/types";
+
+interface UpcomingLeave extends Omit<LeaveEntry, "user"> {
+  user?: { name: string; department_id: string };
+}
 
 interface TeamContentProps {
   currentUser: User;
   users: (User & { department?: Department })[];
   departments: Department[];
-  todayLeaves: LeaveEntry[];
+  upcomingLeaves: UpcomingLeave[];
   projects: any[];
 }
 
@@ -41,12 +56,13 @@ export function TeamContent({
   currentUser,
   users,
   departments,
-  todayLeaves,
+  upcomingLeaves,
   projects,
 }: TeamContentProps) {
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
+  const [deptFilter, setDeptFilter] = useState("all");
   const [projectFilter, setProjectFilter] = useState("all");
+  const [roleFilter, setRoleFilter] = useState("all");
   const [selectedUser, setSelectedUser] = useState<any | null>(null);
   const [editUser, setEditUser] = useState<any | null>(null);
   const [isViewOpen, setIsViewOpen] = useState(false);
@@ -54,7 +70,10 @@ export function TeamContent({
   const [isCreating, setIsCreating] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
 
   // Edit form state
   const [formName, setFormName] = useState("");
@@ -67,33 +86,57 @@ export function TeamContent({
 
   const isHR = currentUser.role === "hr";
 
-  function getUserStatus(userId: string) {
-    const leave = todayLeaves.find((l) => l.user_id === userId);
-    if (!leave) return { label: "In Office", type: null };
-    const config = LEAVE_TYPES[leave.leave_type as keyof typeof LEAVE_TYPES];
-    return { label: config?.label || leave.leave_type, type: leave.leave_type, cssVar: config?.cssVar };
-  }
+  // Summary stats
+  const deptCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    users.forEach((u) => {
+      const dept = u.department?.name || "No Department";
+      counts[dept] = (counts[dept] || 0) + 1;
+    });
+    return Object.entries(counts).sort(([a], [b]) => a.localeCompare(b));
+  }, [users]);
 
-  const filtered = users.filter((u) => {
-    const matchesSearch =
-      u.name.toLowerCase().includes(search.toLowerCase()) ||
-      (u.department?.name || "").toLowerCase().includes(search.toLowerCase());
+  // Get projects for a user
+  const getUserProjects = (userId: string) => {
+    return projects.filter((p: any) =>
+      p.project_members?.some((pm: any) => pm.user_id === userId)
+    );
+  };
 
-    const status = getUserStatus(u.id);
-    const matchesStatus =
-      statusFilter === "all" ||
-      (statusFilter === "in-office" && !status.type) ||
-      (statusFilter === "wfh" && status.type === "WFH") ||
-      (statusFilter === "on-leave" && status.type && status.type !== "WFH");
+  const filtered = useMemo(() => {
+    return users.filter((u) => {
+      const matchesSearch =
+        u.name.toLowerCase().includes(search.toLowerCase()) ||
+        (u.department?.name || "").toLowerCase().includes(search.toLowerCase());
 
-    const matchesProject =
-      projectFilter === "all" ||
-      projects
-        .find((p: any) => p.id === projectFilter)
-        ?.project_members?.some((pm: any) => pm.user_id === u.id);
+      const matchesDept =
+        deptFilter === "all" || u.department?.id === deptFilter;
 
-    return matchesSearch && matchesStatus && matchesProject;
-  });
+      const matchesProject =
+        projectFilter === "all" ||
+        projects
+          .find((p: any) => p.id === projectFilter)
+          ?.project_members?.some((pm: any) => pm.user_id === u.id);
+
+      const matchesRole = roleFilter === "all" || u.role === roleFilter;
+
+      return matchesSearch && matchesDept && matchesProject && matchesRole;
+    });
+  }, [users, search, deptFilter, projectFilter, roleFilter, projects]);
+
+  // Upcoming absences (exclude WFH)
+  const upcomingAbsenceRows = useMemo(() => {
+    return upcomingLeaves
+      .filter((l) => l.leave_type !== "WFH")
+      .map((l) => {
+        const user = users.find((u) => u.id === l.user_id);
+        return {
+          ...l,
+          userName: l.user?.name || user?.name || "Unknown",
+          deptName: user?.department?.name || "—",
+        };
+      });
+  }, [upcomingLeaves, users]);
 
   function openView(u: any) {
     setSelectedUser(u);
@@ -200,6 +243,51 @@ export function TeamContent({
 
   return (
     <div className="space-y-6">
+      {/* Summary Stats */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <Card>
+          <CardContent className="flex items-center gap-3 p-4">
+            <div className="rounded-lg bg-primary/10 p-2">
+              <Users className="h-5 w-5 text-primary" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold">{users.length}</p>
+              <p className="text-xs text-muted-foreground">Total Members</p>
+            </div>
+          </CardContent>
+        </Card>
+        {deptCounts.slice(0, 2).map(([dept, count]) => (
+          <Card key={dept}>
+            <CardContent className="flex items-center gap-3 p-4">
+              <div className="rounded-lg bg-blue-500/10 p-2">
+                <Building2 className="h-5 w-5 text-blue-500" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold">{count}</p>
+                <p className="text-xs text-muted-foreground truncate">
+                  {dept}
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+        <Card>
+          <CardContent className="flex items-center gap-3 p-4">
+            <div className="rounded-lg bg-orange-500/10 p-2">
+              <CalendarClock className="h-5 w-5 text-orange-500" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold">
+                {upcomingAbsenceRows.length}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Upcoming Absences
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
       {/* Filters */}
       <div className="flex flex-wrap gap-3 items-center">
         <div className="relative flex-1 min-w-[200px] max-w-sm">
@@ -211,15 +299,17 @@ export function TeamContent({
             className="pl-9"
           />
         </div>
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-[140px]">
-            <SelectValue />
+        <Select value={deptFilter} onValueChange={setDeptFilter}>
+          <SelectTrigger className="w-[160px]">
+            <SelectValue placeholder="Department" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All</SelectItem>
-            <SelectItem value="in-office">In Office</SelectItem>
-            <SelectItem value="wfh">WFH</SelectItem>
-            <SelectItem value="on-leave">On Leave</SelectItem>
+            <SelectItem value="all">All Departments</SelectItem>
+            {departments.map((d) => (
+              <SelectItem key={d.id} value={d.id}>
+                {d.name}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
         <Select value={projectFilter} onValueChange={setProjectFilter}>
@@ -235,6 +325,17 @@ export function TeamContent({
             ))}
           </SelectContent>
         </Select>
+        <Select value={roleFilter} onValueChange={setRoleFilter}>
+          <SelectTrigger className="w-[140px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Roles</SelectItem>
+            <SelectItem value="member">Member</SelectItem>
+            <SelectItem value="leader">Leader</SelectItem>
+            <SelectItem value="hr">HR</SelectItem>
+          </SelectContent>
+        </Select>
         {isHR && (
           <Button onClick={openCreate} className="gap-1.5">
             <Plus className="h-4 w-4" />
@@ -246,7 +347,7 @@ export function TeamContent({
       {/* User Grid */}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {filtered.map((u) => {
-          const status = getUserStatus(u.id);
+          const userProjects = getUserProjects(u.id);
           return (
             <Card
               key={u.id}
@@ -263,29 +364,38 @@ export function TeamContent({
                     <p className="text-xs text-muted-foreground truncate">
                       {u.department?.name || "No Dept"}
                     </p>
-                    <div className="flex items-center gap-1.5 mt-1.5">
-                      <Badge variant="secondary" className="text-[10px] capitalize">
+                    <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                      <Badge
+                        variant="secondary"
+                        className="text-[10px] capitalize"
+                      >
                         {u.role}
                       </Badge>
-                      <Badge
-                        className="text-[10px]"
-                        style={
-                          status.type
-                            ? {
-                                backgroundColor: `hsl(var(${status.cssVar}) / 0.15)`,
-                                color: `hsl(var(${status.cssVar}))`,
-                                borderColor: "transparent",
-                              }
-                            : {
-                                backgroundColor: "hsl(var(--status-approved) / 0.15)",
-                                color: "hsl(var(--status-approved))",
-                                borderColor: "transparent",
-                              }
-                        }
-                      >
-                        {status.label}
+                      <Badge variant="outline" className="text-[10px]">
+                        {u.leave_balance} days left
                       </Badge>
                     </div>
+                    {userProjects.length > 0 && (
+                      <div className="flex gap-1 mt-1.5 flex-wrap">
+                        {userProjects.slice(0, 2).map((p: any) => (
+                          <Badge
+                            key={p.id}
+                            variant="outline"
+                            className="text-[9px] text-muted-foreground"
+                          >
+                            {p.name}
+                          </Badge>
+                        ))}
+                        {userProjects.length > 2 && (
+                          <Badge
+                            variant="outline"
+                            className="text-[9px] text-muted-foreground"
+                          >
+                            +{userProjects.length - 2}
+                          </Badge>
+                        )}
+                      </div>
+                    )}
                   </div>
                   {isHR && (
                     <Button
@@ -307,6 +417,82 @@ export function TeamContent({
         })}
       </div>
 
+      {filtered.length === 0 && (
+        <p className="text-center text-sm text-muted-foreground py-8">
+          No team members match the current filters.
+        </p>
+      )}
+
+      {/* Upcoming Absences */}
+      {upcomingAbsenceRows.length > 0 && (
+        <div className="space-y-3">
+          <h3 className="text-sm font-semibold flex items-center gap-2">
+            <CalendarClock className="h-4 w-4 text-muted-foreground" />
+            Upcoming Absences (Next 7 Days)
+          </h3>
+          <Card>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b text-left">
+                    <th className="p-3 font-medium text-muted-foreground">
+                      Name
+                    </th>
+                    <th className="p-3 font-medium text-muted-foreground">
+                      Date
+                    </th>
+                    <th className="p-3 font-medium text-muted-foreground">
+                      Type
+                    </th>
+                    <th className="p-3 font-medium text-muted-foreground">
+                      Department
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {upcomingAbsenceRows.map((row) => {
+                    const config =
+                      LEAVE_TYPES[
+                        row.leave_type as keyof typeof LEAVE_TYPES
+                      ];
+                    return (
+                      <tr key={row.id} className="border-b last:border-0">
+                        <td className="p-3 font-medium">{row.userName}</td>
+                        <td className="p-3 text-muted-foreground">
+                          {format(
+                            new Date(row.leave_date + "T00:00:00"),
+                            "EEE, MMM d"
+                          )}
+                        </td>
+                        <td className="p-3">
+                          <Badge
+                            className="text-[10px]"
+                            style={
+                              config?.cssVar
+                                ? {
+                                    backgroundColor: `hsl(var(${config.cssVar}) / 0.15)`,
+                                    color: `hsl(var(${config.cssVar}))`,
+                                    borderColor: "transparent",
+                                  }
+                                : undefined
+                            }
+                          >
+                            {config?.label || row.leave_type}
+                          </Badge>
+                        </td>
+                        <td className="p-3 text-muted-foreground">
+                          {row.deptName}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        </div>
+      )}
+
       {/* View Dialog */}
       <Dialog open={isViewOpen} onOpenChange={setIsViewOpen}>
         <DialogContent>
@@ -320,22 +506,32 @@ export function TeamContent({
                   {getInitials(selectedUser.name)}
                 </div>
                 <div>
-                  <p className="text-lg font-semibold">{selectedUser.name}</p>
-                  <p className="text-sm text-muted-foreground">{selectedUser.email}</p>
+                  <p className="text-lg font-semibold">
+                    {selectedUser.name}
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    {selectedUser.email}
+                  </p>
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <div>
                   <p className="text-muted-foreground">Role</p>
-                  <p className="font-medium capitalize">{selectedUser.role}</p>
+                  <p className="font-medium capitalize">
+                    {selectedUser.role}
+                  </p>
                 </div>
                 <div>
                   <p className="text-muted-foreground">Department</p>
-                  <p className="font-medium">{selectedUser.department?.name || "—"}</p>
+                  <p className="font-medium">
+                    {selectedUser.department?.name || "\u2014"}
+                  </p>
                 </div>
                 <div>
                   <p className="text-muted-foreground">Leave Balance</p>
-                  <p className="font-medium">{selectedUser.leave_balance} days</p>
+                  <p className="font-medium">
+                    {selectedUser.leave_balance} days
+                  </p>
                 </div>
                 <div>
                   <p className="text-muted-foreground">Projects</p>
@@ -347,7 +543,7 @@ export function TeamContent({
                         )
                       )
                       .map((p: any) => p.name)
-                      .join(", ") || "—"}
+                      .join(", ") || "\u2014"}
                   </p>
                 </div>
               </div>
@@ -358,7 +554,10 @@ export function TeamContent({
                     className="w-full gap-2"
                     onClick={() => {
                       setIsViewOpen(false);
-                      setDeleteTarget({ id: selectedUser.id, name: selectedUser.name });
+                      setDeleteTarget({
+                        id: selectedUser.id,
+                        name: selectedUser.name,
+                      });
                     }}
                   >
                     <Trash2 className="h-4 w-4" />
@@ -395,12 +594,14 @@ export function TeamContent({
                   {getInitials(deleteTarget.name)}
                 </div>
                 <div>
-                  <p className="text-sm font-semibold">{deleteTarget.name}</p>
+                  <p className="text-sm font-semibold">
+                    {deleteTarget.name}
+                  </p>
                 </div>
               </div>
               <p className="text-sm text-muted-foreground">
-                This will permanently delete this member&apos;s account and all
-                associated data including:
+                This will permanently delete this member&apos;s account and
+                all associated data including:
               </p>
               <ul className="text-sm text-muted-foreground space-y-1 ml-4 list-disc">
                 <li>Leave requests and history</li>
@@ -446,21 +647,35 @@ export function TeamContent({
           <div className="space-y-4 py-2">
             <div className="space-y-2">
               <Label>Name</Label>
-              <Input value={formName} onChange={(e) => setFormName(e.target.value)} />
+              <Input
+                value={formName}
+                onChange={(e) => setFormName(e.target.value)}
+              />
             </div>
             <div className="space-y-2">
               <Label>Username</Label>
-              <Input value={formUsername} onChange={(e) => setFormUsername(e.target.value)} />
+              <Input
+                value={formUsername}
+                onChange={(e) => setFormUsername(e.target.value)}
+              />
             </div>
             {isCreating && (
               <>
                 <div className="space-y-2">
                   <Label>Email</Label>
-                  <Input type="email" value={formEmail} onChange={(e) => setFormEmail(e.target.value)} />
+                  <Input
+                    type="email"
+                    value={formEmail}
+                    onChange={(e) => setFormEmail(e.target.value)}
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label>Password</Label>
-                  <Input type="password" value={formPassword} onChange={(e) => setFormPassword(e.target.value)} />
+                  <Input
+                    type="password"
+                    value={formPassword}
+                    onChange={(e) => setFormPassword(e.target.value)}
+                  />
                 </div>
               </>
             )}

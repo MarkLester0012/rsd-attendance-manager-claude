@@ -17,11 +17,17 @@ export default async function AttendancePage() {
     .eq("leave_date", today)
     .eq("status", "approved");
 
+  const { data: projects } = await supabase
+    .from("projects")
+    .select("*, project_members(user_id)")
+    .order("name");
+
   return (
     <AttendanceContent
       users={users || []}
       initialLeaves={todayLeaves || []}
       initialDate={today}
+      projects={projects || []}
     />
   );
 }

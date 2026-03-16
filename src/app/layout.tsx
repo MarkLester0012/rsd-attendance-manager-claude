@@ -12,7 +12,7 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: "RSD Attendance Manager",
   description:
-    "Attendance and leave management system for Ring Systems Development",
+    "Attendance and leave management system for Ring System Development",
   icons: {
     icon: [
       { url: "/rsd-icon-32.png", sizes: "32x32", type: "image/png" },

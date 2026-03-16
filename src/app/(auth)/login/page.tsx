@@ -40,7 +40,7 @@ export default function LoginPage() {
           <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center overflow-hidden rounded-2xl bg-primary shadow-lg shadow-primary/25">
             <Image
               src="/logo.png"
-              alt="Ring Systems Development Logo"
+              alt="Ring System Development Logo"
               width={64}
               height={64}
               className="h-full w-full object-cover"
@@ -48,7 +48,7 @@ export default function LoginPage() {
             />
           </div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">
-            Ring Systems Development
+            Ring System Development
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Attendance Manager
@@ -70,7 +70,7 @@ export default function LoginPage() {
 
         {/* Footer */}
         <p className="mt-6 text-center text-xs text-muted-foreground/60">
-          &copy; {new Date().getFullYear()} Ring Systems Development. All rights
+          &copy; {new Date().getFullYear()} Ring System Development. All rights
           reserved.
         </p>
       </div>
