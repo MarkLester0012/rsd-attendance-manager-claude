@@ -84,8 +84,10 @@ export default async function DashboardPage() {
   const wfhUsed =
     wfhThisMonth?.reduce((sum, l) => sum + l.duration_value, 0) || 0;
 
-  const inOfficeCount =
-    (totalUsers || 0) - (todayLeaves?.length || 0);
+  const actualAbsent = todayLeaves?.filter(
+    (l) => !["WFH", "NW", "RGA"].includes(l.leave_type)
+  ).length || 0;
+  const inOfficeCount = (totalUsers || 0) - actualAbsent;
 
   return (
     <DashboardContent

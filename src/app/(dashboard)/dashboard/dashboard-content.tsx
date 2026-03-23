@@ -30,7 +30,7 @@ import {
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { LEAVE_TYPES } from "@/lib/constants/leave-types";
+import { LEAVE_TYPES, NON_DEDUCTIBLE_TYPES } from "@/lib/constants/leave-types";
 import type { User, LeaveEntry, Announcement, Holiday } from "@/lib/types";
 
 interface DashboardContentProps {
@@ -55,7 +55,7 @@ export function DashboardContent({
   nextLeave,
 }: DashboardContentProps) {
   const totalUsed = userLeaves
-    .filter((l) => l.leave_type !== "WFH")
+    .filter((l) => !NON_DEDUCTIBLE_TYPES.includes(l.leave_type))
     .reduce((sum, l) => sum + l.duration_value, 0);
 
   // Monthly leave data for bar chart
@@ -421,9 +421,13 @@ export function DashboardContent({
                           >
                             Tomorrow
                           </Badge>
+                        ) : daysUntil < 0 ? (
+                          <span className="text-xs text-muted-foreground">
+                            {Math.abs(daysUntil)} day{Math.abs(daysUntil) !== 1 ? "s" : ""} ago
+                          </span>
                         ) : (
                           <span className="text-xs text-muted-foreground">
-                            in {daysUntil} days
+                            in {daysUntil} day{daysUntil !== 1 ? "s" : ""}
                           </span>
                         )}
                       </div>

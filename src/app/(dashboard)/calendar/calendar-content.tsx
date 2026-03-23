@@ -36,7 +36,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { LEAVE_TYPES, WFH_DAILY_GLOBAL_CAP } from "@/lib/constants/leave-types";
+import { LEAVE_TYPES, NON_DEDUCTIBLE_TYPES, WFH_DAILY_GLOBAL_CAP } from "@/lib/constants/leave-types";
 import { cn } from "@/lib/utils";
 import type { User, LeaveEntry, Holiday } from "@/lib/types";
 
@@ -193,8 +193,8 @@ export function CalendarContent({
     }
   };
 
-  // Calendar stats — exclude WFH from leave totals, use duration_value
-  const nonWfhLeaves = leaves.filter((l) => l.leave_type !== "WFH");
+  // Calendar stats — exclude non-deductible types (WFH, NW, RGA) from leave totals
+  const nonWfhLeaves = leaves.filter((l) => !NON_DEDUCTIBLE_TYPES.includes(l.leave_type));
   const totalLeaveDays = nonWfhLeaves.reduce(
     (sum, l) => sum + l.duration_value,
     0

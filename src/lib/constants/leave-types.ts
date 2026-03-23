@@ -66,7 +66,7 @@ export const LEAVE_TYPES: Record<LeaveTypeCode, LeaveTypeConfig> = {
     code: "NW",
     label: "No Work",
     requiresApproval: false,
-    deductsBalance: true,
+    deductsBalance: false,
     allowHalfDay: false,
     requiresReason: false,
     colorClass: "leave-nw",
@@ -76,7 +76,7 @@ export const LEAVE_TYPES: Record<LeaveTypeCode, LeaveTypeConfig> = {
     code: "RGA",
     label: "RGA Office",
     requiresApproval: false,
-    deductsBalance: true,
+    deductsBalance: false,
     allowHalfDay: false,
     requiresReason: false,
     colorClass: "leave-rga",
@@ -122,4 +122,7 @@ export const AUTO_APPROVED_TYPES: LeaveTypeCode[] = [
   "AB",
   "WFH",
 ];
+export const NON_DEDUCTIBLE_TYPES: LeaveTypeCode[] = Object.values(LEAVE_TYPES)
+  .filter((t) => !t.deductsBalance)
+  .map((t) => t.code);
 export const HALF_DAY_TYPES: LeaveTypeCode[] = ["SL", "VL", "WFH"];

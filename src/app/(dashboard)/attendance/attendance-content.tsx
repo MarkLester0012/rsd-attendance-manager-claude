@@ -35,7 +35,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { LEAVE_TYPES } from "@/lib/constants/leave-types";
+import { LEAVE_TYPES, NON_DEDUCTIBLE_TYPES } from "@/lib/constants/leave-types";
 import { getInitials, cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
 import type { User, LeaveEntry } from "@/lib/types";
@@ -191,9 +191,11 @@ export function AttendanceContent({
   }, [users]);
 
   // Unfiltered totals for summary counters (day view only)
+  // NW and RGA are not real leaves — exclude from on-leave count
+  const actualLeaves = leaves.filter((l) => !NON_DEDUCTIBLE_TYPES.includes(l.leave_type));
   const wfhCount = leaves.filter((l) => l.leave_type === "WFH").length;
-  const onLeaveCount = leaves.filter((l) => l.leave_type !== "WFH").length;
-  const inOfficeCount = users.length - leaves.length;
+  const onLeaveCount = actualLeaves.filter((l) => l.leave_type !== "WFH").length;
+  const inOfficeCount = users.length - actualLeaves.length;
 
   // Filtered users — in day view, status filter uses day leaves; in week view, no status filter
   const filtered = useMemo(() => {
@@ -214,12 +216,14 @@ export function AttendanceContent({
       // Status filter only applies in day view
       if (viewMode === "day" && statusFilter !== "all") {
         const userStatus = getStatusForUser(u.id);
+        const isNonLeaveType = userStatus.type ? NON_DEDUCTIBLE_TYPES.includes(userStatus.type) && userStatus.type !== "WFH" : false;
         const matchesStatus =
-          (statusFilter === "in-office" && !userStatus.type) ||
+          (statusFilter === "in-office" && (!userStatus.type || isNonLeaveType)) ||
           (statusFilter === "wfh" && userStatus.type === "WFH") ||
           (statusFilter === "on-leave" &&
             userStatus.type &&
-            userStatus.type !== "WFH");
+            userStatus.type !== "WFH" &&
+            !isNonLeaveType);
         if (!matchesStatus) return false;
       }
 
@@ -260,14 +264,17 @@ export function AttendanceContent({
   };
 
   const getGroupCounts = (groupUsers: typeof users) => {
+    const groupActualLeaves = leaves.filter(
+      (l) => !NON_DEDUCTIBLE_TYPES.includes(l.leave_type) || l.leave_type === "WFH"
+    );
     const inOffice = groupUsers.filter(
-      (u) => !leaves.find((l) => l.user_id === u.id)
+      (u) => !groupActualLeaves.find((l) => l.user_id === u.id)
     ).length;
     const wfh = groupUsers.filter((u) =>
-      leaves.find((l) => l.user_id === u.id && l.leave_type === "WFH")
+      groupActualLeaves.find((l) => l.user_id === u.id && l.leave_type === "WFH")
     ).length;
     const onLeave = groupUsers.filter((u) =>
-      leaves.find((l) => l.user_id === u.id && l.leave_type !== "WFH")
+      groupActualLeaves.find((l) => l.user_id === u.id && l.leave_type !== "WFH")
     ).length;
     return { inOffice, wfh, onLeave };
   };

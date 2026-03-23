@@ -27,6 +27,7 @@ import {
   LEAVE_TYPES,
   LEAVE_TYPE_LIST,
   HALF_DAY_TYPES,
+  NON_DEDUCTIBLE_TYPES,
   WFH_MONTHLY_CAP,
   WFH_DAILY_GLOBAL_CAP,
 } from "@/lib/constants/leave-types";
@@ -162,13 +163,16 @@ export function LeaveModal({
       }
 
       // Balance check for deductible types (HR has unlimited balance — LEAV-14)
-      if (config.deductsBalance && leaveType !== "WFH" && user.role !== "hr") {
-        const { data: approvedLeaves } = await supabase
+      if (config.deductsBalance && user.role !== "hr") {
+        let query = supabase
           .from("leaves")
           .select("duration_value")
           .eq("user_id", user.id)
-          .eq("status", "approved")
-          .neq("leave_type", "WFH");
+          .eq("status", "approved");
+        for (const t of NON_DEDUCTIBLE_TYPES) {
+          query = query.neq("leave_type", t);
+        }
+        const { data: approvedLeaves } = await query;
 
         const totalUsed =
           approvedLeaves?.reduce((sum, l) => sum + l.duration_value, 0) || 0;
