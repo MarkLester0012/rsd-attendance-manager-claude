@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { format } from "date-fns";
 import {
   Search,
   Plus,
@@ -11,7 +10,6 @@ import {
   AlertTriangle,
   Users,
   Building2,
-  CalendarClock,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -36,19 +34,14 @@ import {
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { registerUser, deleteUser } from "./actions";
-import { LEAVE_TYPES } from "@/lib/constants/leave-types";
 import { getInitials } from "@/lib/utils";
-import type { User, LeaveEntry, Department } from "@/lib/types";
-
-interface UpcomingLeave extends Omit<LeaveEntry, "user"> {
-  user?: { name: string; department_id: string };
-}
+import type { User, Department } from "@/lib/types";
 
 interface TeamContentProps {
   currentUser: User;
   users: (User & { department?: Department })[];
   departments: Department[];
-  upcomingLeaves: UpcomingLeave[];
+  usedLeavesMap: Record<string, number>;
   projects: any[];
 }
 
@@ -56,7 +49,7 @@ export function TeamContent({
   currentUser,
   users,
   departments,
-  upcomingLeaves,
+  usedLeavesMap,
   projects,
 }: TeamContentProps) {
   const [search, setSearch] = useState("");
@@ -123,20 +116,6 @@ export function TeamContent({
       return matchesSearch && matchesDept && matchesProject && matchesRole;
     });
   }, [users, search, deptFilter, projectFilter, roleFilter, projects]);
-
-  // Upcoming absences (exclude WFH)
-  const upcomingAbsenceRows = useMemo(() => {
-    return upcomingLeaves
-      .filter((l) => l.leave_type !== "WFH")
-      .map((l) => {
-        const user = users.find((u) => u.id === l.user_id);
-        return {
-          ...l,
-          userName: l.user?.name || user?.name || "Unknown",
-          deptName: user?.department?.name || "—",
-        };
-      });
-  }, [upcomingLeaves, users]);
 
   function openView(u: any) {
     setSelectedUser(u);
@@ -243,12 +222,12 @@ export function TeamContent({
 
   return (
     <div className="space-y-6">
-      {/* Summary Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* Summary Stats — 2 rows × 3 columns, Total top-left */}
+      <div className="grid grid-cols-3 gap-4">
         <Card>
           <CardContent className="flex items-center gap-3 p-4">
-            <div className="rounded-lg bg-primary/10 p-2">
-              <Users className="h-5 w-5 text-primary" />
+            <div className="rounded-lg bg-primary/10 p-3">
+              <Users className="h-8 w-8 text-primary" />
             </div>
             <div>
               <p className="text-2xl font-bold">{users.length}</p>
@@ -256,36 +235,32 @@ export function TeamContent({
             </div>
           </CardContent>
         </Card>
-        {deptCounts.slice(0, 2).map(([dept, count]) => (
-          <Card key={dept}>
-            <CardContent className="flex items-center gap-3 p-4">
-              <div className="rounded-lg bg-blue-500/10 p-2">
-                <Building2 className="h-5 w-5 text-blue-500" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold">{count}</p>
-                <p className="text-xs text-muted-foreground truncate">
-                  {dept}
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-        <Card>
-          <CardContent className="flex items-center gap-3 p-4">
-            <div className="rounded-lg bg-orange-500/10 p-2">
-              <CalendarClock className="h-5 w-5 text-orange-500" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold">
-                {upcomingAbsenceRows.length}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                Upcoming Absences
-              </p>
-            </div>
-          </CardContent>
-        </Card>
+        {deptCounts.map(([dept, count], i) => {
+          const colors = [
+            { bg: "bg-blue-500/10", text: "text-blue-500" },
+            { bg: "bg-emerald-500/10", text: "text-emerald-500" },
+            { bg: "bg-amber-500/10", text: "text-amber-500" },
+            { bg: "bg-violet-500/10", text: "text-violet-500" },
+            { bg: "bg-rose-500/10", text: "text-rose-500" },
+            { bg: "bg-cyan-500/10", text: "text-cyan-500" },
+          ];
+          const color = colors[i % colors.length];
+          return (
+            <Card key={dept}>
+              <CardContent className="flex items-center gap-3 p-4">
+                <div className={`rounded-lg ${color.bg} p-3`}>
+                  <Building2 className={`h-8 w-8 ${color.text}`} />
+                </div>
+                <div>
+                  <p className="text-2xl font-bold">{count}</p>
+                  <p className="text-xs text-muted-foreground truncate">
+                    {dept}
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })}
       </div>
 
       {/* Filters */}
@@ -348,6 +323,8 @@ export function TeamContent({
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {filtered.map((u) => {
           const userProjects = getUserProjects(u.id);
+          const used = usedLeavesMap[u.id] || 0;
+          const remaining = u.leave_balance - used;
           return (
             <Card
               key={u.id}
@@ -371,8 +348,11 @@ export function TeamContent({
                       >
                         {u.role}
                       </Badge>
-                      <Badge variant="outline" className="text-[10px]">
-                        {u.leave_balance} days left
+                      <Badge
+                        variant="outline"
+                        className={`text-[10px] ${remaining <= 3 ? "border-red-500/50 text-red-500" : ""}`}
+                      >
+                        {remaining} / {u.leave_balance} days
                       </Badge>
                     </div>
                     {userProjects.length > 0 && (
@@ -423,76 +403,6 @@ export function TeamContent({
         </p>
       )}
 
-      {/* Upcoming Absences */}
-      {upcomingAbsenceRows.length > 0 && (
-        <div className="space-y-3">
-          <h3 className="text-sm font-semibold flex items-center gap-2">
-            <CalendarClock className="h-4 w-4 text-muted-foreground" />
-            Upcoming Absences (Next 7 Days)
-          </h3>
-          <Card>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b text-left">
-                    <th className="p-3 font-medium text-muted-foreground">
-                      Name
-                    </th>
-                    <th className="p-3 font-medium text-muted-foreground">
-                      Date
-                    </th>
-                    <th className="p-3 font-medium text-muted-foreground">
-                      Type
-                    </th>
-                    <th className="p-3 font-medium text-muted-foreground">
-                      Department
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {upcomingAbsenceRows.map((row) => {
-                    const config =
-                      LEAVE_TYPES[
-                        row.leave_type as keyof typeof LEAVE_TYPES
-                      ];
-                    return (
-                      <tr key={row.id} className="border-b last:border-0">
-                        <td className="p-3 font-medium">{row.userName}</td>
-                        <td className="p-3 text-muted-foreground">
-                          {format(
-                            new Date(row.leave_date + "T00:00:00"),
-                            "EEE, MMM d"
-                          )}
-                        </td>
-                        <td className="p-3">
-                          <Badge
-                            className="text-[10px]"
-                            style={
-                              config?.cssVar
-                                ? {
-                                    backgroundColor: `hsl(var(${config.cssVar}) / 0.15)`,
-                                    color: `hsl(var(${config.cssVar}))`,
-                                    borderColor: "transparent",
-                                  }
-                                : undefined
-                            }
-                          >
-                            {config?.label || row.leave_type}
-                          </Badge>
-                        </td>
-                        <td className="p-3 text-muted-foreground">
-                          {row.deptName}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </Card>
-        </div>
-      )}
-
       {/* View Dialog */}
       <Dialog open={isViewOpen} onOpenChange={setIsViewOpen}>
         <DialogContent>
@@ -530,7 +440,10 @@ export function TeamContent({
                 <div>
                   <p className="text-muted-foreground">Leave Balance</p>
                   <p className="font-medium">
-                    {selectedUser.leave_balance} days
+                    {selectedUser.leave_balance - (usedLeavesMap[selectedUser.id] || 0)} / {selectedUser.leave_balance} days
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {usedLeavesMap[selectedUser.id] || 0} used
                   </p>
                 </div>
                 <div>

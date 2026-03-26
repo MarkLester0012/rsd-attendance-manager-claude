@@ -8,6 +8,7 @@ import { useThemeStore } from "@/stores/theme-store";
 import { getNavItemsForRole, type NavItem } from "@/lib/constants/navigation";
 import { cn, getInitials } from "@/lib/utils";
 import type { User } from "@/lib/types";
+import { usePendingCount } from "@/hooks/use-pending-count";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
@@ -56,6 +57,11 @@ const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
 interface SidebarProps {
   user: User;
   pendingCount?: number;
+}
+
+interface SidebarInternalProps {
+  user: User;
+  livePendingCount: number;
 }
 
 function SidebarNavItem({
@@ -122,7 +128,7 @@ function SidebarNavItem({
   return content;
 }
 
-function SidebarContent({ user, pendingCount }: SidebarProps) {
+function SidebarContent({ user, livePendingCount: pendingCount }: SidebarInternalProps) {
   const pathname = usePathname();
   const router = useRouter();
   const { isCollapsed, toggle } = useSidebarStore();
@@ -302,8 +308,9 @@ function SidebarContent({ user, pendingCount }: SidebarProps) {
   );
 }
 
-export function Sidebar({ user, pendingCount }: SidebarProps) {
+export function Sidebar({ user, pendingCount = 0 }: SidebarProps) {
   const { isCollapsed, isMobileOpen, setMobileOpen } = useSidebarStore();
+  const livePendingCount = usePendingCount(pendingCount, user.role);
 
   return (
     <>
@@ -314,14 +321,14 @@ export function Sidebar({ user, pendingCount }: SidebarProps) {
           isCollapsed ? "w-[72px]" : "w-64"
         )}
       >
-        <SidebarContent user={user} pendingCount={pendingCount} />
+        <SidebarContent user={user} livePendingCount={livePendingCount} />
       </aside>
 
       {/* Mobile sidebar */}
       <Sheet open={isMobileOpen} onOpenChange={setMobileOpen}>
         <SheetContent side="left" className="w-64 p-0">
           <SheetTitle className="sr-only">Navigation Menu</SheetTitle>
-          <SidebarContent user={user} pendingCount={pendingCount} />
+          <SidebarContent user={user} livePendingCount={livePendingCount} />
         </SheetContent>
       </Sheet>
     </>
