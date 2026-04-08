@@ -113,4 +113,69 @@ export interface NavItem {
   roles: UserRole[];
   badge?: number;
   section: "main" | "management" | "general";
+  department?: string;
+}
+
+// Redmine Time Logger types
+export type TimeLogStatus = "draft" | "submitted" | "failed";
+
+export interface RedmineConfig {
+  id: string;
+  user_id: string;
+  redmine_url: string;
+  encrypted_api_key: string;
+  encryption_iv: string;
+  encryption_tag: string;
+  default_activity_id: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TimeLogEntry {
+  id: string;
+  user_id: string;
+  log_date: string;
+  issue_id: number;
+  project_name: string | null;
+  hours: number;
+  activity_id: number;
+  activity_name: string | null;
+  comment: string | null;
+  status: TimeLogStatus;
+  redmine_time_entry_id: number | null;
+  error_message: string | null;
+  custom_fields: Record<string, unknown> | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RedmineProjectField {
+  id: string;
+  user_id: string;
+  redmine_project_id: number;
+  redmine_project_name: string;
+  field_id: number;
+  field_name: string;
+  field_type: string;
+  possible_values: unknown[] | null;
+  is_required: boolean;
+  created_at: string;
+}
+
+export interface RedmineActivity {
+  id: number;
+  name: string;
+  is_default?: boolean;
+}
+
+export interface RedmineIssueDetails {
+  id: number;
+  subject: string;
+  project: { id: number; name: string };
+}
+
+export interface ParsedSlackEntry {
+  issueId: number;
+  percentage: number;
+  description: string;
 }

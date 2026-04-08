@@ -7,6 +7,7 @@ export interface NavItem {
   roles: UserRole[];
   section: "main" | "management" | "general";
   badgeKey?: string;
+  department?: string;
 }
 
 export const NAV_ITEMS: NavItem[] = [
@@ -36,6 +37,13 @@ export const NAV_ITEMS: NavItem[] = [
     label: "My Leaves",
     href: "/my-leaves",
     icon: "FileText",
+    roles: ["member", "leader", "hr"],
+    section: "main",
+  },
+  {
+    label: "Time Logger",
+    href: "/time-logger",
+    icon: "Timer",
     roles: ["member", "leader", "hr"],
     section: "main",
   },

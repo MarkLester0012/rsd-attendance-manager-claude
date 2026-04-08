@@ -24,7 +24,14 @@
       "Bash(npx shadcn@latest:*)",
       "mcp__plugin_context7_context7__resolve-library-id",
       "mcp__plugin_context7_context7__query-docs",
-      "Bash(npx next:*)"
+      "Bash(npx next:*)",
+      "Bash(ls:*)",
+      "Bash(find /c/Users/RSD/Desktop/Vibe Coding Projects/rsd-attendance-manager-claude -type f \\\\\\(-name .env* -o -name *.env \\\\\\))",
+      "Bash(grep -r \"rpc\\\\|raw\\\\|.from.*where\" /c/Users/RSD/Desktop/Vibe Coding Projects/rsd-attendance-manager-claude/src --include=*.ts --include=*.tsx)",
+      "Bash(grep -r \"password123\\\\|admin@rsd\\\\|password\" /c/Users/RSD/Desktop/Vibe Coding Projects/rsd-attendance-manager-claude/src --include=*.ts --include=*.tsx)",
+      "Bash(grep -r eyJhbGc . --include=*.ts --include=*.tsx --include=*.js --include=*.mjs --exclude-dir=node_modules)",
+      "Bash(find . -name .env.example -o -name .env.sample -o -name *.env.example)",
+      "Bash(xargs grep:*)"
     ],
     "deny": [],
     "ask": []

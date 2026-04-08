@@ -32,6 +32,7 @@ import {
   BarChart3,
   Lightbulb,
   UserCircle,
+  Timer,
   ChevronLeft,
   ChevronRight,
   LogOut,
@@ -52,6 +53,7 @@ const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
   BarChart3,
   Lightbulb,
   UserCircle,
+  Timer,
 };
 
 interface SidebarProps {
@@ -134,7 +136,9 @@ function SidebarContent({ user, livePendingCount: pendingCount }: SidebarInterna
   const { isCollapsed, toggle } = useSidebarStore();
   const { theme, toggleTheme } = useThemeStore();
 
-  const navItems = getNavItemsForRole(user.role);
+  const navItems = getNavItemsForRole(user.role).filter(
+    (item) => !item.department || item.department === user.department?.name
+  );
   const mainItems = navItems.filter((i) => i.section === "main");
   const managementItems = navItems.filter((i) => i.section === "management");
   const generalItems = navItems.filter((i) => i.section === "general");
