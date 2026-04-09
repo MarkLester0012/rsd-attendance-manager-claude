@@ -1,8 +1,9 @@
 import type { ParsedSlackEntry } from "@/lib/types";
 import { SLACK_TERMINATORS, EMOJI_SHORTCODE_REGEX } from "@/lib/constants/redmine";
 
-// Matches: #83323 - 100%, 83606 - 100%, #74937: In-Progress, 83746 - :ok:, 83175 - Done (...)
-const TICKET_PATTERN = /^\s*#?(\d{4,6})\s*[-:]\s*(.+)/;
+// Matches: #83323 - 100%, 83606 - 100%, #74937: In-Progress, 83746 - :ok:, 83175 - Done
+// Also: - #83323 - 100% (bullet), #83323 100% (no separator), 83323 Done (no # sign)
+const TICKET_PATTERN = /^\s*[-*•]?\s*#?(\d{4,6})\s*(?:[-:]\s*)?(.+)?/;
 
 function extractPercentage(statusText: string): number {
   const match = statusText.match(/(\d{1,3})%/);
@@ -58,7 +59,7 @@ export function parseSlackEOD(text: string): ParsedSlackEntry[] {
     const match = line.match(TICKET_PATTERN);
     if (match) {
       flushEntry();
-      const statusText = match[2].trim();
+      const statusText = (match[2] || "").trim();
       currentEntry = {
         issueId: parseInt(match[1], 10),
         percentage: extractPercentage(statusText),

@@ -18,7 +18,8 @@ import {
   submitToRedmine,
 } from "./actions";
 import type { User, TimeLogEntry, RedmineActivity, ParsedSlackEntry } from "@/lib/types";
-import { Settings, ClipboardPaste, Send, Save, Loader2 } from "lucide-react";
+import { BulkApplyDialog } from "@/components/time-logger/bulk-apply-dialog";
+import { Settings, ClipboardPaste, Send, Save, Loader2, Copy } from "lucide-react";
 
 interface TimeLoggerContentProps {
   currentUser: User;
@@ -53,6 +54,7 @@ export function TimeLoggerContent({
   const [hasConfig, setHasConfig] = useState(initialHasConfig);
   const [settingsOpen, setSettingsOpen] = useState(!initialHasConfig);
   const [pasteOpen, setPasteOpen] = useState(false);
+  const [bulkOpen, setBulkOpen] = useState(false);
   const [date, setDate] = useState(new Date(initialDate + "T00:00:00"));
   const [entries, setEntries] = useState<DraftEntry[]>(
     initialEntries.map(toEntryFromDB)
@@ -73,7 +75,7 @@ export function TimeLoggerContent({
   const [submitting, setSubmitting] = useState(false);
   const [loadingEntries, setLoadingEntries] = useState(false);
 
-  // Load activities on mount
+  // Load activities and sync with Redmine on mount
   useEffect(() => {
     if (hasConfig) {
       fetchActivities().then((result) => {
@@ -84,7 +86,36 @@ export function TimeLoggerContent({
           toast.error(`Activities: ${result.error}`);
         }
       });
+
+      // Sync with Redmine on mount to detect stale/deleted entries
+      const dateStr = format(date, "yyyy-MM-dd");
+      fetchExistingRedmineEntries(dateStr).then((redmineResult) => {
+        if (redmineResult.entries) {
+          const redmineIds = new Set(redmineResult.entries.map((e) => e.id));
+
+          // Remove local "submitted" entries whose redmine ID no longer exists
+          setEntries((prev) =>
+            prev.filter(
+              (e) =>
+                e.status !== "submitted" ||
+                !e.redmine_time_entry_id ||
+                redmineIds.has(e.redmine_time_entry_id)
+            )
+          );
+
+          // Set existing entries, filtering out ones we have locally
+          const localSubmittedIds = new Set(
+            entries
+              .filter((e) => e.redmine_time_entry_id)
+              .map((e) => e.redmine_time_entry_id)
+          );
+          setExistingRedmineEntries(
+            redmineResult.entries.filter((e) => !localSubmittedIds.has(e.id))
+          );
+        }
+      });
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasConfig]);
 
   // Load existing Redmine entries when date changes
@@ -177,6 +208,77 @@ export function TimeLoggerContent({
         }
         return updated;
       });
+    }
+  }
+
+  // Handle bulk apply across multiple dates — returns saved entry IDs
+  async function handleBulkApply(
+    entry: {
+      issue_id: number;
+      hours: number;
+      activity_id: number;
+      activity_name: string;
+      comment: string;
+    },
+    dates: string[]
+  ): Promise<string[]> {
+    const rows = dates.map((d) => ({
+      log_date: d,
+      issue_id: entry.issue_id,
+      hours: entry.hours,
+      activity_id: entry.activity_id,
+      activity_name: entry.activity_name,
+      comment: entry.comment,
+    }));
+
+    const result = await saveDraftEntries(rows);
+    if (result.error) {
+      toast.error(result.error);
+      return [];
+    }
+
+    toast.success(`Created draft entries for ${dates.length} dates`);
+
+    // If the current date is in the selection, reload entries for it
+    const currentDateStr = format(date, "yyyy-MM-dd");
+    if (dates.includes(currentDateStr) && result.entries) {
+      const newForToday = result.entries
+        .filter((e) => e.log_date === currentDateStr)
+        .map(toEntryFromDB);
+      setEntries((prev) => [...prev, ...newForToday]);
+    }
+
+    return result.entries?.map((e) => e.id) || [];
+  }
+
+  // Handle bulk submit to Redmine
+  async function handleBulkSubmit(entryIds: string[]) {
+    const result = await submitToRedmine(entryIds);
+
+    const successCount = result.results.filter((r) => r.success).length;
+    const failCount = result.results.filter((r) => !r.success).length;
+
+    // Update local entries for current date if any were submitted
+    const currentDateStr = format(date, "yyyy-MM-dd");
+    setEntries((prev) =>
+      prev.map((e) => {
+        const r = result.results.find((r) => r.entryId === e.id);
+        if (!r) return e;
+        return {
+          ...e,
+          status: r.success ? ("submitted" as const) : ("failed" as const),
+          redmine_time_entry_id: r.redmineId || e.redmine_time_entry_id,
+          error_message: r.error || null,
+        };
+      })
+    );
+
+    if (failCount === 0) {
+      toast.success(`Submitted ${successCount} entries to Redmine`);
+    } else {
+      toast.error(
+        `${successCount} succeeded, ${failCount} failed. Check errors and retry.`
+      );
     }
   }
 
@@ -362,6 +464,14 @@ export function TimeLoggerContent({
               <Button
                 variant="outline"
                 size="sm"
+                onClick={() => setBulkOpen(true)}
+              >
+                <Copy className="h-4 w-4 mr-2" />
+                Bulk Apply
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={() => setPasteOpen(true)}
               >
                 <ClipboardPaste className="h-4 w-4 mr-2" />
@@ -439,6 +549,14 @@ export function TimeLoggerContent({
         open={pasteOpen}
         onOpenChange={setPasteOpen}
         onEntriesParsed={handleParsedEntries}
+      />
+      <BulkApplyDialog
+        open={bulkOpen}
+        onOpenChange={setBulkOpen}
+        activities={activities}
+        defaultActivityId={defaultActivityId}
+        onBulkApply={handleBulkApply}
+        onBulkSubmit={handleBulkSubmit}
       />
     </div>
   );

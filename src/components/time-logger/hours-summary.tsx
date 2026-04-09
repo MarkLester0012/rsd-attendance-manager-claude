@@ -20,7 +20,7 @@ export function HoursSummary({
 
   return (
     <div className="flex items-center gap-6 rounded-lg border border-border/50 bg-card/50 backdrop-blur-sm px-4 py-3">
-      <div className="flex items-center gap-2">
+      <div className="flex items-baseline gap-2">
         <span className="text-sm text-muted-foreground">Total</span>
         <span
           className={cn(
