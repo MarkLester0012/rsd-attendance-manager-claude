@@ -156,7 +156,48 @@ export async function fetchExistingRedmineEntries(date: string): Promise<{
   return redmine.getTimeEntries(config, date);
 }
 
+// --- Holiday check ---
+
+export async function fetchHolidayForDate(
+  date: string
+): Promise<{
+  holiday: {
+    name: string;
+    observed_date: string;
+    original_date: string | null;
+    is_local: boolean;
+  } | null;
+}> {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("holidays")
+    .select("name, observed_date, original_date, is_local")
+    .eq("observed_date", date)
+    .maybeSingle();
+
+  return { holiday: data };
+}
+
 // --- Draft CRUD ---
+
+export async function fetchDraftEntries(
+  date: string
+): Promise<{ entries: TimeLogEntry[]; error?: string }> {
+  const user = await getAuthenticatedUser();
+  if (!user) return { entries: [], error: "Not authenticated" };
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("time_log_entries")
+    .select("*")
+    .eq("user_id", user.id)
+    .eq("log_date", date)
+    .in("status", ["draft", "failed"])
+    .order("created_at", { ascending: true });
+
+  if (error) return { entries: [], error: error.message };
+  return { entries: data || [] };
+}
 
 export async function saveDraftEntries(
   entries: Array<{

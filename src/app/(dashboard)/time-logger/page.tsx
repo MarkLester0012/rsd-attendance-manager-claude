@@ -24,13 +24,14 @@ export default async function TimeLoggerPage() {
     .eq("user_id", user.id)
     .single();
 
-  // Fetch today's draft/failed entries
+  // Fetch today's draft/failed entries only — Redmine API is source of truth for submitted
   const today = new Date().toISOString().split("T")[0];
   const { data: entries } = await supabase
     .from("time_log_entries")
     .select("*")
     .eq("user_id", user.id)
     .eq("log_date", today)
+    .in("status", ["draft", "failed"])
     .order("created_at", { ascending: true });
 
   return (

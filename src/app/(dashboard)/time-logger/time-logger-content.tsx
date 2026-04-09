@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { format } from "date-fns";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
@@ -14,12 +14,14 @@ import {
   fetchActivities,
   fetchIssueDetails,
   fetchExistingRedmineEntries,
+  fetchDraftEntries,
+  fetchHolidayForDate,
   saveDraftEntries,
   submitToRedmine,
 } from "./actions";
 import type { User, TimeLogEntry, RedmineActivity, ParsedSlackEntry } from "@/lib/types";
 import { BulkApplyDialog } from "@/components/time-logger/bulk-apply-dialog";
-import { Settings, ClipboardPaste, Send, Save, Loader2, Copy } from "lucide-react";
+import { Settings, ClipboardPaste, Send, Save, Loader2, Copy, PartyPopper } from "lucide-react";
 
 interface TimeLoggerContentProps {
   currentUser: User;
@@ -71,11 +73,17 @@ export function TimeLoggerContent({
       comments: string;
     }>
   >([]);
+  const [holiday, setHoliday] = useState<{
+    name: string;
+    observed_date: string;
+    original_date: string | null;
+    is_local: boolean;
+  } | null>(null);
   const [saving, setSaving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [loadingEntries, setLoadingEntries] = useState(false);
 
-  // Load activities and sync with Redmine on mount
+  // Load activities and Redmine entries on mount
   useEffect(() => {
     if (hasConfig) {
       fetchActivities().then((result) => {
@@ -87,69 +95,46 @@ export function TimeLoggerContent({
         }
       });
 
-      // Sync with Redmine on mount to detect stale/deleted entries
+      // Fetch Redmine entries and holiday for initial date (drafts already come from server)
       const dateStr = format(date, "yyyy-MM-dd");
       fetchExistingRedmineEntries(dateStr).then((redmineResult) => {
         if (redmineResult.entries) {
-          const redmineIds = new Set(redmineResult.entries.map((e) => e.id));
-
-          // Remove local "submitted" entries whose redmine ID no longer exists
-          setEntries((prev) =>
-            prev.filter(
-              (e) =>
-                e.status !== "submitted" ||
-                !e.redmine_time_entry_id ||
-                redmineIds.has(e.redmine_time_entry_id)
-            )
-          );
-
-          // Set existing entries, filtering out ones we have locally
-          const localSubmittedIds = new Set(
-            entries
-              .filter((e) => e.redmine_time_entry_id)
-              .map((e) => e.redmine_time_entry_id)
-          );
-          setExistingRedmineEntries(
-            redmineResult.entries.filter((e) => !localSubmittedIds.has(e.id))
-          );
+          setExistingRedmineEntries(redmineResult.entries);
         }
       });
+      fetchHolidayForDate(dateStr).then((result) => setHoliday(result.holiday));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasConfig]);
 
-  // Load existing Redmine entries when date changes
-  const loadDateEntries = useCallback(
-    async (newDate: Date) => {
-      if (!hasConfig) return;
-      setLoadingEntries(true);
-      const dateStr = format(newDate, "yyyy-MM-dd");
+  // Load both drafts from DB and submitted entries from Redmine API
+  async function loadDateEntries(newDate: Date) {
+    if (!hasConfig) return;
+    setLoadingEntries(true);
+    const dateStr = format(newDate, "yyyy-MM-dd");
 
-      const [redmineResult] = await Promise.all([
-        fetchExistingRedmineEntries(dateStr),
-      ]);
+    const [redmineResult, draftResult, holidayResult] = await Promise.all([
+      fetchExistingRedmineEntries(dateStr),
+      fetchDraftEntries(dateStr),
+      fetchHolidayForDate(dateStr),
+    ]);
 
-      if (redmineResult.entries) {
-        // Filter out entries that we already have locally as "submitted"
-        const localSubmittedIds = new Set(
-          entries
-            .filter((e) => e.redmine_time_entry_id)
-            .map((e) => e.redmine_time_entry_id)
-        );
-        setExistingRedmineEntries(
-          redmineResult.entries.filter((e) => !localSubmittedIds.has(e.id))
-        );
-      }
-      setLoadingEntries(false);
-    },
-    [hasConfig, entries]
-  );
+    if (redmineResult.entries) {
+      setExistingRedmineEntries(redmineResult.entries);
+    }
+    if (draftResult.entries) {
+      setEntries(draftResult.entries.map(toEntryFromDB));
+    }
+    setHoliday(holidayResult.holiday);
+    setLoadingEntries(false);
+  }
 
   // Handle date change
   async function handleDateChange(newDate: Date) {
     setDate(newDate);
     setEntries([]);
     setExistingRedmineEntries([]);
+    setHoliday(null);
     await loadDateEntries(newDate);
   }
 
@@ -504,6 +489,24 @@ export function TimeLoggerContent({
               </Button>
             </div>
           </div>
+
+          {/* Holiday banner */}
+          {holiday && (
+            <div className="flex items-center gap-3 rounded-lg border border-yellow-500/30 bg-yellow-500/5 px-4 py-3">
+              <PartyPopper className="h-5 w-5 text-yellow-400 shrink-0" />
+              <div className="text-sm">
+                <span className="font-medium text-yellow-300">{holiday.name}</span>
+                {holiday.original_date && holiday.original_date !== holiday.observed_date && (
+                  <span className="text-muted-foreground ml-2">
+                    (moved from {format(new Date(holiday.original_date + "T00:00:00"), "MMM d, yyyy")})
+                  </span>
+                )}
+                {holiday.is_local && (
+                  <span className="ml-2 text-xs text-muted-foreground">(Local Holiday)</span>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Hours summary */}
           <HoursSummary
