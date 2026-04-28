@@ -24,6 +24,8 @@ export interface User {
   role: UserRole;
   department_id: string;
   leave_balance: number;
+  slack_user_id?: string | null;
+  slack_team_id?: string | null;
   created_at: string;
   updated_at: string;
   department?: Department;
@@ -78,22 +80,46 @@ export interface ProjectMember {
   project?: Project;
 }
 
+export type VoteType = "like" | "dislike";
+
 export interface Suggestion {
   id: string;
   user_id: string;
   content: string;
   is_anonymous: boolean;
+  is_edited: boolean;
   created_at: string;
+  updated_at: string;
   user?: User;
-  upvote_count?: number;
-  has_upvoted?: boolean;
+  like_count?: number;
+  dislike_count?: number;
+  user_vote?: VoteType | null;
+  comment_count?: number;
+  comments?: SuggestionComment[];
 }
 
 export interface SuggestionUpvote {
   id: string;
   suggestion_id: string;
   user_id: string;
+  vote_type: VoteType;
   created_at: string;
+}
+
+export interface SuggestionComment {
+  id: string;
+  suggestion_id: string;
+  parent_id: string | null;
+  user_id: string;
+  content: string;
+  is_edited: boolean;
+  created_at: string;
+  updated_at: string;
+  user?: User;
+  like_count?: number;
+  dislike_count?: number;
+  user_vote?: VoteType | null;
+  replies?: SuggestionComment[];
 }
 
 export interface Announcement {

@@ -1,0 +1,41 @@
+{
+  "_comment": "Replace {APP_URL} with your actual URL (e.g. https://your-ngrok-url.ngrok.io or your production domain) before using.",
+  "display_information": {
+    "name": "RSD Time Logger",
+    "description": "Create Time Logger drafts from Slack EOD messages",
+    "background_color": "#000000"
+  },
+  "features": {
+    "bot_user": {
+      "display_name": "RSD Time Logger",
+      "always_online": false
+    },
+    "shortcuts": [
+      {
+        "name": "Log to Time-Logger",
+        "type": "message",
+        "callback_id": "log_eod_to_time_logger",
+        "description": "Create drafts in RSD Time-Logger from this EOD message"
+      }
+    ]
+  },
+  "oauth_config": {
+    "redirect_urls": [
+      "https://rsd-attendance-manager.vercel.app/api/slack/oauth/callback"
+    ],
+    "scopes": {
+      "bot": [
+        "commands"
+      ]
+    }
+  },
+  "settings": {
+    "interactivity": {
+      "is_enabled": true,
+      "request_url": "https://rsd-attendance-manager.vercel.app/api/slack/shortcut"
+    },
+    "org_deploy_enabled": false,
+    "socket_mode_enabled": false,
+    "token_rotation_enabled": false
+  }
+}

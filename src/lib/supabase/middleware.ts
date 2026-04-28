@@ -29,6 +29,11 @@ export async function updateSession(request: NextRequest) {
     }
   );
 
+  // Allow Slack webhook and OAuth routes without a session
+  if (request.nextUrl.pathname.startsWith("/api/slack/")) {
+    return NextResponse.next();
+  }
+
   const {
     data: { user },
   } = await supabase.auth.getUser();

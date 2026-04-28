@@ -160,6 +160,15 @@ export function SettingsDialog({
             </Button>
           </div>
         </form>
+
+        <div className="border-t border-white/10 pt-4">
+          <a
+            href="/settings/integrations/slack"
+            className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+          >
+            Slack Integration →
+          </a>
+        </div>
       </DialogContent>
     </Dialog>
   );

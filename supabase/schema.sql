@@ -85,16 +85,41 @@ create table public.suggestions (
   user_id uuid not null references public.users(id) on delete cascade,
   content text not null,
   is_anonymous boolean not null default false,
-  created_at timestamptz default now() not null
+  is_edited boolean not null default false,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null
 );
 
--- Suggestion Upvotes
+-- Suggestion Votes (like/dislike). Table name kept as "suggestion_upvotes" for continuity.
 create table public.suggestion_upvotes (
   id uuid default uuid_generate_v4() primary key,
   suggestion_id uuid not null references public.suggestions(id) on delete cascade,
   user_id uuid not null references public.users(id) on delete cascade,
+  vote_type text not null default 'like' check (vote_type in ('like', 'dislike')),
   created_at timestamptz default now() not null,
   unique(suggestion_id, user_id)
+);
+
+-- Suggestion Comments (replies use parent_id)
+create table public.suggestion_comments (
+  id uuid default uuid_generate_v4() primary key,
+  suggestion_id uuid not null references public.suggestions(id) on delete cascade,
+  parent_id uuid references public.suggestion_comments(id) on delete cascade,
+  user_id uuid not null references public.users(id) on delete cascade,
+  content text not null,
+  is_edited boolean not null default false,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null
+);
+
+-- Comment votes (like/dislike)
+create table public.suggestion_comment_votes (
+  id uuid default uuid_generate_v4() primary key,
+  comment_id uuid not null references public.suggestion_comments(id) on delete cascade,
+  user_id uuid not null references public.users(id) on delete cascade,
+  vote_type text not null default 'like' check (vote_type in ('like', 'dislike')),
+  created_at timestamptz default now() not null,
+  unique(comment_id, user_id)
 );
 
 -- Announcements
@@ -124,6 +149,10 @@ create index idx_project_members_project on public.project_members(project_id);
 create index idx_project_members_user on public.project_members(user_id);
 create index idx_suggestions_user on public.suggestions(user_id);
 create index idx_suggestion_upvotes_suggestion on public.suggestion_upvotes(suggestion_id);
+create index idx_suggestion_comments_suggestion on public.suggestion_comments(suggestion_id);
+create index idx_suggestion_comments_parent on public.suggestion_comments(parent_id);
+create index idx_suggestion_comments_user on public.suggestion_comments(user_id);
+create index idx_suggestion_comment_votes_comment on public.suggestion_comment_votes(comment_id);
 create index idx_announcements_author on public.announcements(author_id);
 
 -- ============================================
@@ -139,6 +168,8 @@ alter table public.projects enable row level security;
 alter table public.project_members enable row level security;
 alter table public.suggestions enable row level security;
 alter table public.suggestion_upvotes enable row level security;
+alter table public.suggestion_comments enable row level security;
+alter table public.suggestion_comment_votes enable row level security;
 alter table public.announcements enable row level security;
 
 -- Departments: all authenticated users can read
@@ -191,16 +222,46 @@ create policy "project_members_insert" on public.project_members for insert to a
 create policy "project_members_delete" on public.project_members for delete to authenticated
   using (exists (select 1 from public.users where auth_id = auth.uid() and role = 'leader'));
 
--- Suggestions: all can read, authenticated can insert, users manage own
+-- Suggestions: all can read, authenticated can insert, owner can edit, owner/HR can delete
 create policy "suggestions_select" on public.suggestions for select to authenticated using (true);
 create policy "suggestions_insert" on public.suggestions for insert to authenticated
   with check (user_id = (select id from public.users where auth_id = auth.uid()));
+create policy "suggestions_update" on public.suggestions for update to authenticated
+  using (user_id = (select id from public.users where auth_id = auth.uid()));
+create policy "suggestions_delete" on public.suggestions for delete to authenticated
+  using (
+    user_id = (select id from public.users where auth_id = auth.uid())
+    or exists (select 1 from public.users where auth_id = auth.uid() and role = 'hr')
+  );
 
--- Suggestion Upvotes: all can read, users manage own
+-- Suggestion Votes: all can read, users manage own
 create policy "upvotes_select" on public.suggestion_upvotes for select to authenticated using (true);
 create policy "upvotes_insert" on public.suggestion_upvotes for insert to authenticated
   with check (user_id = (select id from public.users where auth_id = auth.uid()));
+create policy "upvotes_update" on public.suggestion_upvotes for update to authenticated
+  using (user_id = (select id from public.users where auth_id = auth.uid()));
 create policy "upvotes_delete" on public.suggestion_upvotes for delete to authenticated
+  using (user_id = (select id from public.users where auth_id = auth.uid()));
+
+-- Suggestion Comments: all can read, users manage own, HR can delete any
+create policy "suggestion_comments_select" on public.suggestion_comments for select to authenticated using (true);
+create policy "suggestion_comments_insert" on public.suggestion_comments for insert to authenticated
+  with check (user_id = (select id from public.users where auth_id = auth.uid()));
+create policy "suggestion_comments_update" on public.suggestion_comments for update to authenticated
+  using (user_id = (select id from public.users where auth_id = auth.uid()));
+create policy "suggestion_comments_delete" on public.suggestion_comments for delete to authenticated
+  using (
+    user_id = (select id from public.users where auth_id = auth.uid())
+    or exists (select 1 from public.users where auth_id = auth.uid() and role = 'hr')
+  );
+
+-- Comment Votes: all can read, users manage own
+create policy "suggestion_comment_votes_select" on public.suggestion_comment_votes for select to authenticated using (true);
+create policy "suggestion_comment_votes_insert" on public.suggestion_comment_votes for insert to authenticated
+  with check (user_id = (select id from public.users where auth_id = auth.uid()));
+create policy "suggestion_comment_votes_update" on public.suggestion_comment_votes for update to authenticated
+  using (user_id = (select id from public.users where auth_id = auth.uid()));
+create policy "suggestion_comment_votes_delete" on public.suggestion_comment_votes for delete to authenticated
   using (user_id = (select id from public.users where auth_id = auth.uid()));
 
 -- Announcements: all can read, HR can manage
@@ -243,3 +304,121 @@ create trigger projects_updated_at before update on public.projects
 
 create trigger announcements_updated_at before update on public.announcements
   for each row execute function public.handle_updated_at();
+
+create trigger suggestions_updated_at before update on public.suggestions
+  for each row execute function public.handle_updated_at();
+
+create trigger suggestion_comments_updated_at before update on public.suggestion_comments
+  for each row execute function public.handle_updated_at();
+
+-- ============================================
+-- REDMINE TIME LOGGER TABLES
+-- ============================================
+
+-- Redmine API configuration per user
+create table public.redmine_configs (
+  id uuid default uuid_generate_v4() primary key,
+  user_id uuid not null unique references public.users(id) on delete cascade,
+  redmine_url text not null,
+  encrypted_api_key text not null,
+  encryption_iv text not null,
+  encryption_tag text not null,
+  default_activity_id integer,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null
+);
+
+-- Time log entries (drafts and submitted)
+create table public.time_log_entries (
+  id uuid default uuid_generate_v4() primary key,
+  user_id uuid not null references public.users(id) on delete cascade,
+  log_date date not null,
+  issue_id integer not null,
+  project_name text,
+  hours numeric(4,2) not null check (hours > 0),
+  activity_id integer not null,
+  activity_name text,
+  comment text,
+  status text not null default 'draft' check (status in ('draft', 'submitted', 'failed')),
+  redmine_time_entry_id integer,
+  error_message text,
+  custom_fields jsonb,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null
+);
+
+-- User-defined custom required fields per Redmine project
+create table public.redmine_project_fields (
+  id uuid default uuid_generate_v4() primary key,
+  user_id uuid not null references public.users(id) on delete cascade,
+  redmine_project_id integer not null,
+  redmine_project_name text not null,
+  field_id integer not null,
+  field_name text not null,
+  field_type text not null default 'text',
+  possible_values jsonb,
+  is_required boolean not null default true,
+  created_at timestamptz default now() not null,
+  unique(user_id, redmine_project_id, field_id)
+);
+
+-- Indexes
+create index idx_redmine_configs_user on public.redmine_configs(user_id);
+create index idx_time_log_entries_user on public.time_log_entries(user_id);
+create index idx_time_log_entries_date on public.time_log_entries(log_date);
+create index idx_time_log_entries_user_date on public.time_log_entries(user_id, log_date);
+create index idx_time_log_entries_status on public.time_log_entries(status);
+create index idx_redmine_project_fields_user on public.redmine_project_fields(user_id);
+
+-- RLS
+alter table public.redmine_configs enable row level security;
+alter table public.time_log_entries enable row level security;
+alter table public.redmine_project_fields enable row level security;
+
+-- Redmine configs: user can only CRUD their own
+create policy "redmine_configs_select" on public.redmine_configs for select to authenticated
+  using (user_id = (select id from public.users where auth_id = auth.uid()));
+create policy "redmine_configs_insert" on public.redmine_configs for insert to authenticated
+  with check (user_id = (select id from public.users where auth_id = auth.uid()));
+create policy "redmine_configs_update" on public.redmine_configs for update to authenticated
+  using (user_id = (select id from public.users where auth_id = auth.uid()));
+create policy "redmine_configs_delete" on public.redmine_configs for delete to authenticated
+  using (user_id = (select id from public.users where auth_id = auth.uid()));
+
+-- Time log entries: user can only CRUD their own
+create policy "time_log_entries_select" on public.time_log_entries for select to authenticated
+  using (user_id = (select id from public.users where auth_id = auth.uid()));
+create policy "time_log_entries_insert" on public.time_log_entries for insert to authenticated
+  with check (user_id = (select id from public.users where auth_id = auth.uid()));
+create policy "time_log_entries_update" on public.time_log_entries for update to authenticated
+  using (user_id = (select id from public.users where auth_id = auth.uid()));
+create policy "time_log_entries_delete" on public.time_log_entries for delete to authenticated
+  using (user_id = (select id from public.users where auth_id = auth.uid()));
+
+-- Redmine project fields: user can only CRUD their own
+create policy "redmine_project_fields_select" on public.redmine_project_fields for select to authenticated
+  using (user_id = (select id from public.users where auth_id = auth.uid()));
+create policy "redmine_project_fields_insert" on public.redmine_project_fields for insert to authenticated
+  with check (user_id = (select id from public.users where auth_id = auth.uid()));
+create policy "redmine_project_fields_update" on public.redmine_project_fields for update to authenticated
+  using (user_id = (select id from public.users where auth_id = auth.uid()));
+create policy "redmine_project_fields_delete" on public.redmine_project_fields for delete to authenticated
+  using (user_id = (select id from public.users where auth_id = auth.uid()));
+
+-- Triggers
+create trigger redmine_configs_updated_at before update on public.redmine_configs
+  for each row execute function public.handle_updated_at();
+
+create trigger time_log_entries_updated_at before update on public.time_log_entries
+  for each row execute function public.handle_updated_at();
+
+-- ============================================
+-- SLACK INTEGRATION
+-- ============================================
+
+alter table public.users
+  add column if not exists slack_user_id text unique,
+  add column if not exists slack_team_id text;
+
+create index if not exists idx_users_slack_user_id
+  on public.users(slack_user_id) where slack_user_id is not null;
