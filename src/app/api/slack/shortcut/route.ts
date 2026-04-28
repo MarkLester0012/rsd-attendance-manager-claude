@@ -51,8 +51,13 @@ export async function POST(req: NextRequest) {
   }
 
   const slackUserId = payload.user?.id;
+  const slackTeamId = payload.team?.id;
   const messageText = payload.message?.text ?? "";
   const responseUrl = payload.response_url;
+
+  if (!slackUserId || !slackTeamId || !responseUrl) {
+    return new Response(null, { status: 200 });
+  }
 
   after(async () => {
     const supabase = createAdminClient();
@@ -60,6 +65,7 @@ export async function POST(req: NextRequest) {
       .from("users")
       .select("id")
       .eq("slack_user_id", slackUserId)
+      .eq("slack_team_id", slackTeamId)
       .single();
 
     if (!user) {
