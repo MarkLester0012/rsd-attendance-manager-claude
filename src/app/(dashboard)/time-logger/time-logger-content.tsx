@@ -602,6 +602,8 @@ export function TimeLoggerContent({
       <SettingsDialog
         open={settingsOpen}
         onOpenChange={setSettingsOpen}
+        activities={activities}
+        defaultActivityId={defaultActivityId}
         onConfigSaved={() => {
           setHasConfig(true);
           // Reload activities

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -15,7 +15,19 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { saveRedmineConfig, testRedmineConnection } from "@/app/(dashboard)/time-logger/actions";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  saveRedmineConfig,
+  testRedmineConnection,
+  fetchActivities,
+} from "@/app/(dashboard)/time-logger/actions";
+import type { RedmineActivity } from "@/lib/types";
 
 const configSchema = z.object({
   redmine_url: z
@@ -31,12 +43,16 @@ interface SettingsDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onConfigSaved: () => void;
+  activities: RedmineActivity[];
+  defaultActivityId: number | null;
 }
 
 export function SettingsDialog({
   open,
   onOpenChange,
   onConfigSaved,
+  activities: initialActivities,
+  defaultActivityId,
 }: SettingsDialogProps) {
   const [testing, setTesting] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -44,6 +60,19 @@ export function SettingsDialog({
     success: boolean;
     message: string;
   } | null>(null);
+  const [activities, setActivities] =
+    useState<RedmineActivity[]>(initialActivities);
+  const [activityId, setActivityId] = useState<string>(
+    defaultActivityId ? String(defaultActivityId) : ""
+  );
+
+  useEffect(() => {
+    setActivities(initialActivities);
+  }, [initialActivities]);
+
+  useEffect(() => {
+    setActivityId(defaultActivityId ? String(defaultActivityId) : "");
+  }, [defaultActivityId]);
 
   const {
     register,
@@ -58,7 +87,10 @@ export function SettingsDialog({
 
   async function onSubmit(data: ConfigFormData) {
     setSaving(true);
-    const result = await saveRedmineConfig(data);
+    const result = await saveRedmineConfig({
+      ...data,
+      default_activity_id: activityId ? parseInt(activityId, 10) : undefined,
+    });
     setSaving(false);
 
     if (result.error) {
@@ -82,6 +114,17 @@ export function SettingsDialog({
         success: true,
         message: `Connected as ${result.login}`,
       });
+      // Refresh activities so the user can pick a default in this dialog
+      const activitiesResult = await fetchActivities();
+      if (activitiesResult.activities.length > 0) {
+        setActivities(activitiesResult.activities);
+        if (!activityId) {
+          const defaultActivity =
+            activitiesResult.activities.find((a) => a.is_default) ||
+            activitiesResult.activities[0];
+          if (defaultActivity) setActivityId(String(defaultActivity.id));
+        }
+      }
     } else {
       setTestResult({
         success: false,
@@ -89,6 +132,8 @@ export function SettingsDialog({
       });
     }
   }
+
+  const hasActivities = activities.length > 0;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -131,6 +176,32 @@ export function SettingsDialog({
             )}
             <p className="text-xs text-muted-foreground">
               Find this in Redmine → My Account → API access key
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="default_activity">Default Activity</Label>
+            {hasActivities ? (
+              <Select value={activityId} onValueChange={setActivityId}>
+                <SelectTrigger id="default_activity">
+                  <SelectValue placeholder="Select a default activity" />
+                </SelectTrigger>
+                <SelectContent>
+                  {activities.map((a) => (
+                    <SelectItem key={a.id} value={String(a.id)}>
+                      {a.name}
+                      {a.is_default ? " (Redmine default)" : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : (
+              <div className="rounded-md border border-dashed border-white/10 px-3 py-2 text-xs text-muted-foreground">
+                Save your Redmine URL + API key, then click <strong>Test Connection</strong> to load activities.
+              </div>
+            )}
+            <p className="text-xs text-muted-foreground">
+              Used as the default for new entries and required for Slack imports.
             </p>
           </div>
 
