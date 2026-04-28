@@ -348,8 +348,8 @@ export function AttendanceContent({
   return (
     <div className="space-y-6">
       {/* View mode toggle + navigation */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-1 rounded-lg border p-1">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-1 rounded-lg border p-1 self-start">
           <Button
             variant={viewMode === "day" ? "default" : "ghost"}
             size="sm"
@@ -370,15 +370,16 @@ export function AttendanceContent({
           </Button>
         </div>
 
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2 sm:gap-4">
           <Button
             variant="outline"
             size="icon"
+            className="shrink-0"
             onClick={viewMode === "day" ? prevDay : prevWeek}
           >
             <ChevronLeft className="h-4 w-4" />
           </Button>
-          <h2 className="text-lg font-semibold min-w-[200px] text-center">
+          <h2 className="flex-1 min-w-0 text-sm sm:text-lg font-semibold text-center truncate">
             {viewMode === "day"
               ? format(currentDate, "EEEE, MMMM d, yyyy")
               : `${format(weekDays[0], "MMM d")} \u2013 ${format(weekDays[4], "MMM d, yyyy")}`}
@@ -386,51 +387,52 @@ export function AttendanceContent({
           <Button
             variant="outline"
             size="icon"
+            className="shrink-0"
             onClick={viewMode === "day" ? nextDay : nextWeek}
           >
             <ChevronRight className="h-4 w-4" />
           </Button>
         </div>
 
-        {/* Spacer to balance layout */}
-        <div className="w-[120px]" />
+        {/* Spacer to balance layout on desktop */}
+        <div className="hidden sm:block w-[120px]" />
       </div>
 
       {/* Summary counters — day view only */}
       {viewMode === "day" && (
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-3 gap-2 sm:gap-4">
           <Card>
-            <CardContent className="flex items-center gap-3 p-4">
-              <div className="rounded-lg bg-emerald-500/10 p-2">
-                <Users className="h-5 w-5 text-emerald-500" />
+            <CardContent className="flex items-center gap-2 sm:gap-3 p-3 sm:p-4">
+              <div className="rounded-lg bg-emerald-500/10 p-1.5 sm:p-2">
+                <Users className="h-4 w-4 sm:h-5 sm:w-5 text-emerald-500" />
               </div>
               <div>
-                <p className="text-2xl font-bold">{inOfficeCount}</p>
-                <p className="text-xs text-muted-foreground">In Office</p>
+                <p className="text-xl sm:text-2xl font-bold">{inOfficeCount}</p>
+                <p className="text-[10px] sm:text-xs text-muted-foreground">In Office</p>
               </div>
             </CardContent>
           </Card>
           <Card>
-            <CardContent className="flex items-center gap-3 p-4">
-              <div className="rounded-lg bg-blue-500/10 p-2">
-                <Monitor className="h-5 w-5 text-blue-500" />
+            <CardContent className="flex items-center gap-2 sm:gap-3 p-3 sm:p-4">
+              <div className="rounded-lg bg-blue-500/10 p-1.5 sm:p-2">
+                <Monitor className="h-4 w-4 sm:h-5 sm:w-5 text-blue-500" />
               </div>
               <div>
-                <p className="text-2xl font-bold">{wfhCount}</p>
-                <p className="text-xs text-muted-foreground">
-                  Working Remotely
+                <p className="text-xl sm:text-2xl font-bold">{wfhCount}</p>
+                <p className="text-[10px] sm:text-xs text-muted-foreground">
+                  WFH
                 </p>
               </div>
             </CardContent>
           </Card>
           <Card>
-            <CardContent className="flex items-center gap-3 p-4">
-              <div className="rounded-lg bg-orange-500/10 p-2">
-                <Plane className="h-5 w-5 text-orange-500" />
+            <CardContent className="flex items-center gap-2 sm:gap-3 p-3 sm:p-4">
+              <div className="rounded-lg bg-orange-500/10 p-1.5 sm:p-2">
+                <Plane className="h-4 w-4 sm:h-5 sm:w-5 text-orange-500" />
               </div>
               <div>
-                <p className="text-2xl font-bold">{onLeaveCount}</p>
-                <p className="text-xs text-muted-foreground">On Leave</p>
+                <p className="text-xl sm:text-2xl font-bold">{onLeaveCount}</p>
+                <p className="text-[10px] sm:text-xs text-muted-foreground">On Leave</p>
               </div>
             </CardContent>
           </Card>
@@ -438,8 +440,8 @@ export function AttendanceContent({
       )}
 
       {/* Filter bar */}
-      <div className="flex flex-wrap gap-3 items-center">
-        <div className="relative flex-1 min-w-[200px] max-w-sm">
+      <div className="flex flex-wrap gap-2 sm:gap-3 items-center">
+        <div className="relative w-full sm:flex-1 sm:min-w-[200px] sm:max-w-sm">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             placeholder="Search by name..."
@@ -449,7 +451,7 @@ export function AttendanceContent({
           />
         </div>
         <Select value={deptFilter} onValueChange={setDeptFilter}>
-          <SelectTrigger className="w-[160px]">
+          <SelectTrigger className="w-[calc(50%-0.25rem)] sm:w-[160px]">
             <SelectValue placeholder="Department" />
           </SelectTrigger>
           <SelectContent>
@@ -462,7 +464,7 @@ export function AttendanceContent({
           </SelectContent>
         </Select>
         <Select value={projectFilter} onValueChange={setProjectFilter}>
-          <SelectTrigger className="w-[160px]">
+          <SelectTrigger className="w-[calc(50%-0.25rem)] sm:w-[160px]">
             <SelectValue placeholder="Project" />
           </SelectTrigger>
           <SelectContent>
@@ -477,7 +479,7 @@ export function AttendanceContent({
         {viewMode === "day" && (
           <>
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-[140px]">
+              <SelectTrigger className="w-[calc(50%-0.25rem)] sm:w-[140px]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>

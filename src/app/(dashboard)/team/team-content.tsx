@@ -222,8 +222,8 @@ export function TeamContent({
 
   return (
     <div className="space-y-6">
-      {/* Summary Stats — 2 rows × 3 columns, Total top-left */}
-      <div className="grid grid-cols-3 gap-4">
+      {/* Summary Stats */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4">
         <Card>
           <CardContent className="flex items-center gap-3 p-4">
             <div className="rounded-lg bg-primary/10 p-3">
@@ -264,8 +264,8 @@ export function TeamContent({
       </div>
 
       {/* Filters */}
-      <div className="flex flex-wrap gap-3 items-center">
-        <div className="relative flex-1 min-w-[200px] max-w-sm">
+      <div className="flex flex-wrap gap-2 sm:gap-3 items-center">
+        <div className="relative w-full sm:flex-1 sm:min-w-[200px] sm:max-w-sm">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             placeholder="Search by name or department..."
@@ -275,7 +275,7 @@ export function TeamContent({
           />
         </div>
         <Select value={deptFilter} onValueChange={setDeptFilter}>
-          <SelectTrigger className="w-[160px]">
+          <SelectTrigger className="w-[calc(50%-0.25rem)] sm:w-[160px]">
             <SelectValue placeholder="Department" />
           </SelectTrigger>
           <SelectContent>
@@ -288,7 +288,7 @@ export function TeamContent({
           </SelectContent>
         </Select>
         <Select value={projectFilter} onValueChange={setProjectFilter}>
-          <SelectTrigger className="w-[160px]">
+          <SelectTrigger className="w-[calc(50%-0.25rem)] sm:w-[160px]">
             <SelectValue placeholder="Project" />
           </SelectTrigger>
           <SelectContent>
@@ -301,7 +301,7 @@ export function TeamContent({
           </SelectContent>
         </Select>
         <Select value={roleFilter} onValueChange={setRoleFilter}>
-          <SelectTrigger className="w-[140px]">
+          <SelectTrigger className="w-[calc(50%-0.25rem)] sm:w-[140px]">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -312,7 +312,7 @@ export function TeamContent({
           </SelectContent>
         </Select>
         {isHR && (
-          <Button onClick={openCreate} className="gap-1.5">
+          <Button onClick={openCreate} className="w-[calc(50%-0.25rem)] sm:w-auto gap-1.5">
             <Plus className="h-4 w-4" />
             Register Member
           </Button>

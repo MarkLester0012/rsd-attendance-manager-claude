@@ -326,7 +326,7 @@ export function BulkApplyDialog({
           </Tabs>
 
           {/* Actions */}
-          <div className="flex justify-end gap-2">
+          <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
             <Button
               variant="outline"
               onClick={() => handleClose(false)}

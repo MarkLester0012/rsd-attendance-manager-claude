@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { parseSlackEOD } from "@/lib/redmine/parser";
+import { cn } from "@/lib/utils";
 import type { ParsedSlackEntry } from "@/lib/types";
 
 interface PasteDialogProps {
@@ -27,23 +28,36 @@ export function PasteDialog({
 }: PasteDialogProps) {
   const [text, setText] = useState("");
   const [preview, setPreview] = useState<ParsedSlackEntry[]>([]);
+  const [expandedIdxs, setExpandedIdxs] = useState<Set<number>>(new Set());
+
+  function toggleExpand(idx: number) {
+    setExpandedIdxs((prev) => {
+      const next = new Set(prev);
+      if (next.has(idx)) {
+        next.delete(idx);
+      } else {
+        next.add(idx);
+      }
+      return next;
+    });
+  }
 
   function handleParse() {
     const parsed = parseSlackEOD(text);
     setPreview(parsed);
+    setExpandedIdxs(new Set());
   }
 
   function handleConfirm() {
     onEntriesParsed(preview);
-    setText("");
-    setPreview([]);
-    onOpenChange(false);
+    handleClose(false);
   }
 
   function handleClose(isOpen: boolean) {
     if (!isOpen) {
       setText("");
       setPreview([]);
+      setExpandedIdxs(new Set());
     }
     onOpenChange(isOpen);
   }
@@ -83,24 +97,35 @@ export function PasteDialog({
                 Found {preview.length} ticket{preview.length !== 1 ? "s" : ""}:
               </p>
               <div className="space-y-2 max-h-48 overflow-y-auto">
-                {preview.map((entry) => (
-                  <div
-                    key={entry.issueId}
-                    className="flex items-start gap-3 rounded-lg border border-border/50 bg-muted/30 p-3"
-                  >
-                    <Badge variant="outline" className="shrink-0 font-mono">
-                      #{entry.issueId}
-                    </Badge>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm text-muted-foreground truncate">
-                        {entry.description || "No description"}
-                      </p>
+                {preview.map((entry, idx) => {
+                  const isExpanded = expandedIdxs.has(idx);
+                  const desc = entry.description || "No description";
+                  return (
+                    <div
+                      key={idx}
+                      className="flex items-start gap-3 rounded-lg border border-border/50 bg-muted/30 p-3"
+                    >
+                      <Badge variant="outline" className="shrink-0 font-mono">
+                        #{entry.issueId}
+                      </Badge>
+                      <div className="flex-1 min-w-0 overflow-hidden">
+                        <p
+                          className={cn(
+                            "text-sm text-muted-foreground break-words cursor-pointer hover:text-foreground/70 transition-colors",
+                            !isExpanded && "line-clamp-1"
+                          )}
+                          onClick={() => toggleExpand(idx)}
+                          title={isExpanded ? "Click to collapse" : "Click to expand"}
+                        >
+                          {desc}
+                        </p>
+                      </div>
+                      <Badge variant="secondary" className="shrink-0">
+                        {entry.percentage}%
+                      </Badge>
                     </div>
-                    <Badge variant="secondary" className="shrink-0">
-                      {entry.percentage}%
-                    </Badge>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
               <div className="flex gap-2 justify-end">
                 <Button

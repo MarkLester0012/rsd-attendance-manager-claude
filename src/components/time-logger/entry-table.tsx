@@ -11,7 +11,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import {
   Tooltip,
   TooltipContent,
@@ -168,6 +167,8 @@ export function EntryTable({
 
   return (
     <div className="space-y-3">
+      <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
+        <div className="min-w-[640px] space-y-3">
       {/* Header */}
       <div className="grid grid-cols-[80px_1fr_80px_160px_1fr_40px_40px] gap-2 px-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
         <div>Issue #</div>
@@ -185,25 +186,28 @@ export function EntryTable({
           key={`redmine-${entry.id}`}
           className="grid grid-cols-[80px_1fr_80px_160px_1fr_40px_40px] gap-2 items-center rounded-lg border border-border/30 bg-muted/20 px-2 py-2 opacity-60"
         >
-          <div className="text-sm font-mono">#{entry.issue_id}</div>
-          <div className="text-sm text-muted-foreground truncate">
+          <div className="text-sm font-mono min-w-0 truncate">#{entry.issue_id}</div>
+          <div className="text-sm text-muted-foreground min-w-0 truncate">
             {entry.project_name}
           </div>
-          <div className="text-sm tabular-nums">{entry.hours}h</div>
-          <div className="text-sm text-muted-foreground">
+          <div className="text-sm tabular-nums min-w-0">{entry.hours}h</div>
+          <div className="text-sm text-muted-foreground min-w-0 truncate">
             {entry.activity_name}
           </div>
-          <div className="text-sm text-muted-foreground truncate">
+          <div className="text-sm text-muted-foreground min-w-0 truncate">
             {entry.comments}
           </div>
-          <div>
-            <CheckCircle2 className="h-4 w-4 text-green-400" />
+          <div className="flex justify-center">
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <CheckCircle2 className="h-4 w-4 text-green-400" />
+                </TooltipTrigger>
+                <TooltipContent>Synced to Redmine</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           </div>
-          <div>
-            <Badge variant="outline" className="text-[10px]">
-              Synced
-            </Badge>
-          </div>
+          <div />
         </div>
       ))}
 
@@ -234,7 +238,7 @@ export function EntryTable({
             className="h-8 font-mono text-sm"
             disabled={entry.status === "submitted"}
           />
-          <div className="text-sm text-muted-foreground truncate px-1">
+          <div className="text-sm text-muted-foreground truncate px-1 min-w-0">
             {entry.project_name || (
               <span className="text-muted-foreground/40 italic">
                 auto-filled
@@ -322,6 +326,8 @@ export function EntryTable({
           </div>
         </div>
       ))}
+        </div>
+      </div>
 
       {/* Add row button */}
       <Button

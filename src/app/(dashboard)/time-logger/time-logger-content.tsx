@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { format } from "date-fns";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
@@ -83,60 +83,112 @@ export function TimeLoggerContent({
   const [submitting, setSubmitting] = useState(false);
   const [loadingEntries, setLoadingEntries] = useState(false);
 
-  // Load activities and Redmine entries on mount
+  // Keep latest date available in async handlers without stale closures
+  const currentDateRef = useRef(date);
   useEffect(() => {
-    if (hasConfig) {
-      fetchActivities().then((result) => {
-        if (result.activities.length > 0) {
-          setActivities(result.activities);
-        }
-        if (result.error) {
-          toast.error(`Activities: ${result.error}`);
-        }
+    currentDateRef.current = date;
+  }, [date]);
+
+  // Monotonically-increasing request id — only the latest in-flight load commits state
+  const loadRequestRef = useRef(0);
+
+  // Per-date cache so switching back to a visited date is instant (no ghost flash, no loader)
+  type DateCacheValue = {
+    drafts: DraftEntry[];
+    redmine: typeof existingRedmineEntries;
+    holiday: typeof holiday;
+  };
+  const cacheRef = useRef(new Map<string, DateCacheValue>());
+
+  const invalidateCache = useCallback((dateStr: string) => {
+    cacheRef.current.delete(dateStr);
+  }, []);
+
+  // Load drafts + Redmine entries + holiday for a date.
+  // Uses stale-request guard + per-date cache.
+  const loadDateEntries = useCallback(
+    async (newDate: Date) => {
+      if (!hasConfig) return;
+      const dateStr = format(newDate, "yyyy-MM-dd");
+      const reqId = ++loadRequestRef.current;
+
+      const cached = cacheRef.current.get(dateStr);
+      if (cached) {
+        // Cache hit: hydrate instantly, still refresh in background
+        setEntries(cached.drafts);
+        setExistingRedmineEntries(cached.redmine);
+        setHoliday(cached.holiday);
+        setLoadingEntries(false);
+      } else {
+        // Cache miss: clear so we never show previous date's values while loading
+        setEntries([]);
+        setExistingRedmineEntries([]);
+        setHoliday(null);
+        setLoadingEntries(true);
+      }
+
+      const [redmineResult, draftResult, holidayResult] = await Promise.all([
+        fetchExistingRedmineEntries(dateStr),
+        fetchDraftEntries(dateStr),
+        fetchHolidayForDate(dateStr),
+      ]);
+
+      // Stale-guard: discard results from a superseded request
+      if (reqId !== loadRequestRef.current) return;
+
+      const drafts = (draftResult.entries || []).map(toEntryFromDB);
+      const redmine = redmineResult.entries || [];
+      const nextHoliday = holidayResult.holiday;
+
+      cacheRef.current.set(dateStr, {
+        drafts,
+        redmine,
+        holiday: nextHoliday,
       });
 
-      // Fetch Redmine entries and holiday for initial date (drafts already come from server)
-      const dateStr = format(date, "yyyy-MM-dd");
-      fetchExistingRedmineEntries(dateStr).then((redmineResult) => {
-        if (redmineResult.entries) {
-          setExistingRedmineEntries(redmineResult.entries);
-        }
-      });
-      fetchHolidayForDate(dateStr).then((result) => setHoliday(result.holiday));
-    }
+      setEntries(drafts);
+      setExistingRedmineEntries(redmine);
+      setHoliday(nextHoliday);
+      setLoadingEntries(false);
+    },
+    [hasConfig]
+  );
+
+  // One-time: fetch activities + seed cache with SSR initial entries, then load
+  useEffect(() => {
+    if (!hasConfig) return;
+
+    fetchActivities().then((result) => {
+      if (result.activities.length > 0) {
+        setActivities(result.activities);
+      }
+      if (result.error) {
+        toast.error(`Activities: ${result.error}`);
+      }
+    });
+
+    loadDateEntries(date);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasConfig]);
 
-  // Load both drafts from DB and submitted entries from Redmine API
-  async function loadDateEntries(newDate: Date) {
-    if (!hasConfig) return;
-    setLoadingEntries(true);
-    const dateStr = format(newDate, "yyyy-MM-dd");
-
-    const [redmineResult, draftResult, holidayResult] = await Promise.all([
-      fetchExistingRedmineEntries(dateStr),
-      fetchDraftEntries(dateStr),
-      fetchHolidayForDate(dateStr),
-    ]);
-
-    if (redmineResult.entries) {
-      setExistingRedmineEntries(redmineResult.entries);
-    }
-    if (draftResult.entries) {
-      setEntries(draftResult.entries.map(toEntryFromDB));
-    }
-    setHoliday(holidayResult.holiday);
-    setLoadingEntries(false);
-  }
-
-  // Handle date change
-  async function handleDateChange(newDate: Date) {
+  // Handle date change — cache + stale-guard handled inside loadDateEntries
+  function handleDateChange(newDate: Date) {
+    // Ignore no-op clicks (same date)
+    if (format(newDate, "yyyy-MM-dd") === format(date, "yyyy-MM-dd")) return;
     setDate(newDate);
-    setEntries([]);
-    setExistingRedmineEntries([]);
-    setHoliday(null);
-    await loadDateEntries(newDate);
+    loadDateEntries(newDate);
   }
+
+  // Keep cache's draft list in sync with local edits (add/delete rows via EntryTable)
+  // so that leaving the date and coming back doesn't flash a stale snapshot.
+  useEffect(() => {
+    if (!hasConfig) return;
+    const dateStr = format(date, "yyyy-MM-dd");
+    const cached = cacheRef.current.get(dateStr);
+    if (cached) {
+      cacheRef.current.set(dateStr, { ...cached, drafts: entries });
+    }
+  }, [entries, date, hasConfig]);
 
   // Fetch issue details when user tabs away from issue field
   async function handleIssueBlur(index: number, issueId: number) {
@@ -172,6 +224,7 @@ export function TimeLoggerContent({
     }));
 
     setEntries((prev) => [...prev, ...newEntries]);
+    invalidateCache(format(date, "yyyy-MM-dd"));
 
     // Fetch issue details for all parsed entries
     const issueIds = parsed.map((p) => p.issueId);
@@ -224,8 +277,11 @@ export function TimeLoggerContent({
 
     toast.success(`Created draft entries for ${dates.length} dates`);
 
-    // If the current date is in the selection, reload entries for it
-    const currentDateStr = format(date, "yyyy-MM-dd");
+    // Invalidate cache for every date we just touched so revisiting refetches
+    for (const d of dates) invalidateCache(d);
+
+    // If the user is still on a date that was in the selection, append locally
+    const currentDateStr = format(currentDateRef.current, "yyyy-MM-dd");
     if (dates.includes(currentDateStr) && result.entries) {
       const newForToday = result.entries
         .filter((e) => e.log_date === currentDateStr)
@@ -243,8 +299,10 @@ export function TimeLoggerContent({
     const successCount = result.results.filter((r) => r.success).length;
     const failCount = result.results.filter((r) => !r.success).length;
 
+    // Bulk submit can touch multiple dates — safest to clear the whole cache
+    cacheRef.current.clear();
+
     // Update local entries for current date if any were submitted
-    const currentDateStr = format(date, "yyyy-MM-dd");
     setEntries((prev) =>
       prev.map((e) => {
         const r = result.results.find((r) => r.entryId === e.id);
@@ -320,6 +378,9 @@ export function TimeLoggerContent({
       });
     }
 
+    // Data for this date changed — invalidate cache so next visit refetches
+    invalidateCache(format(date, "yyyy-MM-dd"));
+
     toast.success(`Saved ${drafts.length} draft entries`);
   }
 
@@ -363,6 +424,9 @@ export function TimeLoggerContent({
     );
 
     const result = await submitToRedmine(toSubmit.map((e) => e.id!));
+
+    // Submitted entries change Redmine's submitted list for this date — invalidate
+    invalidateCache(format(date, "yyyy-MM-dd"));
 
     // Update entries with results
     setEntries((prev) =>
@@ -445,7 +509,7 @@ export function TimeLoggerContent({
           {/* Date navigation + actions */}
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <DateNav date={date} onDateChange={handleDateChange} />
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <Button
                 variant="outline"
                 size="sm"

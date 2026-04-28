@@ -31,7 +31,11 @@
       "Bash(grep -r \"password123\\\\|admin@rsd\\\\|password\" /c/Users/RSD/Desktop/Vibe Coding Projects/rsd-attendance-manager-claude/src --include=*.ts --include=*.tsx)",
       "Bash(grep -r eyJhbGc . --include=*.ts --include=*.tsx --include=*.js --include=*.mjs --exclude-dir=node_modules)",
       "Bash(find . -name .env.example -o -name .env.sample -o -name *.env.example)",
-      "Bash(xargs grep:*)"
+      "Bash(xargs grep:*)",
+      "Bash(npx tsc *)",
+      "Bash(echo \"EXIT=$?\")",
+      "mcp__plugin_claude-mem_mcp-search__smart_search",
+      "Bash(npm run *)"
     ],
     "deny": [],
     "ask": []
