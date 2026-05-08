@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
+import { createNotification } from "@/lib/notifications";
 import { LEAVE_TYPES } from "@/lib/constants/leave-types";
 import { getInitials, cn } from "@/lib/utils";
 import type { User } from "@/lib/types";
@@ -78,6 +79,19 @@ export function ApprovalsContent({
         .eq("id", leaveId);
 
       if (error) throw error;
+
+      const leave = leaves.find((l) => l.id === leaveId);
+      if (leave?.user_id) {
+        const leaveConfig = LEAVE_TYPES[leave.leave_type as keyof typeof LEAVE_TYPES];
+        await createNotification({
+          user_id: leave.user_id,
+          type: status === "approved" ? "leave_approved" : "leave_rejected",
+          title: status === "approved" ? "Your leave was approved" : "Your leave was rejected",
+          body: `${leaveConfig?.label ?? leave.leave_type} on ${format(new Date(leave.leave_date), "MMM d, yyyy")}`,
+          data: { leave_id: leaveId },
+        });
+      }
+
       toast.success(`Leave ${status}`);
 
       setLeaves((prev) =>

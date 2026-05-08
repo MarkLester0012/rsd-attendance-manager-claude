@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
+import { createNotification } from "@/lib/notifications";
 import { getInitials } from "@/lib/utils";
 import type { User } from "@/lib/types";
 
@@ -176,10 +177,26 @@ export function ProjectsContent({
           .delete()
           .eq("project_id", projectId)
           .eq("user_id", userId);
+        if (userId !== currentUser.id) {
+          await createNotification({
+            user_id: userId,
+            type: "project_removed",
+            title: `You were removed from ${project.name}`,
+            data: { project_id: projectId, project_name: project.name },
+          });
+        }
       } else {
         await supabase
           .from("project_members")
           .insert({ project_id: projectId, user_id: userId });
+        if (userId !== currentUser.id) {
+          await createNotification({
+            user_id: userId,
+            type: "project_added",
+            title: `You were added to ${project.name}`,
+            data: { project_id: projectId, project_name: project.name },
+          });
+        }
       }
       await fetchProjects();
     } catch {

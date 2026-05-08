@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
+import { createNotifications } from "@/lib/notifications";
 import type { User } from "@/lib/types";
 
 interface AnnouncementsContentProps {
@@ -76,6 +77,21 @@ export function AnnouncementsContent({
           author_id: currentUser.id,
         });
         if (error) throw error;
+        const { data: allUsers } = await supabase
+          .from("users")
+          .select("id")
+          .neq("id", currentUser.id);
+        if (allUsers?.length) {
+          await createNotifications(
+            allUsers.map((u) => ({
+              user_id: u.id,
+              type: "announcement_new" as const,
+              title: formTitle,
+              body: "New announcement posted",
+              data: {},
+            }))
+          );
+        }
         toast.success("Announcement created");
       }
       await fetchAnnouncements();

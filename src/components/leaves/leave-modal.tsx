@@ -32,6 +32,36 @@ import {
   WFH_DAILY_GLOBAL_CAP,
 } from "@/lib/constants/leave-types";
 import type { User, LeaveEntry, LeaveTypeCode, LeaveDuration } from "@/lib/types";
+import { createNotifications } from "@/lib/notifications";
+
+async function getLeaveReviewers(userId: string): Promise<{ id: string }[]> {
+  const supabase = createClient();
+
+  const { data: memberProjects } = await supabase
+    .from("project_members")
+    .select("project_id")
+    .eq("user_id", userId);
+  const projectIds = memberProjects?.map((p: { project_id: string }) => p.project_id) ?? [];
+
+  let leaderQuery = supabase.from("users").select("id").eq("role", "leader");
+  if (projectIds.length > 0) {
+    const { data: projectMates } = await supabase
+      .from("project_members")
+      .select("user_id")
+      .in("project_id", projectIds)
+      .neq("user_id", userId);
+    const coMemberIds = [...new Set(projectMates?.map((m: { user_id: string }) => m.user_id) ?? [])];
+    if (coMemberIds.length > 0) {
+      leaderQuery = leaderQuery.in("id", coMemberIds);
+    }
+  }
+
+  const [{ data: hrUsers }, { data: leaderUsers }] = await Promise.all([
+    supabase.from("users").select("id").eq("role", "hr"),
+    leaderQuery,
+  ]);
+  return [...(hrUsers ?? []), ...(leaderUsers ?? [])];
+}
 
 interface LeaveModalProps {
   open: boolean;
@@ -221,6 +251,24 @@ export function LeaveModal({
 
         if (error) throw error;
 
+        if (config.requiresApproval) {
+          const reviewers = await getLeaveReviewers(user.id);
+          if (reviewers.length) {
+            const dateLabel = isMultiDay
+              ? `${dateStrs.length} days starting ${dateStrs[0]}`
+              : dateStrs[0];
+            await createNotifications(
+              reviewers.map((r) => ({
+                user_id: r.id,
+                type: "leave_submitted" as const,
+                title: `${user.name} submitted a leave request`,
+                body: `${config.label} — ${dateLabel}`,
+                data: { employee_name: user.name, leave_type: leaveType },
+              }))
+            );
+          }
+        }
+
         if (isMultiDay) {
           toast.success(
             config.requiresApproval
@@ -258,6 +306,22 @@ export function LeaveModal({
         .eq("id", existingLeave.id);
 
       if (error) throw error;
+
+      if (existingLeave.status === "pending" || existingLeave.status === "approved") {
+        const reviewers = await getLeaveReviewers(user.id);
+        if (reviewers.length) {
+          await createNotifications(
+            reviewers.map((r) => ({
+              user_id: r.id,
+              type: "leave_cancelled" as const,
+              title: `${user.name} cancelled a leave request`,
+              body: `${LEAVE_TYPES[existingLeave.leave_type].label} on ${existingLeave.leave_date}`,
+              data: { employee_name: user.name },
+            }))
+          );
+        }
+      }
+
       toast.success("Leave cancelled");
       onSuccess();
       onOpenChange(false);

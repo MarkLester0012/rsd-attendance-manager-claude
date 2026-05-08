@@ -3,8 +3,10 @@
 import { usePathname } from "next/navigation";
 import { useSidebarStore } from "@/stores/sidebar-store";
 import { Button } from "@/components/ui/button";
-import { Menu, Bell } from "lucide-react";
+import { Menu } from "lucide-react";
 import { format } from "date-fns";
+import { NotificationPanel } from "@/components/layout/notification-panel";
+import type { User } from "@/lib/types";
 
 const PAGE_TITLES: Record<string, string> = {
   "/dashboard": "Dashboard",
@@ -22,7 +24,7 @@ const PAGE_TITLES: Record<string, string> = {
   "/time-logger": "Time Logger",
 };
 
-export function Header() {
+export function Header({ user }: { user: User }) {
   const pathname = usePathname();
   const { setMobileOpen } = useSidebarStore();
 
@@ -49,15 +51,7 @@ export function Header() {
 
       {/* Right section */}
       <div className="flex items-center gap-2">
-        <Button
-          variant="ghost"
-          size="icon"
-          className="relative text-muted-foreground hover:text-foreground"
-        >
-          <Bell className="h-5 w-5" />
-          {/* Visual only notification dot */}
-          <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-primary" />
-        </Button>
+        <NotificationPanel userId={user.id} userRole={user.role} />
       </div>
     </header>
   );

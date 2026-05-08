@@ -205,3 +205,27 @@ export interface ParsedSlackEntry {
   percentage: number;
   description: string;
 }
+
+// Notifications
+export type NotificationType =
+  | "leave_submitted"
+  | "leave_approved"
+  | "leave_rejected"
+  | "leave_cancelled"
+  | "project_added"
+  | "project_removed"
+  | "suggestion_comment"
+  | "suggestion_reply"
+  | "suggestion_upvote"
+  | "announcement_new";
+
+export interface Notification {
+  id: string;
+  user_id: string;
+  type: NotificationType;
+  title: string;
+  body: string | null;
+  data: Record<string, unknown>;
+  read: boolean;
+  created_at: string;
+}

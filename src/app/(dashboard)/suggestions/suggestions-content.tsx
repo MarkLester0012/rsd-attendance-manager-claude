@@ -42,6 +42,7 @@ import {
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
+import { createNotification } from "@/lib/notifications";
 import { getInitials, cn } from "@/lib/utils";
 import type {
   User,
@@ -190,6 +191,17 @@ export function SuggestionsContent({
           vote_type: resolved,
         });
         if (error) throw error;
+        if (resolved === "like") {
+          const target = suggestions.find((s) => s.id === suggestionId);
+          if (target?.user_id && target.user_id !== currentUser.id) {
+            await createNotification({
+              user_id: target.user_id,
+              type: "suggestion_upvote",
+              title: `${currentUser.name} liked your suggestion`,
+              data: { suggestion_id: suggestionId },
+            });
+          }
+        }
       } else {
         const { error } = await supabase
           .from("suggestion_upvotes")
@@ -297,6 +309,37 @@ export function SuggestionsContent({
     if (error) {
       toast.error("Failed to post comment");
       return;
+    }
+
+    // Notify suggestion author on new comment (if not self)
+    const suggestion = suggestions.find((s) => s.id === suggestionId);
+    if (suggestion?.user_id && suggestion.user_id !== currentUser.id) {
+      await createNotification({
+        user_id: suggestion.user_id,
+        type: "suggestion_comment",
+        title: `${currentUser.name} commented on your suggestion`,
+        data: { suggestion_id: suggestionId },
+      });
+    }
+    // For replies, also notify the parent comment author (if different)
+    if (parentId) {
+      const findComment = (list: SuggestionComment[], id: string): SuggestionComment | null => {
+        for (const c of list) {
+          if (c.id === id) return c;
+          const found = findComment(c.replies ?? [], id);
+          if (found) return found;
+        }
+        return null;
+      };
+      const parent = suggestion ? findComment(suggestion.comments ?? [], parentId) : null;
+      if (parent?.user_id && parent.user_id !== currentUser.id && parent.user_id !== suggestion?.user_id) {
+        await createNotification({
+          user_id: parent.user_id,
+          type: "suggestion_reply",
+          title: `${currentUser.name} replied to your comment`,
+          data: { suggestion_id: suggestionId },
+        });
+      }
     }
 
     const newComment: SuggestionComment = {
