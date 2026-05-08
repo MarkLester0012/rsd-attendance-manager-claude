@@ -230,17 +230,32 @@ export function MonthView({
                       }
                     }}
                   >
-                    {/* Date number + status dots row */}
-                    <div className="flex items-start justify-between">
-                      <span
-                        className={cn(
-                          "text-xs font-medium h-5 w-5 flex items-center justify-center rounded-full",
-                          isToday && "bg-primary text-primary-foreground"
+                    {/* Date number + hours + status dots row */}
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1">
+                        <span
+                          className={cn(
+                            "text-xs font-medium h-5 w-5 shrink-0 flex items-center justify-center rounded-full",
+                            isToday && "bg-primary text-primary-foreground"
+                          )}
+                        >
+                          {format(day, "d")}
+                        </span>
+                        {inCurrentMonth && totalHours > 0 && (
+                          <>
+                            <span className="text-[10px] text-muted-foreground/50 leading-none mr-1">-</span>
+                            <span
+                              className={cn(
+                                "text-[10px] font-semibold tabular-nums leading-none",
+                                totalHours >= 8 ? "text-green-400" : "text-yellow-400"
+                              )}
+                            >
+                              {formatHours(totalHours)}
+                            </span>
+                          </>
                         )}
-                      >
-                        {format(day, "d")}
-                      </span>
-                      <div className="flex items-center gap-0.5 pt-0.5">
+                      </div>
+                      <div className="flex items-center gap-0.5">
                         {hasFailed && (
                           <div className="h-1.5 w-1.5 rounded-full bg-destructive" />
                         )}
@@ -249,18 +264,6 @@ export function MonthView({
                         )}
                       </div>
                     </div>
-
-                    {/* Hours badge */}
-                    {inCurrentMonth && totalHours > 0 && (
-                      <span
-                        className={cn(
-                          "text-[10px] font-semibold tabular-nums leading-none",
-                          totalHours >= 8 ? "text-green-400" : "text-yellow-400"
-                        )}
-                      >
-                        {formatHours(totalHours)}
-                      </span>
-                    )}
 
                     {/* Issue chips */}
                     {inCurrentMonth && visibleIssues.length > 0 && (
