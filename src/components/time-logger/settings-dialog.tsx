@@ -86,6 +86,10 @@ export function SettingsDialog({
   });
 
   async function onSubmit(data: ConfigFormData) {
+    if (hasActivities && !activityId) {
+      toast.error("Please select a default activity before saving");
+      return;
+    }
     setSaving(true);
     const result = await saveRedmineConfig({
       ...data,

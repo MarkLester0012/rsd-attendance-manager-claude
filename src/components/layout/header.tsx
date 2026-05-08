@@ -19,6 +19,7 @@ const PAGE_TITLES: Record<string, string> = {
   "/reports": "Reports",
   "/suggestions": "Suggestions",
   "/profile": "Profile",
+  "/time-logger": "Time Logger",
 };
 
 export function Header() {

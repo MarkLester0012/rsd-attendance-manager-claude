@@ -1,15 +1,22 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { format } from "date-fns";
+import {
+  format,
+  startOfMonth,
+  endOfMonth,
+  startOfWeek,
+  endOfWeek,
+} from "date-fns";
 import { toast } from "sonner";
-import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { SettingsDialog } from "@/components/time-logger/settings-dialog";
 import { PasteDialog } from "@/components/time-logger/paste-dialog";
 import { DateNav } from "@/components/time-logger/date-nav";
 import { HoursSummary } from "@/components/time-logger/hours-summary";
 import { EntryTable, type DraftEntry } from "@/components/time-logger/entry-table";
+import { MonthView } from "@/components/time-logger/month-view";
+import type { MonthViewEntry } from "@/components/time-logger/month-view";
 import {
   fetchActivities,
   fetchIssueDetails,
@@ -18,10 +25,16 @@ import {
   fetchHolidayForDate,
   saveDraftEntries,
   submitToRedmine,
+  fetchRedmineEntriesInRange,
+  fetchDraftEntriesInRange,
+  fetchHolidaysInRange,
+  fetchLeaveForDate,
+  fetchLeavesInRange,
 } from "./actions";
-import type { User, TimeLogEntry, RedmineActivity, ParsedSlackEntry } from "@/lib/types";
+import type { User, TimeLogEntry, RedmineActivity, ParsedSlackEntry, Holiday, LeaveEntry } from "@/lib/types";
+import { LEAVE_TYPES } from "@/lib/constants/leave-types";
 import { BulkApplyDialog } from "@/components/time-logger/bulk-apply-dialog";
-import { Settings, ClipboardPaste, Send, Save, Loader2, Copy, PartyPopper } from "lucide-react";
+import { Settings, ClipboardPaste, Send, Save, Loader2, Copy, PartyPopper, LayoutList, LayoutGrid, CalendarOff } from "lucide-react";
 
 interface TimeLoggerContentProps {
   currentUser: User;
@@ -79,9 +92,16 @@ export function TimeLoggerContent({
     original_date: string | null;
     is_local: boolean;
   } | null>(null);
+  const [leave, setLeave] = useState<LeaveEntry | null>(null);
   const [saving, setSaving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [loadingEntries, setLoadingEntries] = useState(false);
+  const [viewMode, setViewMode] = useState<"day" | "month">("day");
+  const [calendarMonth, setCalendarMonth] = useState<Date>(() => startOfMonth(new Date()));
+  const [monthlyEntries, setMonthlyEntries] = useState<MonthViewEntry[]>([]);
+  const [monthlyHolidays, setMonthlyHolidays] = useState<Holiday[]>([]);
+  const [monthlyLeaves, setMonthlyLeaves] = useState<LeaveEntry[]>([]);
+  const [loadingMonth, setLoadingMonth] = useState(false);
 
   // Keep latest date available in async handlers without stale closures
   const currentDateRef = useRef(date);
@@ -97,11 +117,30 @@ export function TimeLoggerContent({
     drafts: DraftEntry[];
     redmine: typeof existingRedmineEntries;
     holiday: typeof holiday;
+    leave: LeaveEntry | null;
   };
   const cacheRef = useRef(new Map<string, DateCacheValue>());
 
-  const invalidateCache = useCallback((dateStr: string) => {
+  type RedmineRangeEntry = {
+    id: number;
+    issue_id: number | undefined;
+    project_name: string;
+    hours: number;
+    activity_id: number;
+    activity_name: string;
+    comments: string;
+    spent_on: string;
+  };
+  type MonthCacheValue = { entries: MonthViewEntry[]; holidays: Holiday[]; leaves: LeaveEntry[] };
+  const monthCacheRef = useRef(new Map<string, MonthCacheValue>());
+  const redmineMonthCacheRef = useRef(new Map<string, Promise<RedmineRangeEntry[]>>());
+  const monthLoadRequestRef = useRef(0);
+
+  const invalidateForDate = useCallback((dateStr: string) => {
     cacheRef.current.delete(dateStr);
+    const monthKey = format(new Date(dateStr + "T00:00:00"), "yyyy-MM");
+    monthCacheRef.current.delete(monthKey);
+    redmineMonthCacheRef.current.delete(monthKey);
   }, []);
 
   // Load drafts + Redmine entries + holiday for a date.
@@ -118,41 +157,157 @@ export function TimeLoggerContent({
         setEntries(cached.drafts);
         setExistingRedmineEntries(cached.redmine);
         setHoliday(cached.holiday);
+        setLeave(cached.leave);
         setLoadingEntries(false);
       } else {
         // Cache miss: clear so we never show previous date's values while loading
         setEntries([]);
         setExistingRedmineEntries([]);
         setHoliday(null);
+        setLeave(null);
         setLoadingEntries(true);
       }
 
-      const [redmineResult, draftResult, holidayResult] = await Promise.all([
-        fetchExistingRedmineEntries(dateStr),
+      const monthKey = format(new Date(dateStr + "T00:00:00"), "yyyy-MM");
+      const redmineMonthPromise = redmineMonthCacheRef.current.get(monthKey);
+      const redmineForDay = redmineMonthPromise
+        ? redmineMonthPromise.then((all) =>
+            all
+              .filter((e) => e.spent_on === dateStr)
+              .map((e) => ({
+                id: e.id,
+                issue_id: e.issue_id as number,
+                project_name: e.project_name,
+                hours: e.hours,
+                activity_id: e.activity_id,
+                activity_name: e.activity_name,
+                comments: e.comments,
+              }))
+          )
+        : fetchExistingRedmineEntries(dateStr).then((r) => r.entries);
+
+      const [redmineEntries, draftResult, holidayResult, leaveResult] = await Promise.all([
+        redmineForDay,
         fetchDraftEntries(dateStr),
         fetchHolidayForDate(dateStr),
+        fetchLeaveForDate(dateStr),
       ]);
 
       // Stale-guard: discard results from a superseded request
       if (reqId !== loadRequestRef.current) return;
 
       const drafts = (draftResult.entries || []).map(toEntryFromDB);
-      const redmine = redmineResult.entries || [];
+      const redmine = redmineEntries || [];
       const nextHoliday = holidayResult.holiday;
+      const nextLeave = leaveResult.leave;
 
       cacheRef.current.set(dateStr, {
         drafts,
         redmine,
         holiday: nextHoliday,
+        leave: nextLeave,
       });
 
       setEntries(drafts);
       setExistingRedmineEntries(redmine);
       setHoliday(nextHoliday);
+      setLeave(nextLeave);
       setLoadingEntries(false);
     },
     [hasConfig]
   );
+
+  const loadMonthEntries = useCallback(
+    async (month: Date) => {
+      if (!hasConfig) return;
+      const startStr = format(startOfWeek(startOfMonth(month)), "yyyy-MM-dd");
+      const endStr = format(endOfWeek(endOfMonth(month)), "yyyy-MM-dd");
+      const monthKey = format(month, "yyyy-MM");
+      const reqId = ++monthLoadRequestRef.current;
+
+      const cached = monthCacheRef.current.get(monthKey);
+      if (cached) {
+        setMonthlyEntries(cached.entries);
+        setMonthlyHolidays(cached.holidays);
+        setMonthlyLeaves(cached.leaves);
+        setLoadingMonth(false);
+      } else {
+        setMonthlyEntries([]);
+        setMonthlyHolidays([]);
+        setMonthlyLeaves([]);
+        setLoadingMonth(true);
+      }
+
+      // Store the Redmine promise before awaiting so loadDateEntries can share it
+      const redminePromise = fetchRedmineEntriesInRange(startStr, endStr).then(
+        (r) => r.entries
+      );
+      redmineMonthCacheRef.current.set(monthKey, redminePromise);
+
+      const [redmineEntries, draftsResult, holidaysResult, leavesResult] = await Promise.all([
+        redminePromise,
+        fetchDraftEntriesInRange(startStr, endStr),
+        fetchHolidaysInRange(startStr, endStr),
+        fetchLeavesInRange(startStr, endStr),
+      ]);
+
+      if (reqId !== monthLoadRequestRef.current) return;
+
+      const merged: MonthViewEntry[] = [
+        ...redmineEntries.map((e) => ({
+          log_date: e.spent_on,
+          issue_id: e.issue_id,
+          hours: e.hours,
+          source: "redmine" as const,
+          project_name: e.project_name,
+          activity_name: e.activity_name,
+          comment: e.comments,
+        })),
+        ...(draftsResult.entries || []).map((e) => ({
+          log_date: e.log_date,
+          issue_id: e.issue_id ?? undefined,
+          hours: e.hours,
+          source: (e.status === "failed" ? "failed" : "draft") as "draft" | "failed",
+          project_name: e.project_name ?? undefined,
+          activity_name: e.activity_name ?? undefined,
+          comment: e.comment ?? undefined,
+        })),
+      ];
+
+      const result: MonthCacheValue = {
+        entries: merged,
+        holidays: holidaysResult.holidays,
+        leaves: leavesResult.leaves,
+      };
+      monthCacheRef.current.set(monthKey, result);
+      setMonthlyEntries(result.entries);
+      setMonthlyHolidays(result.holidays);
+      setMonthlyLeaves(result.leaves);
+      setLoadingMonth(false);
+    },
+    [hasConfig]
+  );
+
+  function handleViewModeToggle(mode: "day" | "month") {
+    setViewMode(mode);
+    if (mode === "month") {
+      const syncedMonth = startOfMonth(date);
+      setCalendarMonth(syncedMonth);
+      loadMonthEntries(syncedMonth);
+    }
+  }
+
+  function handleMonthChange(newMonth: Date) {
+    setCalendarMonth(newMonth);
+    loadMonthEntries(newMonth);
+  }
+
+  function handleOpenDayView(dateStr: string) {
+    const newDate = new Date(dateStr + "T00:00:00");
+    setDate(newDate);
+    setViewMode("day");
+    loadDateEntries(newDate);
+  }
 
   // One-time: fetch activities + seed cache with SSR initial entries, then load
   useEffect(() => {
@@ -224,7 +379,7 @@ export function TimeLoggerContent({
     }));
 
     setEntries((prev) => [...prev, ...newEntries]);
-    invalidateCache(format(date, "yyyy-MM-dd"));
+    invalidateForDate(format(date, "yyyy-MM-dd"));
 
     // Fetch issue details for all parsed entries
     const issueIds = parsed.map((p) => p.issueId);
@@ -278,7 +433,7 @@ export function TimeLoggerContent({
     toast.success(`Created draft entries for ${dates.length} dates`);
 
     // Invalidate cache for every date we just touched so revisiting refetches
-    for (const d of dates) invalidateCache(d);
+    for (const d of dates) invalidateForDate(d);
 
     // If the user is still on a date that was in the selection, append locally
     const currentDateStr = format(currentDateRef.current, "yyyy-MM-dd");
@@ -301,6 +456,8 @@ export function TimeLoggerContent({
 
     // Bulk submit can touch multiple dates — safest to clear the whole cache
     cacheRef.current.clear();
+    monthCacheRef.current.clear();
+    redmineMonthCacheRef.current.clear();
 
     // Update local entries for current date if any were submitted
     setEntries((prev) =>
@@ -379,7 +536,7 @@ export function TimeLoggerContent({
     }
 
     // Data for this date changed — invalidate cache so next visit refetches
-    invalidateCache(format(date, "yyyy-MM-dd"));
+    invalidateForDate(format(date, "yyyy-MM-dd"));
 
     toast.success(`Saved ${drafts.length} draft entries`);
   }
@@ -426,7 +583,7 @@ export function TimeLoggerContent({
     const result = await submitToRedmine(toSubmit.map((e) => e.id!));
 
     // Submitted entries change Redmine's submitted list for this date — invalidate
-    invalidateCache(format(date, "yyyy-MM-dd"));
+    invalidateForDate(format(date, "yyyy-MM-dd"));
 
     // Update entries with results
     setEntries((prev) =>
@@ -479,20 +636,6 @@ export function TimeLoggerContent({
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="Time Logger"
-        description="Log your Redmine manhours quickly"
-      >
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => setSettingsOpen(true)}
-        >
-          <Settings className="h-4 w-4 mr-2" />
-          Settings
-        </Button>
-      </PageHeader>
-
       {!hasConfig ? (
         <div className="flex flex-col items-center justify-center py-20 text-center">
           <Settings className="h-12 w-12 text-muted-foreground mb-4" />
@@ -506,93 +649,160 @@ export function TimeLoggerContent({
         </div>
       ) : (
         <>
-          {/* Date navigation + actions */}
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <DateNav date={date} onDateChange={handleDateChange} />
-            <div className="flex flex-wrap items-center gap-2">
+          {/* View mode toggle + Settings */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center rounded-lg border border-border/50 p-0.5 gap-0.5">
               <Button
-                variant="outline"
+                variant={viewMode === "day" ? "secondary" : "ghost"}
                 size="sm"
-                onClick={() => setBulkOpen(true)}
+                className="h-7 px-2.5 gap-1.5"
+                onClick={() => handleViewModeToggle("day")}
               >
-                <Copy className="h-4 w-4 mr-2" />
-                Bulk Apply
+                <LayoutList className="h-3.5 w-3.5" />
+                Day
               </Button>
               <Button
-                variant="outline"
+                variant={viewMode === "month" ? "secondary" : "ghost"}
                 size="sm"
-                onClick={() => setPasteOpen(true)}
+                className="h-7 px-2.5 gap-1.5"
+                onClick={() => handleViewModeToggle("month")}
               >
-                <ClipboardPaste className="h-4 w-4 mr-2" />
-                Paste EOD
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleSaveDrafts}
-                disabled={saving || !hasDrafts}
-              >
-                {saving ? (
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                ) : (
-                  <Save className="h-4 w-4 mr-2" />
-                )}
-                Save Drafts
-              </Button>
-              <Button
-                size="sm"
-                onClick={handleSubmit}
-                disabled={submitting || !hasSubmittable}
-              >
-                {submitting ? (
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                ) : (
-                  <Send className="h-4 w-4 mr-2" />
-                )}
-                Submit to Redmine
+                <LayoutGrid className="h-3.5 w-3.5" />
+                Month
               </Button>
             </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setSettingsOpen(true)}
+            >
+              <Settings className="h-4 w-4 mr-2" />
+              Settings
+            </Button>
           </div>
 
-          {/* Holiday banner */}
-          {holiday && (
-            <div className="flex items-center gap-3 rounded-lg border border-yellow-500/30 bg-yellow-500/5 px-4 py-3">
-              <PartyPopper className="h-5 w-5 text-yellow-400 shrink-0" />
-              <div className="text-sm">
-                <span className="font-medium text-yellow-300">{holiday.name}</span>
-                {holiday.original_date && holiday.original_date !== holiday.observed_date && (
-                  <span className="text-muted-foreground ml-2">
-                    (moved from {format(new Date(holiday.original_date + "T00:00:00"), "MMM d, yyyy")})
-                  </span>
-                )}
-                {holiday.is_local && (
-                  <span className="ml-2 text-xs text-muted-foreground">(Local Holiday)</span>
-                )}
+          {viewMode === "day" ? (
+            <>
+              {/* Date navigation + actions */}
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <DateNav date={date} onDateChange={handleDateChange} />
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setBulkOpen(true)}
+                  >
+                    <Copy className="h-4 w-4 mr-2" />
+                    Bulk Apply
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPasteOpen(true)}
+                  >
+                    <ClipboardPaste className="h-4 w-4 mr-2" />
+                    Paste EOD
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleSaveDrafts}
+                    disabled={saving || !hasDrafts}
+                  >
+                    {saving ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <Save className="h-4 w-4 mr-2" />
+                    )}
+                    Save Drafts
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={handleSubmit}
+                    disabled={submitting || !hasSubmittable}
+                  >
+                    {submitting ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <Send className="h-4 w-4 mr-2" />
+                    )}
+                    Submit to Redmine
+                  </Button>
+                </div>
               </div>
-            </div>
-          )}
 
-          {/* Hours summary */}
-          <HoursSummary
-            totalHours={totalHours}
-            entryCount={entries.length + existingRedmineEntries.length}
-            submittedCount={submittedCount + existingRedmineEntries.length}
-            failedCount={failedCount}
-          />
+              {/* Holiday banner */}
+              {holiday && (
+                <div className="flex items-center gap-3 rounded-lg border border-yellow-500/30 bg-yellow-500/5 px-4 py-3">
+                  <PartyPopper className="h-5 w-5 text-yellow-400 shrink-0" />
+                  <div className="text-sm">
+                    <span className="font-medium text-yellow-300">{holiday.name}</span>
+                    {holiday.original_date && holiday.original_date !== holiday.observed_date && (
+                      <span className="text-muted-foreground ml-2">
+                        (moved from {format(new Date(holiday.original_date + "T00:00:00"), "MMM d, yyyy")})
+                      </span>
+                    )}
+                    {holiday.is_local && (
+                      <span className="ml-2 text-xs text-muted-foreground">(Local Holiday)</span>
+                    )}
+                  </div>
+                </div>
+              )}
 
-          {/* Entry table */}
-          {loadingEntries ? (
-            <div className="flex items-center justify-center py-12 text-muted-foreground">
-              <Loader2 className="h-5 w-5 animate-spin mr-2" />
-              Loading entries...
-            </div>
+              {/* Leave banner */}
+              {leave && (
+                <div className="flex items-center gap-3 rounded-lg border border-blue-500/30 bg-blue-500/5 px-4 py-3">
+                  <CalendarOff className="h-5 w-5 text-blue-400 shrink-0" />
+                  <div className="text-sm">
+                    <span className="font-medium text-blue-300">
+                      {LEAVE_TYPES[leave.leave_type].label}
+                      {leave.duration !== "whole" && (
+                        <span className="ml-1 font-normal text-blue-400/70">
+                          ({leave.duration === "half_am" ? "AM half-day" : "PM half-day"})
+                        </span>
+                      )}
+                    </span>
+                    {leave.status === "pending" && (
+                      <span className="ml-2 text-xs text-muted-foreground">(pending approval)</span>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Hours summary */}
+              <HoursSummary
+                totalHours={totalHours}
+                entryCount={entries.length + existingRedmineEntries.length}
+                submittedCount={submittedCount + existingRedmineEntries.length}
+                failedCount={failedCount}
+              />
+
+              {/* Entry table */}
+              {loadingEntries ? (
+                <div className="flex items-center justify-center py-12 text-muted-foreground">
+                  <Loader2 className="h-5 w-5 animate-spin mr-2" />
+                  Loading entries...
+                </div>
+              ) : (
+                <EntryTable
+                  entries={entries}
+                  activities={activities}
+                  onEntriesChange={setEntries}
+                  onIssueBlur={handleIssueBlur}
+                  existingRedmineEntries={existingRedmineEntries}
+                />
+              )}
+            </>
           ) : (
-            <EntryTable
-              entries={entries}
-              activities={activities}
-              onEntriesChange={setEntries}
-              onIssueBlur={handleIssueBlur}
-              existingRedmineEntries={existingRedmineEntries}
+            <MonthView
+              entries={monthlyEntries}
+              holidays={monthlyHolidays}
+              leaves={monthlyLeaves}
+              currentMonth={calendarMonth}
+              selectedDate={format(date, "yyyy-MM-dd")}
+              onMonthChange={handleMonthChange}
+              onOpenDayView={handleOpenDayView}
+              loading={loadingMonth}
             />
           )}
         </>

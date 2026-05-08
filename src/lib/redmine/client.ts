@@ -162,6 +162,79 @@ export async function getTimeEntries(
   }
 }
 
+export async function getTimeEntriesInRange(
+  opts: RedmineRequestOptions,
+  from: string,
+  to: string
+): Promise<{
+  entries: Array<{
+    id: number;
+    issue_id: number | undefined;
+    project_name: string;
+    hours: number;
+    activity_id: number;
+    activity_name: string;
+    comments: string;
+    spent_on: string;
+  }>;
+  error?: string;
+}> {
+  const PAGE_SIZE = 100;
+  const allEntries: Array<{
+    id: number;
+    issue_id: number | undefined;
+    project_name: string;
+    hours: number;
+    activity_id: number;
+    activity_name: string;
+    comments: string;
+    spent_on: string;
+  }> = [];
+  let offset = 0;
+
+  try {
+    while (true) {
+      const res = await redmineFetch(
+        opts,
+        `/time_entries.json?user_id=me&from=${from}&to=${to}&limit=${PAGE_SIZE}&offset=${offset}`
+      );
+      if (!res.ok) return { entries: [], error: `HTTP ${res.status}` };
+      const data = await res.json();
+      const page: Array<{
+        id: number;
+        issue?: { id: number };
+        project: { name: string };
+        hours: number;
+        activity: { id: number; name: string };
+        comments: string;
+        spent_on: string;
+      }> = data.time_entries || [];
+
+      for (const e of page) {
+        allEntries.push({
+          id: e.id,
+          issue_id: e.issue?.id,
+          project_name: e.project.name,
+          hours: e.hours,
+          activity_id: e.activity.id,
+          activity_name: e.activity.name,
+          comments: e.comments,
+          spent_on: e.spent_on,
+        });
+      }
+
+      offset += page.length;
+      if (page.length < PAGE_SIZE || offset >= (data.total_count ?? 0)) break;
+    }
+    return { entries: allEntries };
+  } catch (e) {
+    return {
+      entries: [],
+      error: e instanceof Error ? e.message : "Failed to fetch time entries",
+    };
+  }
+}
+
 export async function createTimeEntry(
   opts: RedmineRequestOptions,
   data: {

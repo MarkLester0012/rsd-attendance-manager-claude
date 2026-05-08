@@ -3,7 +3,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { encryptApiKey, decryptApiKey } from "@/lib/redmine/encryption";
 import * as redmine from "@/lib/redmine/client";
-import type { RedmineActivity, RedmineIssueDetails, TimeLogEntry } from "@/lib/types";
+import type { RedmineActivity, RedmineIssueDetails, TimeLogEntry, Holiday, LeaveEntry } from "@/lib/types";
 
 async function getAuthenticatedUser() {
   const supabase = await createClient();
@@ -358,4 +358,101 @@ export async function retryFailedEntries(
     .eq("user_id", user.id);
 
   return submitToRedmine(entryIds);
+}
+
+// --- Month view ---
+
+export async function fetchRedmineEntriesInRange(
+  start: string,
+  end: string
+): Promise<{
+  entries: Array<{
+    id: number;
+    issue_id: number | undefined;
+    project_name: string;
+    hours: number;
+    activity_id: number;
+    activity_name: string;
+    comments: string;
+    spent_on: string;
+  }>;
+  error?: string;
+}> {
+  const user = await getAuthenticatedUser();
+  if (!user) return { entries: [], error: "Not authenticated" };
+
+  const config = await getDecryptedConfig(user.id);
+  if (!config) return { entries: [], error: "Redmine not configured" };
+
+  return redmine.getTimeEntriesInRange(config, start, end);
+}
+
+export async function fetchDraftEntriesInRange(
+  start: string,
+  end: string
+): Promise<{ entries: TimeLogEntry[]; error?: string }> {
+  const user = await getAuthenticatedUser();
+  if (!user) return { entries: [], error: "Not authenticated" };
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("time_log_entries")
+    .select("*")
+    .eq("user_id", user.id)
+    .gte("log_date", start)
+    .lte("log_date", end)
+    .in("status", ["draft", "failed"])
+    .order("log_date", { ascending: true })
+    .order("created_at", { ascending: true });
+
+  if (error) return { entries: [], error: error.message };
+  return { entries: data || [] };
+}
+
+export async function fetchHolidaysInRange(
+  start: string,
+  end: string
+): Promise<{ holidays: Holiday[] }> {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("holidays")
+    .select("id, name, observed_date, original_date, is_local, created_at")
+    .gte("observed_date", start)
+    .lte("observed_date", end)
+    .order("observed_date", { ascending: true });
+  return { holidays: data || [] };
+}
+
+export async function fetchLeaveForDate(
+  date: string
+): Promise<{ leave: LeaveEntry | null; error?: string }> {
+  const user = await getAuthenticatedUser();
+  if (!user) return { leave: null, error: "Not authenticated" };
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("leaves")
+    .select("*")
+    .eq("user_id", user.id)
+    .eq("leave_date", date)
+    .in("status", ["approved", "pending"])
+    .maybeSingle();
+  return { leave: data };
+}
+
+export async function fetchLeavesInRange(
+  start: string,
+  end: string
+): Promise<{ leaves: LeaveEntry[] }> {
+  const user = await getAuthenticatedUser();
+  if (!user) return { leaves: [] };
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("leaves")
+    .select("*")
+    .eq("user_id", user.id)
+    .gte("leave_date", start)
+    .lte("leave_date", end)
+    .in("status", ["approved", "pending"])
+    .order("leave_date", { ascending: true });
+  return { leaves: data || [] };
 }
