@@ -153,8 +153,15 @@ function SidebarContent({ user, livePendingCount: pendingCount }: SidebarInterna
   return (
     <div className="flex h-full flex-col bg-sidebar border-r border-sidebar-border">
       {/* Logo area */}
-      <div className="flex h-16 items-center gap-3 px-4 border-b border-sidebar-border">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary dark:bg-gradient-to-br dark:from-blue-500 dark:to-indigo-600 text-primary-foreground dark:text-white text-sm font-bold">
+      <div
+        className={cn(
+          "flex border-b border-sidebar-border",
+          isCollapsed
+            ? "h-16 flex-col items-center justify-center gap-1 px-2"
+            : "h-16 flex-row items-center gap-3 px-4"
+        )}
+      >
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary dark:bg-gradient-to-br dark:from-blue-500 dark:to-indigo-600 text-primary-foreground dark:text-white text-sm font-bold">
           R
         </div>
         {!isCollapsed && (
@@ -170,11 +177,14 @@ function SidebarContent({ user, livePendingCount: pendingCount }: SidebarInterna
         <Button
           variant="ghost"
           size="icon"
-          className="ml-auto h-7 w-7 shrink-0 text-sidebar-foreground/50 hover:text-sidebar-foreground"
+          className={cn(
+            "shrink-0 text-sidebar-foreground/50 hover:text-sidebar-foreground",
+            isCollapsed ? "h-6 w-6" : "ml-auto h-7 w-7"
+          )}
           onClick={toggle}
         >
           {isCollapsed ? (
-            <ChevronRight className="h-4 w-4" />
+            <ChevronRight className="h-3.5 w-3.5" />
           ) : (
             <ChevronLeft className="h-4 w-4" />
           )}
@@ -271,8 +281,8 @@ function SidebarContent({ user, livePendingCount: pendingCount }: SidebarInterna
         {/* User info */}
         <div
           className={cn(
-            "flex items-center gap-3",
-            isCollapsed && "justify-center"
+            "flex items-center",
+            isCollapsed ? "flex-col gap-1.5" : "gap-3"
           )}
         >
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary dark:bg-gradient-to-br dark:from-blue-500 dark:to-indigo-600 text-[11px] font-bold text-primary-foreground dark:text-white">
@@ -294,10 +304,7 @@ function SidebarContent({ user, livePendingCount: pendingCount }: SidebarInterna
                 <Button
                   variant="ghost"
                   size="icon"
-                  className={cn(
-                    "h-7 w-7 shrink-0 text-sidebar-foreground/50 hover:text-red-400",
-                    isCollapsed && "mt-2"
-                  )}
+                  className="h-7 w-7 shrink-0 text-sidebar-foreground/50 hover:text-red-400"
                   onClick={handleSignOut}
                 >
                   <LogOut className="h-4 w-4" />
@@ -321,8 +328,8 @@ export function Sidebar({ user, pendingCount = 0 }: SidebarProps) {
       {/* Desktop sidebar */}
       <aside
         className={cn(
-          "hidden lg:flex h-screen sticky top-0 transition-all duration-300 ease-in-out",
-          isCollapsed ? "w-[72px]" : "w-64"
+          "hidden lg:flex h-screen sticky top-0 shrink-0 overflow-hidden transition-all duration-300 ease-in-out",
+          isCollapsed ? "w-16" : "w-64"
         )}
       >
         <SidebarContent user={user} livePendingCount={livePendingCount} />
