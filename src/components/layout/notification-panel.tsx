@@ -23,7 +23,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
+
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
 import { useNotifications } from "@/hooks/use-notifications";
@@ -89,10 +89,11 @@ export function NotificationPanel({ userId, userRole }: NotificationPanelProps) 
     useNotifications(userId);
   const [open, setOpen] = useState(false);
   const [upcomingHolidays, setUpcomingHolidays] = useState<UpcomingHoliday[]>([]);
+  const [visibleCount, setVisibleCount] = useState(10);
   const router = useRouter();
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) { setVisibleCount(10); return; }
     const supabase = createClient();
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -111,9 +112,15 @@ export function NotificationPanel({ userId, userRole }: NotificationPanelProps) 
   function handleNotificationClick(n: Notification) {
     if (!n.read) markRead(n.id);
     setOpen(false);
-    router.push(NOTIFICATION_ROUTES[n.type]);
+    const isProjectType = n.type === "project_added" || n.type === "project_removed";
+    const route = isProjectType
+      ? (userRole === "leader" || userRole === "hr" ? "/projects" : "/dashboard")
+      : NOTIFICATION_ROUTES[n.type];
+    router.push(route);
   }
 
+  const visibleNotifications = notifications.slice(0, visibleCount);
+  const hasMore = notifications.length > visibleCount;
   const isEmpty = notifications.length === 0 && upcomingHolidays.length === 0;
 
   return (
@@ -152,7 +159,7 @@ export function NotificationPanel({ userId, userRole }: NotificationPanelProps) 
           )}
         </div>
 
-        <ScrollArea className="max-h-[400px]">
+        <div className="overflow-y-auto max-h-[400px] scrollbar-thin">
           {/* Upcoming holidays (computed) */}
           {upcomingHolidays.map((h) => {
             const days = daysUntil(h.observed_date);
@@ -184,7 +191,7 @@ export function NotificationPanel({ userId, userRole }: NotificationPanelProps) 
             </div>
           )}
 
-          {notifications.map((n) => {
+          {visibleNotifications.map((n) => {
             const meta = ICON_MAP[n.type];
             const Icon = meta?.icon ?? Bell;
             return (
@@ -217,14 +224,15 @@ export function NotificationPanel({ userId, userRole }: NotificationPanelProps) 
             );
           })}
 
-          {notifications.length > 0 && isEmpty === false && (
-            <div className="py-2 text-center">
-              <p className="text-[10px] text-muted-foreground/50">
-                Showing last {notifications.length} notifications
-              </p>
-            </div>
+          {hasMore && (
+            <button
+              onClick={() => setVisibleCount((c) => c + 10)}
+              className="w-full py-2.5 text-[11px] text-muted-foreground hover:text-foreground transition-colors text-center"
+            >
+              See previous notifications
+            </button>
           )}
-        </ScrollArea>
+        </div>
       </PopoverContent>
     </Popover>
   );

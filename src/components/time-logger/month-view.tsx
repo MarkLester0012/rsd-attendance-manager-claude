@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import {
   format,
   startOfMonth,
@@ -14,7 +14,12 @@ import {
   isSameDay,
   isWeekend,
 } from "date-fns";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, Calendar as CalendarIcon } from "lucide-react";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -57,6 +62,7 @@ interface MonthViewProps {
 }
 
 const DAY_HEADERS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 function formatHours(h: number): string {
   return h % 1 === 0 ? `${h}h` : `${h.toFixed(1)}h`;
@@ -73,6 +79,12 @@ export function MonthView({
   loading,
 }: MonthViewProps) {
   const [drawerDate, setDrawerDate] = useState<string | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerYear, setPickerYear] = useState(currentMonth.getFullYear());
+
+  useEffect(() => {
+    setPickerYear(currentMonth.getFullYear());
+  }, [currentMonth]);
 
   const entriesByDate = useMemo(() => {
     const map = new Map<string, MonthViewEntry[]>();
@@ -128,9 +140,56 @@ export function MonthView({
               >
                 <ChevronLeft className="h-4 w-4" />
               </Button>
-              <span className="text-base font-semibold min-w-[140px] text-center">
-                {format(currentMonth, "MMMM yyyy")}
-              </span>
+              <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className="min-w-[160px] gap-2">
+                    <CalendarIcon className="h-4 w-4" />
+                    <span>{format(currentMonth, "MMMM yyyy")}</span>
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-3" align="center">
+                  <div className="flex items-center justify-between mb-2">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7"
+                      onClick={() => setPickerYear((y) => y - 1)}
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </Button>
+                    <span className="text-sm font-semibold">{pickerYear}</span>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7"
+                      onClick={() => setPickerYear((y) => y + 1)}
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  <div className="grid grid-cols-3 gap-1">
+                    {MONTHS.map((name, idx) => {
+                      const isSelected =
+                        pickerYear === currentMonth.getFullYear() &&
+                        idx === currentMonth.getMonth();
+                      return (
+                        <Button
+                          key={name}
+                          variant={isSelected ? "default" : "ghost"}
+                          size="sm"
+                          className="h-8 text-xs"
+                          onClick={() => {
+                            onMonthChange(startOfMonth(new Date(pickerYear, idx, 1)));
+                            setPickerOpen(false);
+                          }}
+                        >
+                          {name}
+                        </Button>
+                      );
+                    })}
+                  </div>
+                </PopoverContent>
+              </Popover>
               <Button
                 variant="ghost"
                 size="icon"
