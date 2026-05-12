@@ -466,7 +466,10 @@ export function EmployeeView({ user, snapshots, changeRequests, defaultMonth }: 
                 <div>
                   <p className="text-white">
                     {r.snapshot?.month ? formatMonth(r.snapshot.month) : "—"} →{" "}
-                    <span className="font-medium">{r.requested_distance_km} km</span>
+                    <span className="font-medium">
+                      {r.requested_mode ? `${MODE_LABELS[r.requested_mode as TransportMode]} · ` : ""}
+                      {r.requested_distance_km} km
+                    </span>
                   </p>
                   <p className="text-white/40 text-xs mt-0.5">{r.reason}</p>
                   {r.hr_note && (

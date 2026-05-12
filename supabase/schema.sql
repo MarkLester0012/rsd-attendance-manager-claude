@@ -490,6 +490,8 @@ create table public.distance_change_requests (
   snapshot_id uuid not null references public.allowance_snapshots(id) on delete cascade,
   employee_id uuid not null references public.users(id) on delete cascade,
   requested_distance_km numeric(10,2) not null check (requested_distance_km > 0),
+  requested_mode text
+    check (requested_mode in ('car', 'motorcycle', 'walk', 'jeep', 'bus')),
   reason text not null,
   status text not null default 'pending'
     check (status in ('pending', 'approved', 'rejected')),

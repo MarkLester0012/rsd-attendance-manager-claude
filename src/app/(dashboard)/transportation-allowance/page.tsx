@@ -1,9 +1,13 @@
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { TransportationAllowanceContent } from "./transportation-allowance-content";
-import { format, addMonths, parse, endOfMonth, eachDayOfInterval, isWeekend } from "date-fns";
+import { format, addMonths, parse, endOfMonth } from "date-fns";
+import {
+  buildTransportationEmployeeDefaults,
+  type EmployeeDefaultValues,
+} from "@/lib/utils/transportation-defaults";
 
-export type EmployeeDefaults = Record<string, { days_worked: number; wfh_days: number }>;
+export type EmployeeDefaults = Record<string, EmployeeDefaultValues>;
 
 export default async function TransportationAllowancePage() {
   const supabase = await createClient();
@@ -62,25 +66,13 @@ export default async function TransportationAllowancePage() {
         .lte("leave_date", endStr),
     ]);
 
-    const holidaySet = new Set((holidays ?? []).map((h) => h.observed_date));
-    const businessDays = eachDayOfInterval({ start: monthStart, end: monthEnd })
-      .filter((d) => !isWeekend(d) && !holidaySet.has(format(d, "yyyy-MM-dd")))
-      .length;
-
-    const employeeDefaults: EmployeeDefaults = {};
-    for (const emp of employees ?? []) {
-      const empLeaves = (monthLeaves ?? []).filter((l) => l.user_id === emp.id);
-      const wfhDays = empLeaves
-        .filter((l) => l.leave_type === "WFH")
-        .reduce((s, l) => s + (l.duration_value ?? 1), 0);
-      const otherDays = empLeaves
-        .filter((l) => l.leave_type !== "WFH")
-        .reduce((s, l) => s + (l.duration_value ?? 1), 0);
-      employeeDefaults[emp.id] = {
-        wfh_days: Math.round(wfhDays),
-        days_worked: Math.max(0, businessDays - Math.round(wfhDays) - Math.round(otherDays)),
-      };
-    }
+    const employeeDefaults = buildTransportationEmployeeDefaults(
+      (employees ?? []).map((employee) => employee.id),
+      monthStart,
+      monthEnd,
+      (holidays ?? []).map((holiday) => holiday.observed_date),
+      monthLeaves ?? []
+    );
 
     return (
       <TransportationAllowanceContent

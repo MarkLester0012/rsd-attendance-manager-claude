@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect, useMemo } from "react";
-import { format, parseISO, parse, endOfMonth, eachDayOfInterval, isWeekend } from "date-fns";
+import { format, parseISO, parse, endOfMonth } from "date-fns";
 import {
   Car, Bike, PersonStanding, Bus, Navigation,
   Lock, LockOpen, Save, Trash2, Users, AlertCircle, Check, X, Loader2,
@@ -28,6 +28,7 @@ import {
   calculateAllowance, formatPHP, MODE_LABELS, MODE_DEFAULTS,
   type TransportMode, type CalculatorInput, type SnapshotModeConfig,
 } from "@/lib/utils/allowance-calculator";
+import { buildTransportationEmployeeDefaults } from "@/lib/utils/transportation-defaults";
 import {
   saveSnapshot, setSnapshotLocked, lockMonth, reviewChangeRequest, deleteSnapshot,
 } from "./actions";
@@ -159,14 +160,14 @@ function RejectModal({
 
 // Employee edit modal — 2-column layout: form left, live calc right
 function EmployeeEditModal({
-  employee, snapshot, month, employeeDefault, onSaved, onClose,
+  employee, snapshot, month, employeeDefault, onSaved, onDeleted, onClose,
 }: {
   employee: User;
   snapshot: AllowanceSnapshot | null;
   month: string;
   employeeDefault: { days_worked: number; wfh_days: number };
   onSaved: (data: Partial<AllowanceSnapshot> & { employee_id: string }) => void;
-  onDeleted: (employeeId: string) => void;
+  onDeleted: (snapshotId: string) => void;
   onClose: () => void;
 }) {
   const [form, setForm] = useState<RowForm>(() =>
@@ -242,7 +243,7 @@ function EmployeeEditModal({
     setDeleting(false);
     if (res.error) { toast.error(res.error); return; }
     toast.success(`Deleted ${employee.name}'s snapshot`);
-    onDeleted(employee.id);
+    onDeleted(snapshot.id);
     onClose();
   }
 
@@ -659,7 +660,13 @@ function ChangeRequestRow({
           <p className="text-xs text-white/50 mt-0.5">
             {request.snapshot?.month ? formatMonth(request.snapshot.month) : ""}
             {" · "}
+            {request.snapshot?.declared_mode
+              ? `${MODE_LABELS[request.snapshot.declared_mode as TransportMode]} · `
+              : ""}
             {(request as any).snapshot?.distance_km ?? "?"}km →{" "}
+            {request.requested_mode
+              ? `${MODE_LABELS[request.requested_mode as TransportMode]} · `
+              : ""}
             <span className="text-white font-medium">{request.requested_distance_km}km</span>
           </p>
           <p className="text-xs text-white/40 mt-1 italic">{request.reason}</p>
@@ -770,21 +777,19 @@ export function HRView({
         .eq("status", "approved").gte("leave_date", startStr).lte("leave_date", endStr),
     ]);
     setSnapshots(snaps || []);
-    const holidaySet = new Set((holidays ?? []).map((h: any) => h.observed_date));
-    const businessDays = eachDayOfInterval({ start: monthStart, end: monthEnd })
-      .filter((d) => !isWeekend(d) && !holidaySet.has(format(d, "yyyy-MM-dd")))
-      .length;
-    const newDefs: EmployeeDefaults = {};
-    for (const emp of employees) {
-      const empLeaves = (monthLeaves ?? []).filter((l: any) => l.user_id === emp.id);
-      const wfhDays = empLeaves.filter((l: any) => l.leave_type === "WFH")
-        .reduce((s: number, l: any) => s + (l.duration_value ?? 1), 0);
-      newDefs[emp.id] = {
-        wfh_days: Math.round(wfhDays),
-        days_worked: Math.max(0, businessDays - Math.round(wfhDays)),
-      };
-    }
-    setLocalDefaults(newDefs);
+    setLocalDefaults(
+      buildTransportationEmployeeDefaults(
+        employees.map((employee) => employee.id),
+        monthStart,
+        monthEnd,
+        (holidays ?? []).map((holiday: { observed_date: string }) => holiday.observed_date),
+        (monthLeaves ?? []).map((leave: {
+          user_id: string;
+          leave_type: string;
+          duration_value: number | null;
+        }) => leave)
+      )
+    );
     setLoadingMonth(false);
   }
 
@@ -833,6 +838,11 @@ export function HRView({
 
   function handleRequestReviewed(id: string) {
     setChangeRequests((prev) => prev.filter((r) => r.id !== id));
+  }
+
+  function handleSnapshotDeleted(snapshotId: string) {
+    setSnapshots((prev) => prev.filter((snapshot) => snapshot.id !== snapshotId));
+    setChangeRequests((prev) => prev.filter((request) => request.snapshot_id !== snapshotId));
   }
 
   const allLocked = snapshots.length > 0 && snapshots.every((s) => s.locked);
@@ -998,6 +1008,7 @@ export function HRView({
           month={month}
           employeeDefault={editDefault}
           onSaved={handleSnapshotSaved}
+          onDeleted={handleSnapshotDeleted}
           onClose={() => setEditTarget(null)}
         />
       )}

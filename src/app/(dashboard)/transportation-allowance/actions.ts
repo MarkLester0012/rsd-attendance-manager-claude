@@ -129,7 +129,7 @@ export async function lockMonth(month: string, locked: boolean) {
 export async function submitDistanceChangeRequest(input: {
   snapshot_id: string;
   requested_distance_km: number;
-  requested_mode: string;
+  requested_mode: TransportMode;
   reason: string;
 }) {
   const supabase = await createClient();
