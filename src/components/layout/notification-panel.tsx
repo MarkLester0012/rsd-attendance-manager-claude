@@ -16,6 +16,7 @@ import {
   ThumbsUp,
   Megaphone,
   PartyPopper,
+  Bus,
 } from "lucide-react";
 import {
   Popover,
@@ -54,6 +55,8 @@ const ICON_MAP: Record<
   suggestion_reply: { icon: CornerDownRight, color: "text-blue-400" },
   suggestion_upvote: { icon: ThumbsUp, color: "text-blue-400" },
   announcement_new: { icon: Megaphone, color: "text-yellow-400" },
+  allowance_change_request: { icon: Bus, color: "text-cyan-400" },
+  allowance_request_reviewed: { icon: Bus, color: "text-cyan-400" },
 };
 
 const NOTIFICATION_ROUTES: Record<NotificationType, string> = {
@@ -67,6 +70,8 @@ const NOTIFICATION_ROUTES: Record<NotificationType, string> = {
   suggestion_reply: "/suggestions",
   suggestion_upvote: "/suggestions",
   announcement_new: "/dashboard",
+  allowance_change_request: "/transportation-allowance",
+  allowance_request_reviewed: "/transportation-allowance",
 };
 
 function timeAgo(iso: string) {

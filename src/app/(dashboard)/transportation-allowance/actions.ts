@@ -2,6 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { calculateAllowance } from "@/lib/utils/allowance-calculator";
+import { getPaymentDateString } from "@/lib/utils/pay-period";
 import type { TransportMode, SnapshotModeConfig } from "@/lib/types";
 
 interface SnapshotInput {
@@ -57,7 +58,7 @@ export async function saveSnapshot(input: SnapshotInput) {
   const payload = {
     employee_id: input.employee_id,
     month: input.month,
-    payment_date: input.payment_date || null,
+    payment_date: input.payment_date || getPaymentDateString(input.month),
     distance_km: input.distance_km,
     declared_mode: input.declared_mode,
     days_worked: input.days_worked,

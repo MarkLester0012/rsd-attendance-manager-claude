@@ -24,6 +24,7 @@ import {
   calculateAllowance, formatPHP, MODE_LABELS,
   type TransportMode, type CalculatorInput,
 } from "@/lib/utils/allowance-calculator";
+import { getPayPeriod } from "@/lib/utils/pay-period";
 
 const MODE_ICONS_SMALL: Record<TransportMode, React.ReactNode> = {
   car: <Car className="h-3.5 w-3.5" />,
@@ -33,6 +34,7 @@ const MODE_ICONS_SMALL: Record<TransportMode, React.ReactNode> = {
   bus: <Bus className="h-3.5 w-3.5" />,
 };
 import { submitDistanceChangeRequest } from "./actions";
+import { createNotifications } from "@/lib/notifications";
 import type { AllowanceSnapshot, DistanceChangeRequest, User } from "@/lib/types";
 
 const MODE_ICONS: Record<TransportMode, React.ReactNode> = {
@@ -84,9 +86,9 @@ function BreakdownCard({ snapshot }: { snapshot: AllowanceSnapshot }) {
           </span>
         </div>
       ))}
-      <div className="flex items-center justify-between py-2 px-3 rounded-lg bg-red-500/10 border border-red-500/20">
+      <div className="flex items-center justify-between py-2 px-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
         <span className="font-semibold text-white">Total Allowance</span>
-        <span className="text-xl font-bold text-red-400">{formatPHP(result.total)}</span>
+        <span className="text-xl font-bold text-emerald-400">{formatPHP(result.total)}</span>
       </div>
     </div>
   );
@@ -199,9 +201,9 @@ function WhatIfCalculator({ base }: { base: AllowanceSnapshot | null }) {
                 <span className="font-mono text-white">{formatPHP(b.amount)}</span>
               </div>
             ))}
-            <div className="flex items-center justify-between px-2 py-1.5 rounded bg-red-500/10 border border-red-500/20">
+            <div className="flex items-center justify-between px-2 py-1.5 rounded bg-emerald-500/10 border border-emerald-500/20">
               <span className="text-sm font-semibold text-white">Total</span>
-              <span className="text-base font-bold text-red-400">{formatPHP(result.total)}</span>
+              <span className="text-base font-bold text-emerald-400">{formatPHP(result.total)}</span>
             </div>
           </div>
         </div>
@@ -212,11 +214,13 @@ function WhatIfCalculator({ base }: { base: AllowanceSnapshot | null }) {
 
 function ChangeRequestModal({
   snapshot,
+  userName,
   open,
   onClose,
   onSubmitted,
 }: {
   snapshot: AllowanceSnapshot;
+  userName: string;
   open: boolean;
   onClose: () => void;
   onSubmitted: () => void;
@@ -242,6 +246,28 @@ function ChangeRequestModal({
     });
     setLoading(false);
     if (result.error) { toast.error(result.error); return; }
+
+    // Notify HR users
+    try {
+      const { createClient } = await import("@/lib/supabase/client");
+      const supabase = createClient();
+      const { data: hrUsers } = await supabase
+        .from("users")
+        .select("id")
+        .eq("role", "hr");
+      if (hrUsers?.length) {
+        await createNotifications(
+          hrUsers.map((hr) => ({
+            user_id: hr.id,
+            type: "allowance_change_request" as const,
+            title: `${userName} requested an allowance change`,
+            body: `${MODE_LABELS[mode]} · ${km} km — ${reason.trim()}`,
+            data: { snapshot_id: snapshot.id },
+          }))
+        );
+      }
+    } catch { /* notification failure shouldn't block */ }
+
     toast.success("Change request submitted");
     onSubmitted();
     onClose();
@@ -353,7 +379,9 @@ export function EmployeeView({ user, snapshots, changeRequests, defaultMonth }: 
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white">Transportation Allowance</h1>
-          <p className="text-white/50 text-sm mt-1">Your monthly commute reimbursement</p>
+          <p className="text-white/50 text-sm mt-1">
+            Pay Period: {getPayPeriod(selectedMonth).label}
+          </p>
         </div>
         <Select value={selectedMonth} onValueChange={setSelectedMonth}>
           <SelectTrigger className="w-44 bg-white/5 border-white/10">
@@ -396,7 +424,7 @@ export function EmployeeView({ user, snapshots, changeRequests, defaultMonth }: 
           ) : (
             <>
               {/* Key figures */}
-              <div className="grid grid-cols-3 gap-3 text-sm">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
                 <div className="bg-white/5 rounded-lg p-3">
                   <p className="text-white/50 text-xs">Distance</p>
                   <p className="text-white font-semibold">{snapshot.distance_km} km</p>
@@ -408,6 +436,12 @@ export function EmployeeView({ user, snapshots, changeRequests, defaultMonth }: 
                 <div className="bg-white/5 rounded-lg p-3">
                   <p className="text-white/50 text-xs">WFH Days</p>
                   <p className="text-white font-semibold">{snapshot.wfh_days}</p>
+                </div>
+                <div className="bg-white/5 rounded-lg p-3">
+                  <p className="text-white/50 text-xs">Payment Date</p>
+                  <p className="text-white font-semibold">
+                    {snapshot.payment_date ? format(new Date(snapshot.payment_date), "MMM d") : "15th"}
+                  </p>
                 </div>
               </div>
 
@@ -542,6 +576,7 @@ export function EmployeeView({ user, snapshots, changeRequests, defaultMonth }: 
       {snapshot && (
         <ChangeRequestModal
           snapshot={snapshot}
+          userName={user.name}
           open={requestModalOpen}
           onClose={() => setRequestModalOpen(false)}
           onSubmitted={handleSubmitted}

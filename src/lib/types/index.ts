@@ -217,7 +217,9 @@ export type NotificationType =
   | "suggestion_comment"
   | "suggestion_reply"
   | "suggestion_upvote"
-  | "announcement_new";
+  | "announcement_new"
+  | "allowance_change_request"
+  | "allowance_request_reviewed";
 
 export interface Notification {
   id: string;

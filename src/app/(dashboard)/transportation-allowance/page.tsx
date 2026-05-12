@@ -1,11 +1,12 @@
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { TransportationAllowanceContent } from "./transportation-allowance-content";
-import { format, addMonths, parse, endOfMonth } from "date-fns";
+import { format } from "date-fns";
 import {
   buildTransportationEmployeeDefaults,
   type EmployeeDefaultValues,
 } from "@/lib/utils/transportation-defaults";
+import { getPayPeriod } from "@/lib/utils/pay-period";
 
 export type EmployeeDefaults = Record<string, EmployeeDefaultValues>;
 
@@ -25,11 +26,10 @@ export default async function TransportationAllowancePage() {
   if (!user) redirect("/login");
 
   if (user.role === "hr") {
-    const defaultMonth = format(addMonths(new Date(), 1), "yyyy-MM");
-    const monthStart = parse(defaultMonth + "-01", "yyyy-MM-dd", new Date());
-    const monthEnd = endOfMonth(monthStart);
-    const startStr = format(monthStart, "yyyy-MM-dd");
-    const endStr = format(monthEnd, "yyyy-MM-dd");
+    const defaultMonth = format(new Date(), "yyyy-MM");
+    const { start: periodStart, end: periodEnd } = getPayPeriod(defaultMonth);
+    const startStr = format(periodStart, "yyyy-MM-dd");
+    const endStr = format(periodEnd, "yyyy-MM-dd");
 
     const [
       { data: employees },
@@ -68,8 +68,8 @@ export default async function TransportationAllowancePage() {
 
     const employeeDefaults = buildTransportationEmployeeDefaults(
       (employees ?? []).map((employee) => employee.id),
-      monthStart,
-      monthEnd,
+      periodStart,
+      periodEnd,
       (holidays ?? []).map((holiday) => holiday.observed_date),
       monthLeaves ?? []
     );

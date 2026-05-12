@@ -1,12 +1,13 @@
 "use client";
 
 import { useState, useCallback, useEffect, useMemo } from "react";
-import { format, parseISO, parse, endOfMonth } from "date-fns";
+import { format, parseISO } from "date-fns";
 import {
   Car, Bike, PersonStanding, Bus, Navigation,
   Lock, LockOpen, Save, Trash2, Users, AlertCircle, Check, X, Loader2,
   Settings2, ChevronDown, ChevronUp, Search, CalendarIcon,
 } from "lucide-react";
+import { getPayPeriod, getPaymentDate } from "@/lib/utils/pay-period";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -32,6 +33,7 @@ import { buildTransportationEmployeeDefaults } from "@/lib/utils/transportation-
 import {
   saveSnapshot, setSnapshotLocked, lockMonth, reviewChangeRequest, deleteSnapshot,
 } from "./actions";
+import { createNotification } from "@/lib/notifications";
 import type { AllowanceSnapshot, DistanceChangeRequest, User } from "@/lib/types";
 import type { EmployeeDefaults } from "./page";
 
@@ -53,7 +55,7 @@ type RowForm = CalculatorInput & {
   mode_config: SnapshotModeConfig;
 };
 
-function defaultRow(empDefault: { days_worked: number; wfh_days: number }): RowForm {
+function defaultRow(empDefault: { days_worked: number; wfh_days: number }, month?: string): RowForm {
   return {
     distance_km: 0,
     declared_mode: "walk",
@@ -63,7 +65,7 @@ function defaultRow(empDefault: { days_worked: number; wfh_days: number }): RowF
     bus_rides: 0,
     undertime_days: 0,
     owns_vehicle: false,
-    payment_date: null,
+    payment_date: month ? getPaymentDate(month) : null,
     mode_config: {},
   };
 }
@@ -171,7 +173,7 @@ function EmployeeEditModal({
   onClose: () => void;
 }) {
   const [form, setForm] = useState<RowForm>(() =>
-    snapshot ? rowFromSnapshot(snapshot) : defaultRow(employeeDefault)
+    snapshot ? rowFromSnapshot(snapshot) : defaultRow(employeeDefault, month)
   );
   const [saving, setSaving] = useState(false);
   const [locking, setLocking] = useState(false);
@@ -263,7 +265,7 @@ function EmployeeEditModal({
       <DialogContent className="bg-zinc-900 border-white/10 max-w-3xl w-full">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-3">
-            <div className="h-8 w-8 rounded-full bg-red-500/20 flex items-center justify-center text-sm font-semibold text-red-400 shrink-0">
+            <div className="h-8 w-8 rounded-full bg-primary dark:bg-gradient-to-br dark:from-blue-500 dark:to-indigo-600 flex items-center justify-center text-sm font-semibold text-white shrink-0">
               {getInitials(employee.name)}
             </div>
             <div>
@@ -507,7 +509,7 @@ function EmployeeEditModal({
               ))}
               <div className="flex items-center justify-between pt-3 mt-1 border-t border-white/10">
                 <span className="text-sm font-semibold text-white">Total</span>
-                <span className="text-xl font-bold text-red-400">{formatPHP(result.total)}</span>
+                <span className="text-xl font-bold text-emerald-400">{formatPHP(result.total)}</span>
               </div>
             </div>
           </div>
@@ -594,7 +596,7 @@ function EmployeeCard({
     >
       <CardContent className="p-4 space-y-3">
         <div className="flex items-start gap-3">
-          <div className="h-9 w-9 rounded-full bg-red-500/20 flex items-center justify-center text-sm font-semibold text-red-400 shrink-0">
+          <div className="h-9 w-9 rounded-full bg-primary dark:bg-gradient-to-br dark:from-blue-500 dark:to-indigo-600 flex items-center justify-center text-sm font-semibold text-white shrink-0">
             {getInitials(employee.name)}
           </div>
           <div className="flex-1 min-w-0">
@@ -612,7 +614,7 @@ function EmployeeCard({
               {MODE_ICONS[snapshot.declared_mode as TransportMode]}
               {MODE_LABELS[snapshot.declared_mode as TransportMode]}
             </Badge>
-            <span className="text-sm font-semibold text-white tabular-nums">
+            <span className="text-sm font-semibold text-emerald-400 tabular-nums">
               {formatPHP(result!.total)}
             </span>
           </div>
@@ -639,6 +641,17 @@ function ChangeRequestRow({
     const res = await reviewChangeRequest({ request_id: request.id, status: "approved" });
     setApproving(false);
     if (res.error) { toast.error(res.error); return; }
+
+    try {
+      await createNotification({
+        user_id: request.employee_id,
+        type: "allowance_request_reviewed",
+        title: "Your allowance change request was approved",
+        body: `${request.requested_distance_km} km — updated in your snapshot`,
+        data: { request_id: request.id },
+      });
+    } catch { /* notification failure shouldn't block */ }
+
     toast.success("Request approved — snapshot updated");
     onReviewed(request.id);
   }
@@ -646,6 +659,17 @@ function ChangeRequestRow({
   async function handleReject(note: string) {
     const res = await reviewChangeRequest({ request_id: request.id, status: "rejected", hr_note: note });
     if (res.error) { toast.error(res.error); return; }
+
+    try {
+      await createNotification({
+        user_id: request.employee_id,
+        type: "allowance_request_reviewed",
+        title: "Your allowance change request was rejected",
+        body: note ? `HR note: ${note}` : `${request.requested_distance_km} km request was declined`,
+        data: { request_id: request.id },
+      });
+    } catch { /* notification failure shouldn't block */ }
+
     toast.success("Request rejected");
     onReviewed(request.id);
   }
@@ -763,10 +787,9 @@ export function HRView({
     setLoadingMonth(true);
     const { createClient } = await import("@/lib/supabase/client");
     const sb = createClient();
-    const monthStart = parse(newMonth + "-01", "yyyy-MM-dd", new Date());
-    const monthEnd = endOfMonth(monthStart);
-    const startStr = format(monthStart, "yyyy-MM-dd");
-    const endStr = format(monthEnd, "yyyy-MM-dd");
+    const { start: periodStart, end: periodEnd } = getPayPeriod(newMonth);
+    const startStr = format(periodStart, "yyyy-MM-dd");
+    const endStr = format(periodEnd, "yyyy-MM-dd");
     const [{ data: snaps }, { data: holidays }, { data: monthLeaves }] = await Promise.all([
       sb.from("allowance_snapshots")
         .select("*, employee:users!allowance_snapshots_employee_id_fkey(id, name, email, role, department_id)")
@@ -780,8 +803,8 @@ export function HRView({
     setLocalDefaults(
       buildTransportationEmployeeDefaults(
         employees.map((employee) => employee.id),
-        monthStart,
-        monthEnd,
+        periodStart,
+        periodEnd,
         (holidays ?? []).map((holiday: { observed_date: string }) => holiday.observed_date),
         (monthLeaves ?? []).map((leave: {
           user_id: string;
@@ -859,8 +882,7 @@ export function HRView({
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-white">Transportation Allowance</h1>
-          <p className="text-white/50 text-sm mt-1">Manage monthly commute snapshots</p>
+          <h1 className="text-xl font-bold text-white">Pay Period: {getPayPeriod(month).label}</h1>
         </div>
         <div className="flex items-center gap-3">
           <Select value={month} onValueChange={handleMonthChange}>
@@ -909,7 +931,7 @@ export function HRView({
         <Card className="bg-white/5 border-white/10">
           <CardContent className="pt-4 pb-4">
             <p className="text-xs text-white/50">Total budget {formatMonth(month)}</p>
-            <p className="text-2xl font-bold text-red-400 mt-1">{formatPHP(totalBudget)}</p>
+            <p className="text-2xl font-bold text-emerald-400 mt-1">{formatPHP(totalBudget)}</p>
           </CardContent>
         </Card>
         <Card className="bg-white/5 border-white/10">
