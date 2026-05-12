@@ -457,3 +457,85 @@ create policy "notifications_delete" on public.notifications for delete to authe
   using (user_id = (select id from public.users where auth_id = auth.uid()));
 
 alter publication supabase_realtime add table public.notifications;
+
+-- ============================================
+-- TRANSPORTATION ALLOWANCE
+-- ============================================
+
+create table public.allowance_snapshots (
+  id uuid default uuid_generate_v4() primary key,
+  employee_id uuid not null references public.users(id) on delete cascade,
+  month text not null, -- YYYY-MM
+  payment_date date,
+  distance_km numeric(10,2) not null default 0 check (distance_km >= 0),
+  declared_mode text not null default 'walk'
+    check (declared_mode in ('car', 'motorcycle', 'walk', 'jeep', 'bus')),
+  days_worked integer not null default 0 check (days_worked >= 0),
+  wfh_days integer not null default 0 check (wfh_days >= 0 and wfh_days <= 8),
+  jeep_rides integer not null default 0 check (jeep_rides >= 0),
+  bus_rides integer not null default 0 check (bus_rides >= 0),
+  undertime_days integer not null default 0 check (undertime_days >= 0),
+  owns_vehicle boolean not null default false,
+  mode_config jsonb not null default '{}',
+  total_allowance numeric(12,2) not null default 0,
+  locked boolean not null default false,
+  created_by uuid references public.users(id) on delete set null,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  unique(employee_id, month)
+);
+
+create table public.distance_change_requests (
+  id uuid default uuid_generate_v4() primary key,
+  snapshot_id uuid not null references public.allowance_snapshots(id) on delete cascade,
+  employee_id uuid not null references public.users(id) on delete cascade,
+  requested_distance_km numeric(10,2) not null check (requested_distance_km > 0),
+  reason text not null,
+  status text not null default 'pending'
+    check (status in ('pending', 'approved', 'rejected')),
+  hr_note text,
+  reviewed_by uuid references public.users(id) on delete set null,
+  reviewed_at timestamptz,
+  created_at timestamptz default now() not null
+);
+
+-- Indexes
+create index idx_allowance_snapshots_employee on public.allowance_snapshots(employee_id);
+create index idx_allowance_snapshots_month on public.allowance_snapshots(month);
+create index idx_distance_change_requests_snapshot on public.distance_change_requests(snapshot_id);
+create index idx_distance_change_requests_employee on public.distance_change_requests(employee_id);
+create index idx_distance_change_requests_status on public.distance_change_requests(status);
+
+-- RLS
+alter table public.allowance_snapshots enable row level security;
+alter table public.distance_change_requests enable row level security;
+
+-- Allowance snapshots: employees see own, HR sees all and can manage
+create policy "allowance_snapshots_select" on public.allowance_snapshots for select to authenticated
+  using (
+    employee_id = (select id from public.users where auth_id = auth.uid())
+    or exists (select 1 from public.users where auth_id = auth.uid() and role = 'hr')
+  );
+create policy "allowance_snapshots_insert" on public.allowance_snapshots for insert to authenticated
+  with check (exists (select 1 from public.users where auth_id = auth.uid() and role = 'hr'));
+create policy "allowance_snapshots_update" on public.allowance_snapshots for update to authenticated
+  using (exists (select 1 from public.users where auth_id = auth.uid() and role = 'hr'))
+  with check (exists (select 1 from public.users where auth_id = auth.uid() and role = 'hr'));
+create policy "allowance_snapshots_delete" on public.allowance_snapshots for delete to authenticated
+  using (exists (select 1 from public.users where auth_id = auth.uid() and role = 'hr'));
+
+-- Distance change requests: employees see/create own, HR sees all and can update status
+create policy "distance_change_requests_select" on public.distance_change_requests for select to authenticated
+  using (
+    employee_id = (select id from public.users where auth_id = auth.uid())
+    or exists (select 1 from public.users where auth_id = auth.uid() and role = 'hr')
+  );
+create policy "distance_change_requests_insert" on public.distance_change_requests for insert to authenticated
+  with check (employee_id = (select id from public.users where auth_id = auth.uid()));
+create policy "distance_change_requests_update" on public.distance_change_requests for update to authenticated
+  using (exists (select 1 from public.users where auth_id = auth.uid() and role = 'hr'))
+  with check (exists (select 1 from public.users where auth_id = auth.uid() and role = 'hr'));
+
+-- Triggers
+create trigger allowance_snapshots_updated_at before update on public.allowance_snapshots
+  for each row execute function public.handle_updated_at();

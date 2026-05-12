@@ -33,6 +33,7 @@ import {
   Lightbulb,
   UserCircle,
   Timer,
+  Car,
   ChevronLeft,
   ChevronRight,
   LogOut,
@@ -54,6 +55,7 @@ const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
   Lightbulb,
   UserCircle,
   Timer,
+  Car,
 };
 
 interface SidebarProps {

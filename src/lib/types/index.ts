@@ -229,3 +229,62 @@ export interface Notification {
   read: boolean;
   created_at: string;
 }
+
+// Transportation Allowance types
+export type TransportMode = "car" | "motorcycle" | "walk" | "jeep" | "bus";
+export type ChangeRequestStatus = "pending" | "approved" | "rejected";
+
+export interface ModeOverride {
+  unit_price?: number;
+  gas_mileage?: number;
+  refund_pct?: number;
+}
+
+export interface SnapshotModeConfig {
+  car?: ModeOverride;
+  motorcycle?: ModeOverride;
+  walk?: ModeOverride;
+  jeep?: ModeOverride;
+  bus?: ModeOverride;
+  wfh?: ModeOverride;
+}
+
+export interface AllowanceSnapshot {
+  id: string;
+  employee_id: string;
+  month: string;
+  payment_date: string | null;
+  distance_km: number;
+  declared_mode: TransportMode;
+  days_worked: number;
+  wfh_days: number;
+  jeep_rides: number;
+  bus_rides: number;
+  undertime_days: number;
+  owns_vehicle: boolean;
+  mode_config: SnapshotModeConfig;
+  total_allowance: number;
+  locked: boolean;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+  employee?: User;
+  creator?: User;
+}
+
+export interface DistanceChangeRequest {
+  id: string;
+  snapshot_id: string;
+  employee_id: string;
+  requested_distance_km: number;
+  requested_mode: string | null;
+  reason: string;
+  status: ChangeRequestStatus;
+  hr_note: string | null;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  created_at: string;
+  employee?: User;
+  reviewer?: User;
+  snapshot?: AllowanceSnapshot;
+}

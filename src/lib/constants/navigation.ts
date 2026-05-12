@@ -47,6 +47,13 @@ export const NAV_ITEMS: NavItem[] = [
     roles: ["member", "leader", "hr"],
     section: "main",
   },
+  {
+    label: "Transportation",
+    href: "/transportation-allowance",
+    icon: "Car",
+    roles: ["member", "leader", "hr"],
+    section: "main",
+  },
   // Management
   {
     label: "Approvals",
