@@ -94,6 +94,41 @@ function BreakdownCard({ snapshot }: { snapshot: AllowanceSnapshot }) {
   );
 }
 
+function WhatIfNumericInput({
+  value, onChange, min, max, label,
+}: {
+  value: number;
+  onChange: (v: number) => void;
+  min?: number;
+  max?: number;
+  label: string;
+}) {
+  const [local, setLocal] = useState(value === 0 ? "" : String(value));
+  useEffect(() => {
+    setLocal(value === 0 ? "" : String(value));
+  }, [value]);
+  return (
+    <div className="space-y-1">
+      <Label className="text-xs text-white/60">{label}</Label>
+      <Input
+        type="number"
+        min={min}
+        max={max}
+        placeholder="0"
+        value={local}
+        onChange={(e) => setLocal(e.target.value)}
+        onBlur={() => {
+          const parsed = local === "" ? 0 : parseFloat(local);
+          const safe = isNaN(parsed) ? 0 : parsed;
+          setLocal(safe === 0 ? "" : String(safe));
+          onChange(safe);
+        }}
+        className="bg-white/5 border-white/10 h-8 text-sm"
+      />
+    </div>
+  );
+}
+
 function WhatIfCalculator({ base }: { base: AllowanceSnapshot | null }) {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<CalculatorInput>({
@@ -108,29 +143,11 @@ function WhatIfCalculator({ base }: { base: AllowanceSnapshot | null }) {
     mode_config: base?.mode_config ?? {},
   });
 
-  const [result, setResult] = useState(() => calculateAllowance(form));
+  const result = calculateAllowance(form);
 
   const update = useCallback((patch: Partial<CalculatorInput>) => {
-    setForm((prev) => {
-      const next = { ...prev, ...patch };
-      setResult(calculateAllowance(next));
-      return next;
-    });
+    setForm((prev) => ({ ...prev, ...patch }));
   }, []);
-
-  const numInput = (field: keyof CalculatorInput, label: string, min = 0, max?: number) => (
-    <div className="space-y-1">
-      <Label className="text-xs text-white/60">{label}</Label>
-      <Input
-        type="number"
-        min={min}
-        max={max}
-        value={(form[field] as number) ?? 0}
-        onChange={(e) => update({ [field]: parseFloat(e.target.value) || 0 })}
-        className="bg-white/5 border-white/10 h-8 text-sm"
-      />
-    </div>
-  );
 
   const walkDisabled = !result.walk_allowed && form.declared_mode === "walk";
 
@@ -177,14 +194,16 @@ function WhatIfCalculator({ base }: { base: AllowanceSnapshot | null }) {
               </Select>
             </div>
 
-            {numInput("distance_km", "Distance (km)", 0)}
-            {numInput("days_worked", "Days Worked", 0, 31)}
-            {numInput("wfh_days", "WFH Days", 0, 8)}
-            {(form.declared_mode === "jeep" || form.jeep_rides > 0) &&
-              numInput("jeep_rides", "Jeep Rides/Day", 0)}
-            {(form.declared_mode === "bus" || form.bus_rides > 0) &&
-              numInput("bus_rides", "Bus Rides/Day", 0)}
-            {numInput("undertime_days", "Undertime Days", 0)}
+            <WhatIfNumericInput value={form.distance_km} onChange={(v) => update({ distance_km: v })} label="Distance (km)" min={0} />
+            <WhatIfNumericInput value={form.days_worked} onChange={(v) => update({ days_worked: v })} label="Days Worked" min={0} max={31} />
+            <WhatIfNumericInput value={form.wfh_days} onChange={(v) => update({ wfh_days: v })} label="WFH Days" min={0} max={8} />
+            {(form.declared_mode === "jeep" || form.jeep_rides > 0) && (
+              <WhatIfNumericInput value={form.jeep_rides} onChange={(v) => update({ jeep_rides: v })} label="Jeep Rides/Day" min={0} />
+            )}
+            {(form.declared_mode === "bus" || form.bus_rides > 0) && (
+              <WhatIfNumericInput value={form.bus_rides} onChange={(v) => update({ bus_rides: v })} label="Bus Rides/Day" min={0} />
+            )}
+            <WhatIfNumericInput value={form.undertime_days} onChange={(v) => update({ undertime_days: v })} label="Undertime Days" min={0} />
           </div>
 
           {walkDisabled && result.walk_disqualification_reason && (
@@ -275,7 +294,7 @@ function ChangeRequestModal({
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="bg-zinc-900 border-white/10">
+      <DialogContent className="bg-zinc-900 border-white/10 max-w-[calc(100%-2rem)] sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Request Mode / Distance Change</DialogTitle>
         </DialogHeader>
@@ -374,9 +393,9 @@ export function EmployeeView({ user, snapshots, changeRequests, defaultMonth }: 
   }
 
   return (
-    <div className="p-6 max-w-2xl mx-auto space-y-6">
+    <div className="max-w-2xl mx-auto space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center gap-4">
         <div>
           <h1 className="text-2xl font-bold text-white">Transportation Allowance</h1>
           <p className="text-white/50 text-sm mt-1">

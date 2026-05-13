@@ -135,7 +135,7 @@ function RejectModal({
   const [note, setNote] = useState("");
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="bg-zinc-900 border-white/10">
+      <DialogContent className="bg-zinc-900 border-white/10 max-w-[calc(100%-2rem)] sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Reject Change Request</DialogTitle>
         </DialogHeader>
@@ -262,7 +262,7 @@ function EmployeeEditModal({
 
   return (
     <Dialog open onOpenChange={onClose}>
-      <DialogContent className="bg-zinc-900 border-white/10 max-w-3xl w-full">
+      <DialogContent className="bg-zinc-900 border-white/10 max-w-[calc(100%-2rem)] sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-3">
             <div className="h-8 w-8 rounded-full bg-primary dark:bg-gradient-to-br dark:from-blue-500 dark:to-indigo-600 flex items-center justify-center text-sm font-semibold text-white shrink-0">
@@ -492,7 +492,7 @@ function EmployeeEditModal({
 
           {/* Right col: live calculation */}
           <div className="md:col-span-2">
-            <div className="sticky top-0 rounded-xl border border-white/10 bg-white/5 p-4 space-y-2">
+            <div className="rounded-xl border border-white/10 bg-white/5 p-4 space-y-2">
               <p className="text-[11px] font-semibold uppercase tracking-wider text-white/40 mb-3">
                 Live Calculation
               </p>
@@ -878,7 +878,7 @@ export function HRView({
     : { days_worked: 22, wfh_days: 0 };
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -930,7 +930,7 @@ export function HRView({
         </Card>
         <Card className="bg-white/5 border-white/10">
           <CardContent className="pt-4 pb-4">
-            <p className="text-xs text-white/50">Total budget {formatMonth(month)}</p>
+            <p className="text-xs text-white/50">Total budget for {formatMonth(month)}</p>
             <p className="text-2xl font-bold text-emerald-400 mt-1">{formatPHP(totalBudget)}</p>
           </CardContent>
         </Card>
