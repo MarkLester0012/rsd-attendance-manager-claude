@@ -119,7 +119,7 @@ function NumericInput({
         onChange(safe);
       }}
       disabled={disabled}
-      className={cn("bg-white/5 border-white/10 h-8 text-sm", className)}
+      className={cn("bg-background border-border h-8 text-sm", className)}
     />
   );
 }
@@ -135,7 +135,7 @@ function RejectModal({
   const [note, setNote] = useState("");
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="bg-zinc-900 border-white/10 max-w-[calc(100%-2rem)] sm:max-w-lg">
+      <DialogContent className="bg-background border-border max-w-[calc(100%-2rem)] sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Reject Change Request</DialogTitle>
         </DialogHeader>
@@ -144,7 +144,7 @@ function RejectModal({
           <Textarea
             value={note}
             onChange={(e) => setNote(e.target.value)}
-            className="bg-white/5 border-white/10 resize-none"
+            className="bg-background border-border resize-none"
             rows={3}
             placeholder="Reason for rejection…"
           />
@@ -262,15 +262,15 @@ function EmployeeEditModal({
 
   return (
     <Dialog open onOpenChange={onClose}>
-      <DialogContent className="bg-zinc-900 border-white/10 max-w-[calc(100%-2rem)] sm:max-w-3xl">
+      <DialogContent className="bg-background border-border max-w-[calc(100%-2rem)] sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-3">
-            <div className="h-8 w-8 rounded-full bg-primary dark:bg-gradient-to-br dark:from-blue-500 dark:to-indigo-600 flex items-center justify-center text-sm font-semibold text-white shrink-0">
+            <div className="h-8 w-8 rounded-full bg-primary dark:bg-gradient-to-br dark:from-blue-500 dark:to-indigo-600 flex items-center justify-center text-sm font-semibold text-foreground shrink-0">
               {getInitials(employee.name)}
             </div>
             <div>
-              <span className="text-white">{employee.name}</span>
-              <span className="ml-2 text-white/40 font-normal text-sm">— {formatMonth(month)}</span>
+              <span className="text-foreground">{employee.name}</span>
+              <span className="ml-2 text-muted-foreground/70 font-normal text-sm">— {formatMonth(month)}</span>
             </div>
             {isLocked && <Lock className="h-4 w-4 text-amber-400 ml-auto mr-6" />}
           </DialogTitle>
@@ -288,13 +288,13 @@ function EmployeeEditModal({
           <div className="md:col-span-3 space-y-4">
             {/* Declared mode */}
             <div className="space-y-1">
-              <Label className="text-xs text-white/60">Declared Mode</Label>
+              <Label className="text-xs text-muted-foreground">Declared Mode</Label>
               <Select
                 value={form.declared_mode}
                 onValueChange={(v) => update({ declared_mode: v as TransportMode })}
                 disabled={isLocked}
               >
-                <SelectTrigger className="bg-white/5 border-white/10 h-8 text-sm">
+                <SelectTrigger className="bg-background border-border h-8 text-sm">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -324,7 +324,7 @@ function EmployeeEditModal({
             {/* Numeric fields */}
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
-                <Label className="text-xs text-white/60">Distance (km)</Label>
+                <Label className="text-xs text-muted-foreground">Distance (km)</Label>
                 <NumericInput
                   value={form.distance_km}
                   onChange={(v) => update({ distance_km: v })}
@@ -332,7 +332,7 @@ function EmployeeEditModal({
                 />
               </div>
               <div className="space-y-1">
-                <Label className="text-xs text-white/60">Days Worked</Label>
+                <Label className="text-xs text-muted-foreground">Days Worked</Label>
                 <NumericInput
                   value={form.days_worked}
                   onChange={(v) => update({ days_worked: v })}
@@ -340,7 +340,7 @@ function EmployeeEditModal({
                 />
               </div>
               <div className="space-y-1">
-                <Label className="text-xs text-white/60">WFH Days (max 8)</Label>
+                <Label className="text-xs text-muted-foreground">WFH Days (max 8)</Label>
                 <NumericInput
                   value={form.wfh_days}
                   onChange={(v) => update({ wfh_days: v })}
@@ -348,7 +348,7 @@ function EmployeeEditModal({
                 />
               </div>
               <div className="space-y-1">
-                <Label className="text-xs text-white/60">Undertime Days</Label>
+                <Label className="text-xs text-muted-foreground">Undertime Days</Label>
                 <NumericInput
                   value={form.undertime_days}
                   onChange={(v) => update({ undertime_days: v })}
@@ -356,7 +356,7 @@ function EmployeeEditModal({
                 />
               </div>
               <div className="space-y-1">
-                <Label className="text-xs text-white/60">Jeep Rides/Day</Label>
+                <Label className="text-xs text-muted-foreground">Jeep Rides/Day</Label>
                 <NumericInput
                   value={form.jeep_rides}
                   onChange={(v) => update({ jeep_rides: v })}
@@ -364,7 +364,7 @@ function EmployeeEditModal({
                 />
               </div>
               <div className="space-y-1">
-                <Label className="text-xs text-white/60">Bus Rides/Day</Label>
+                <Label className="text-xs text-muted-foreground">Bus Rides/Day</Label>
                 <NumericInput
                   value={form.bus_rides}
                   onChange={(v) => update({ bus_rides: v })}
@@ -374,10 +374,10 @@ function EmployeeEditModal({
             </div>
 
             {/* Owns vehicle */}
-            <div className="flex items-center justify-between py-2 px-3 rounded-lg bg-white/5">
+            <div className="flex items-center justify-between py-2 px-3 rounded-lg bg-muted/40">
               <Label
                 htmlFor={`owns-${employee.id}`}
-                className="text-sm text-white/70 cursor-pointer"
+                className="text-sm text-foreground/70 cursor-pointer"
               >
                 Registered vehicle on file
               </Label>
@@ -391,19 +391,19 @@ function EmployeeEditModal({
 
             {/* Payment date */}
             <div className="space-y-1">
-              <Label className="text-xs text-white/60">Payment Date</Label>
+              <Label className="text-xs text-muted-foreground">Payment Date</Label>
               <Popover>
                 <PopoverTrigger asChild>
                   <Button
                     variant="outline"
                     size="sm"
                     disabled={isLocked}
-                    className="w-full justify-start gap-2 bg-white/5 border-white/10 text-sm font-normal h-8"
+                    className="w-full justify-start gap-2 bg-background border-border text-sm font-normal h-8"
                   >
-                    <CalendarIcon className="h-4 w-4 shrink-0 text-white/50" />
+                    <CalendarIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
                     {form.payment_date
                       ? format(form.payment_date, "MMM d, yyyy")
-                      : <span className="text-white/40">Select date</span>
+                      : <span className="text-muted-foreground/70">Select date</span>
                     }
                   </Button>
                 </PopoverTrigger>
@@ -421,7 +421,7 @@ function EmployeeEditModal({
             {/* Advanced overrides */}
             <div>
               <button
-                className="flex items-center gap-1.5 text-xs text-white/40 hover:text-white/70 transition-colors"
+                className="flex items-center gap-1.5 text-xs text-muted-foreground/70 hover:text-foreground/70 transition-colors"
                 onClick={() => setShowAdvanced((v) => !v)}
               >
                 <Settings2 className="h-3 w-3" />
@@ -430,44 +430,44 @@ function EmployeeEditModal({
               </button>
 
               {showAdvanced && (
-                <div className="mt-3 space-y-3 rounded-lg bg-white/5 p-3">
-                  <p className="text-xs text-white/40">
+                <div className="mt-3 space-y-3 rounded-lg bg-muted/40 p-3">
+                  <p className="text-xs text-muted-foreground/70">
                     Override policy defaults per mode. Leave blank to use defaults.
                   </p>
                   {(["car", "motorcycle", "walk", "jeep", "bus", "wfh"] as (TransportMode | "wfh")[]).map((m) => {
                     const def = MODE_DEFAULTS[m];
                     return (
                       <div key={m} className="space-y-2">
-                        <p className="text-xs font-medium text-white/60 capitalize">
+                        <p className="text-xs font-medium text-muted-foreground capitalize">
                           {m === "wfh" ? "WFH" : MODE_LABELS[m as TransportMode]}
                         </p>
                         <div className="grid grid-cols-3 gap-2">
                           <div className="space-y-1">
-                            <Label className="text-xs text-white/40">Unit Price</Label>
+                            <Label className="text-xs text-muted-foreground/70">Unit Price</Label>
                             <Input
                               type="number" min={0} step={0.01}
                               placeholder={def.unit_price.toString()}
                               value={(form.mode_config?.[m as keyof SnapshotModeConfig]?.unit_price) ?? ""}
                               onChange={(e) => updateModeConfig(m as TransportMode, "unit_price", parseFloat(e.target.value) || 0)}
                               disabled={isLocked}
-                              className="bg-white/5 border-white/10 h-7 text-xs"
+                              className="bg-background border-border h-7 text-xs"
                             />
                           </div>
                           {def.gas_mileage !== undefined && (
                             <div className="space-y-1">
-                              <Label className="text-xs text-white/40">Gas (km/L)</Label>
+                              <Label className="text-xs text-muted-foreground/70">Gas (km/L)</Label>
                               <Input
                                 type="number" min={1} step={0.1}
                                 placeholder={def.gas_mileage.toString()}
                                 value={(form.mode_config?.[m as keyof SnapshotModeConfig]?.gas_mileage) ?? ""}
                                 onChange={(e) => updateModeConfig(m as TransportMode, "gas_mileage", parseFloat(e.target.value) || 0)}
                                 disabled={isLocked}
-                                className="bg-white/5 border-white/10 h-7 text-xs"
+                                className="bg-background border-border h-7 text-xs"
                               />
                             </div>
                           )}
                           <div className="space-y-1">
-                            <Label className="text-xs text-white/40">Refund %</Label>
+                            <Label className="text-xs text-muted-foreground/70">Refund %</Label>
                             <Input
                               type="number" min={0} max={100} step={1}
                               placeholder={Math.round(def.refund_pct * 100).toString()}
@@ -478,7 +478,7 @@ function EmployeeEditModal({
                               }
                               onChange={(e) => updateModeConfig(m as TransportMode, "refund_pct", (parseFloat(e.target.value) || 0) / 100)}
                               disabled={isLocked}
-                              className="bg-white/5 border-white/10 h-7 text-xs"
+                              className="bg-background border-border h-7 text-xs"
                             />
                           </div>
                         </div>
@@ -492,23 +492,23 @@ function EmployeeEditModal({
 
           {/* Right col: live calculation */}
           <div className="md:col-span-2">
-            <div className="rounded-xl border border-white/10 bg-white/5 p-4 space-y-2">
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-white/40 mb-3">
+            <div className="rounded-xl border border-border bg-muted/40 p-4 space-y-2">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70 mb-3">
                 Live Calculation
               </p>
               {result.breakdowns.map((b, i) => (
                 <div key={i} className="space-y-0.5">
                   <div className="flex items-center justify-between text-sm">
-                    <span className="text-white/70">{b.label}</span>
-                    <span className="font-mono text-white">{formatPHP(b.amount)}</span>
+                    <span className="text-foreground/70">{b.label}</span>
+                    <span className="font-mono text-foreground">{formatPHP(b.amount)}</span>
                   </div>
                   {b.formula && (
-                    <p className="text-[10px] text-white/30 font-mono pl-1 truncate">{b.formula}</p>
+                    <p className="text-[10px] text-muted-foreground/50 font-mono pl-1 truncate">{b.formula}</p>
                   )}
                 </div>
               ))}
-              <div className="flex items-center justify-between pt-3 mt-1 border-t border-white/10">
-                <span className="text-sm font-semibold text-white">Total</span>
+              <div className="flex items-center justify-between pt-3 mt-1 border-t border-border">
+                <span className="text-sm font-semibold text-foreground">Total</span>
                 <span className="text-xl font-bold text-emerald-400">{formatPHP(result.total)}</span>
               </div>
             </div>
@@ -533,10 +533,10 @@ function EmployeeEditModal({
               variant="outline"
               size="sm"
               className={cn(
-                "gap-2 border-white/10",
+                "gap-2 border-border",
                 isLocked
                   ? "text-amber-400 hover:text-amber-300 hover:bg-amber-500/10"
-                  : "text-white/60 hover:text-white hover:bg-white/10"
+                  : "text-muted-foreground hover:text-foreground hover:bg-muted/60"
               )}
               onClick={handleLockToggle}
               disabled={locking}
@@ -589,19 +589,19 @@ function EmployeeCard({
   return (
     <Card
       className={cn(
-        "border-white/10 cursor-pointer transition-all hover:border-white/25 hover:bg-white/8 active:scale-[0.98]",
-        snapshot?.locked ? "bg-white/3 opacity-80" : "bg-white/5"
+        "cursor-pointer transition-all hover:border-primary/40 hover:shadow-sm active:scale-[0.98]",
+        snapshot?.locked && "opacity-75"
       )}
       onClick={onEdit}
     >
       <CardContent className="p-4 space-y-3">
         <div className="flex items-start gap-3">
-          <div className="h-9 w-9 rounded-full bg-primary dark:bg-gradient-to-br dark:from-blue-500 dark:to-indigo-600 flex items-center justify-center text-sm font-semibold text-white shrink-0">
+          <div className="h-9 w-9 rounded-full bg-primary dark:bg-gradient-to-br dark:from-blue-500 dark:to-indigo-600 flex items-center justify-center text-sm font-semibold text-foreground shrink-0">
             {getInitials(employee.name)}
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-white truncate">{employee.name}</p>
-            <p className="text-xs text-white/40 truncate">
+            <p className="text-sm font-medium text-foreground truncate">{employee.name}</p>
+            <p className="text-xs text-muted-foreground/70 truncate">
               {(employee as any).department?.name ?? "—"}
             </p>
           </div>
@@ -610,7 +610,7 @@ function EmployeeCard({
 
         {snapshot ? (
           <div className="flex items-center justify-between">
-            <Badge variant="outline" className="gap-1 text-xs border-white/10 text-white/60">
+            <Badge variant="outline" className="gap-1 text-xs border-border text-muted-foreground">
               {MODE_ICONS[snapshot.declared_mode as TransportMode]}
               {MODE_LABELS[snapshot.declared_mode as TransportMode]}
             </Badge>
@@ -619,7 +619,7 @@ function EmployeeCard({
             </span>
           </div>
         ) : (
-          <p className="text-xs text-white/30 italic">No snapshot — click to set</p>
+          <p className="text-xs text-muted-foreground/50 italic">No snapshot — click to set</p>
         )}
       </CardContent>
     </Card>
@@ -676,12 +676,12 @@ function ChangeRequestRow({
 
   return (
     <>
-      <div className="flex items-start justify-between py-3 px-4 rounded-lg bg-white/5">
+      <div className="flex items-start justify-between py-3 px-4 rounded-lg bg-muted/40">
         <div className="min-w-0">
-          <p className="text-sm font-medium text-white">
+          <p className="text-sm font-medium text-foreground">
             {(request as any).employee?.name ?? "—"}
           </p>
-          <p className="text-xs text-white/50 mt-0.5">
+          <p className="text-xs text-muted-foreground mt-0.5">
             {request.snapshot?.month ? formatMonth(request.snapshot.month) : ""}
             {" · "}
             {request.snapshot?.declared_mode
@@ -691,9 +691,9 @@ function ChangeRequestRow({
             {request.requested_mode
               ? `${MODE_LABELS[request.requested_mode as TransportMode]} · `
               : ""}
-            <span className="text-white font-medium">{request.requested_distance_km}km</span>
+            <span className="text-foreground font-medium">{request.requested_distance_km}km</span>
           </p>
-          <p className="text-xs text-white/40 mt-1 italic">{request.reason}</p>
+          <p className="text-xs text-muted-foreground/70 mt-1 italic">{request.reason}</p>
         </div>
         <div className="flex items-center gap-2 shrink-0 ml-3">
           <Button
@@ -882,11 +882,11 @@ export function HRView({
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold text-white">Pay Period: {getPayPeriod(month).label}</h1>
+          <h1 className="text-xl font-bold text-foreground">Pay Period: {getPayPeriod(month).label}</h1>
         </div>
         <div className="flex items-center gap-3">
           <Select value={month} onValueChange={handleMonthChange}>
-            <SelectTrigger className="w-44 bg-white/5 border-white/10">
+            <SelectTrigger className="w-44 bg-background border-border">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -899,10 +899,10 @@ export function HRView({
             variant="outline"
             size="sm"
             className={cn(
-              "gap-2 border-white/10",
+              "gap-2 border-border",
               allLocked
                 ? "text-amber-400 hover:text-amber-300 hover:bg-amber-500/10"
-                : "text-white/60 hover:text-white hover:bg-white/10"
+                : "text-muted-foreground hover:text-foreground hover:bg-muted/60"
             )}
             onClick={() => handleLockAll(!allLocked)}
             disabled={lockingAll || snapshots.length === 0}
@@ -920,23 +920,23 @@ export function HRView({
 
       {/* Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-        <Card className="bg-white/5 border-white/10">
+        <Card>
           <CardContent className="pt-4 pb-4">
-            <p className="text-xs text-white/50">Employees with snapshots</p>
-            <p className="text-2xl font-bold text-white mt-1">
+            <p className="text-xs text-muted-foreground">Employees with snapshots</p>
+            <p className="text-2xl font-bold text-foreground mt-1">
               {snapshots.length} / {employees.length}
             </p>
           </CardContent>
         </Card>
-        <Card className="bg-white/5 border-white/10">
+        <Card>
           <CardContent className="pt-4 pb-4">
-            <p className="text-xs text-white/50">Total budget for {formatMonth(month)}</p>
+            <p className="text-xs text-muted-foreground">Total budget for {formatMonth(month)}</p>
             <p className="text-2xl font-bold text-emerald-400 mt-1">{formatPHP(totalBudget)}</p>
           </CardContent>
         </Card>
-        <Card className="bg-white/5 border-white/10">
+        <Card>
           <CardContent className="pt-4 pb-4">
-            <p className="text-xs text-white/50">Pending change requests</p>
+            <p className="text-xs text-muted-foreground">Pending change requests</p>
             <p className="text-2xl font-bold text-amber-400 mt-1">{changeRequests.length}</p>
           </CardContent>
         </Card>
@@ -962,16 +962,16 @@ export function HRView({
       {/* Search & filters */}
       <div className="flex flex-wrap gap-2 items-center">
         <div className="relative flex-1 min-w-[200px] max-w-sm">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40" />
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/70" />
           <Input
             placeholder="Search by name or department..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="pl-9 bg-white/5 border-white/10"
+            className="pl-9 bg-background border-border"
           />
         </div>
         <Select value={deptFilter} onValueChange={setDeptFilter}>
-          <SelectTrigger className="w-[160px] bg-white/5 border-white/10">
+          <SelectTrigger className="w-[160px] bg-background border-border">
             <SelectValue placeholder="Department" />
           </SelectTrigger>
           <SelectContent>
@@ -982,7 +982,7 @@ export function HRView({
           </SelectContent>
         </Select>
         <Select value={snapshotFilter} onValueChange={setSnapshotFilter}>
-          <SelectTrigger className="w-[170px] bg-white/5 border-white/10">
+          <SelectTrigger className="w-[170px] bg-background border-border">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -991,12 +991,12 @@ export function HRView({
             <SelectItem value="without">Missing Snapshot</SelectItem>
           </SelectContent>
         </Select>
-        {loadingMonth && <Loader2 className="h-4 w-4 animate-spin text-white/40" />}
+        {loadingMonth && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground/70" />}
       </div>
 
       {/* Employee grid */}
       <div>
-        <div className="flex items-center gap-2 text-xs text-white/40 px-1 mb-3">
+        <div className="flex items-center gap-2 text-xs text-muted-foreground/70 px-1 mb-3">
           <Users className="h-3.5 w-3.5" />
           <span>{filtered.length} of {employees.length} employees</span>
         </div>
@@ -1014,7 +1014,7 @@ export function HRView({
           })}
         </div>
         {filtered.length === 0 && (
-          <div className="text-center py-12 text-white/30">
+          <div className="text-center py-12 text-muted-foreground/50">
             <Users className="h-8 w-8 mx-auto mb-2 opacity-40" />
             <p className="text-sm">No employees match your filters</p>
           </div>

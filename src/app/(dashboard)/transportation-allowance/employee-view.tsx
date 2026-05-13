@@ -75,19 +75,19 @@ function BreakdownCard({ snapshot }: { snapshot: AllowanceSnapshot }) {
       {result.breakdowns.map((b, i) => (
         <div
           key={i}
-          className="flex items-center justify-between py-2 px-3 rounded-lg bg-white/5 text-sm"
+          className="flex items-center justify-between py-2 px-3 rounded-lg bg-muted/40 text-sm"
         >
           <div className="space-y-0.5">
-            <p className="font-medium text-white">{b.label}</p>
-            <p className="text-white/50 font-mono text-xs">{b.formula}</p>
+            <p className="font-medium text-foreground">{b.label}</p>
+            <p className="text-muted-foreground font-mono text-xs">{b.formula}</p>
           </div>
-          <span className="font-semibold text-white ml-4 shrink-0">
+          <span className="font-semibold text-foreground ml-4 shrink-0">
             {formatPHP(b.amount)}
           </span>
         </div>
       ))}
       <div className="flex items-center justify-between py-2 px-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
-        <span className="font-semibold text-white">Total Allowance</span>
+        <span className="font-semibold text-foreground">Total Allowance</span>
         <span className="text-xl font-bold text-emerald-400">{formatPHP(result.total)}</span>
       </div>
     </div>
@@ -109,7 +109,7 @@ function WhatIfNumericInput({
   }, [value]);
   return (
     <div className="space-y-1">
-      <Label className="text-xs text-white/60">{label}</Label>
+      <Label className="text-xs text-muted-foreground">{label}</Label>
       <Input
         type="number"
         min={min}
@@ -123,7 +123,7 @@ function WhatIfNumericInput({
           setLocal(safe === 0 ? "" : String(safe));
           onChange(safe);
         }}
-        className="bg-white/5 border-white/10 h-8 text-sm"
+        className="bg-background border-border h-8 text-sm"
       />
     </div>
   );
@@ -155,7 +155,7 @@ function WhatIfCalculator({ base }: { base: AllowanceSnapshot | null }) {
     <div className="mt-2">
       <button
         onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-2 text-sm text-white/60 hover:text-white transition-colors"
+        className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
       >
         <Calculator className="h-4 w-4" />
         What-if Calculator
@@ -163,19 +163,19 @@ function WhatIfCalculator({ base }: { base: AllowanceSnapshot | null }) {
       </button>
 
       {open && (
-        <div className="mt-4 rounded-xl border border-white/10 bg-white/5 p-4 space-y-4">
-          <p className="text-xs text-white/40">
+        <div className="mt-4 rounded-xl border border-border bg-muted/40 p-4 space-y-4">
+          <p className="text-xs text-muted-foreground/70">
             Adjust values to preview — this does not affect your actual allowance.
           </p>
 
           <div className="grid grid-cols-2 gap-3">
             <div className="col-span-2 space-y-1">
-              <Label className="text-xs text-white/60">Transport Mode</Label>
+              <Label className="text-xs text-muted-foreground">Transport Mode</Label>
               <Select
                 value={form.declared_mode}
                 onValueChange={(v) => update({ declared_mode: v as TransportMode })}
               >
-                <SelectTrigger className="bg-white/5 border-white/10 h-8 text-sm">
+                <SelectTrigger className="bg-background border-border h-8 text-sm">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -215,13 +215,13 @@ function WhatIfCalculator({ base }: { base: AllowanceSnapshot | null }) {
 
           <div className="space-y-2">
             {result.breakdowns.map((b, i) => (
-              <div key={i} className="flex items-center justify-between text-xs py-1.5 px-2 rounded bg-white/5">
-                <span className="text-white/70">{b.label}</span>
-                <span className="font-mono text-white">{formatPHP(b.amount)}</span>
+              <div key={i} className="flex items-center justify-between text-xs py-1.5 px-2 rounded bg-muted/40">
+                <span className="text-foreground/70">{b.label}</span>
+                <span className="font-mono text-foreground">{formatPHP(b.amount)}</span>
               </div>
             ))}
             <div className="flex items-center justify-between px-2 py-1.5 rounded bg-emerald-500/10 border border-emerald-500/20">
-              <span className="text-sm font-semibold text-white">Total</span>
+              <span className="text-sm font-semibold text-foreground">Total</span>
               <span className="text-base font-bold text-emerald-400">{formatPHP(result.total)}</span>
             </div>
           </div>
@@ -294,20 +294,20 @@ function ChangeRequestModal({
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="bg-zinc-900 border-white/10 max-w-[calc(100%-2rem)] sm:max-w-lg">
+      <DialogContent className="bg-background border-border max-w-[calc(100%-2rem)] sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Request Mode / Distance Change</DialogTitle>
         </DialogHeader>
         <div className="space-y-4 py-2">
-          <div className="grid grid-cols-2 gap-3 text-sm text-white/60">
-            <div>Current mode: <span className="text-white font-medium">{MODE_LABELS[snapshot.declared_mode as TransportMode]}</span></div>
-            <div>Current distance: <span className="text-white font-medium">{snapshot.distance_km} km</span></div>
+          <div className="grid grid-cols-2 gap-3 text-sm text-muted-foreground">
+            <div>Current mode: <span className="text-foreground font-medium">{MODE_LABELS[snapshot.declared_mode as TransportMode]}</span></div>
+            <div>Current distance: <span className="text-foreground font-medium">{snapshot.distance_km} km</span></div>
           </div>
 
           <div className="space-y-1">
             <Label>Transport Mode</Label>
             <Select value={mode} onValueChange={(v) => setMode(v as TransportMode)}>
-              <SelectTrigger className="bg-white/5 border-white/10">
+              <SelectTrigger className="bg-background border-border">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -334,7 +334,7 @@ function ChangeRequestModal({
               step={0.1}
               value={distance}
               onChange={(e) => setDistance(e.target.value)}
-              className="bg-white/5 border-white/10"
+              className="bg-background border-border"
               placeholder="e.g. 12.5"
             />
           </div>
@@ -344,7 +344,7 @@ function ChangeRequestModal({
             <Textarea
               value={reason}
               onChange={(e) => setReason(e.target.value)}
-              className="bg-white/5 border-white/10 resize-none"
+              className="bg-background border-border resize-none"
               rows={3}
               placeholder="Explain why your mode or distance needs to be updated..."
             />
@@ -397,13 +397,13 @@ export function EmployeeView({ user, snapshots, changeRequests, defaultMonth }: 
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-white">Transportation Allowance</h1>
-          <p className="text-white/50 text-sm mt-1">
+          <h1 className="text-2xl font-bold text-foreground">Transportation Allowance</h1>
+          <p className="text-muted-foreground text-sm mt-1">
             Pay Period: {getPayPeriod(selectedMonth).label}
           </p>
         </div>
         <Select value={selectedMonth} onValueChange={setSelectedMonth}>
-          <SelectTrigger className="w-44 bg-white/5 border-white/10">
+          <SelectTrigger className="w-44 bg-background border-border">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -415,10 +415,10 @@ export function EmployeeView({ user, snapshots, changeRequests, defaultMonth }: 
       </div>
 
       {/* Current snapshot */}
-      <Card className="bg-white/5 border-white/10">
+      <Card>
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
-            <CardTitle className="text-base text-white">{formatMonth(selectedMonth)}</CardTitle>
+            <CardTitle className="text-base text-foreground">{formatMonth(selectedMonth)}</CardTitle>
             <div className="flex items-center gap-2">
               {snapshot?.locked && (
                 <Badge variant="secondary" className="gap-1 text-xs">
@@ -426,7 +426,7 @@ export function EmployeeView({ user, snapshots, changeRequests, defaultMonth }: 
                 </Badge>
               )}
               {snapshot && (
-                <Badge className="gap-1 text-xs bg-white/10 text-white/70">
+                <Badge className="gap-1 text-xs bg-muted/60 text-foreground/70">
                   {MODE_ICONS[snapshot.declared_mode as TransportMode]}
                   {MODE_LABELS[snapshot.declared_mode as TransportMode]}
                 </Badge>
@@ -436,7 +436,7 @@ export function EmployeeView({ user, snapshots, changeRequests, defaultMonth }: 
         </CardHeader>
         <CardContent className="space-y-4">
           {!snapshot ? (
-            <div className="text-center py-8 text-white/40">
+            <div className="text-center py-8 text-muted-foreground/70">
               <Car className="h-8 w-8 mx-auto mb-2 opacity-40" />
               <p className="text-sm">No snapshot set by HR for this month yet.</p>
             </div>
@@ -444,21 +444,21 @@ export function EmployeeView({ user, snapshots, changeRequests, defaultMonth }: 
             <>
               {/* Key figures */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
-                <div className="bg-white/5 rounded-lg p-3">
-                  <p className="text-white/50 text-xs">Distance</p>
-                  <p className="text-white font-semibold">{snapshot.distance_km} km</p>
+                <div className="bg-muted/40 rounded-lg p-3">
+                  <p className="text-muted-foreground text-xs">Distance</p>
+                  <p className="text-foreground font-semibold">{snapshot.distance_km} km</p>
                 </div>
-                <div className="bg-white/5 rounded-lg p-3">
-                  <p className="text-white/50 text-xs">Days Worked</p>
-                  <p className="text-white font-semibold">{snapshot.days_worked}</p>
+                <div className="bg-muted/40 rounded-lg p-3">
+                  <p className="text-muted-foreground text-xs">Days Worked</p>
+                  <p className="text-foreground font-semibold">{snapshot.days_worked}</p>
                 </div>
-                <div className="bg-white/5 rounded-lg p-3">
-                  <p className="text-white/50 text-xs">WFH Days</p>
-                  <p className="text-white font-semibold">{snapshot.wfh_days}</p>
+                <div className="bg-muted/40 rounded-lg p-3">
+                  <p className="text-muted-foreground text-xs">WFH Days</p>
+                  <p className="text-foreground font-semibold">{snapshot.wfh_days}</p>
                 </div>
-                <div className="bg-white/5 rounded-lg p-3">
-                  <p className="text-white/50 text-xs">Payment Date</p>
-                  <p className="text-white font-semibold">
+                <div className="bg-muted/40 rounded-lg p-3">
+                  <p className="text-muted-foreground text-xs">Payment Date</p>
+                  <p className="text-foreground font-semibold">
                     {snapshot.payment_date ? format(new Date(snapshot.payment_date), "MMM d") : "15th"}
                   </p>
                 </div>
@@ -475,7 +475,7 @@ export function EmployeeView({ user, snapshots, changeRequests, defaultMonth }: 
                       <AlertCircle className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
                       <div>
                         <p className="text-amber-300 font-medium">Pending change request</p>
-                        <p className="text-white/60 text-xs mt-0.5">
+                        <p className="text-muted-foreground text-xs mt-0.5">
                           {pendingRequest.requested_mode && pendingRequest.requested_mode !== snapshot?.declared_mode
                             ? `${MODE_LABELS[pendingRequest.requested_mode as TransportMode]} · `
                             : ""}
@@ -487,7 +487,7 @@ export function EmployeeView({ user, snapshots, changeRequests, defaultMonth }: 
                     <Button
                       variant="outline"
                       size="sm"
-                      className="gap-2 border-white/10 text-white/70 hover:text-white hover:bg-white/10"
+                      className="gap-2 border-border text-foreground/70 hover:text-foreground hover:bg-muted/60"
                       onClick={() => setRequestModalOpen(true)}
                     >
                       <Send className="h-3 w-3" />
@@ -506,27 +506,27 @@ export function EmployeeView({ user, snapshots, changeRequests, defaultMonth }: 
 
       {/* Change request history */}
       {localRequests.length > 0 && (
-        <Card className="bg-white/5 border-white/10">
+        <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-sm text-white/70">Change Request History</CardTitle>
+            <CardTitle className="text-sm text-foreground/70">Change Request History</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
             {localRequests.slice(0, 5).map((r) => (
               <div
                 key={r.id}
-                className="flex items-start justify-between py-2 px-3 rounded-lg bg-white/5 text-sm"
+                className="flex items-start justify-between py-2 px-3 rounded-lg bg-muted/40 text-sm"
               >
                 <div>
-                  <p className="text-white">
+                  <p className="text-foreground">
                     {r.snapshot?.month ? formatMonth(r.snapshot.month) : "—"} →{" "}
                     <span className="font-medium">
                       {r.requested_mode ? `${MODE_LABELS[r.requested_mode as TransportMode]} · ` : ""}
                       {r.requested_distance_km} km
                     </span>
                   </p>
-                  <p className="text-white/40 text-xs mt-0.5">{r.reason}</p>
+                  <p className="text-muted-foreground/70 text-xs mt-0.5">{r.reason}</p>
                   {r.hr_note && (
-                    <p className="text-white/50 text-xs mt-0.5 italic">HR: {r.hr_note}</p>
+                    <p className="text-muted-foreground text-xs mt-0.5 italic">HR: {r.hr_note}</p>
                   )}
                 </div>
                 <Badge
@@ -548,20 +548,20 @@ export function EmployeeView({ user, snapshots, changeRequests, defaultMonth }: 
 
       {/* History */}
       {localSnapshots.length > 0 && (
-        <Card className="bg-white/5 border-white/10">
+        <Card>
           <CardHeader
             className="pb-3 cursor-pointer select-none"
             onClick={() => setShowHistory((v) => !v)}
           >
             <div className="flex items-center justify-between">
-              <CardTitle className="text-sm text-white/70 flex items-center gap-2">
+              <CardTitle className="text-sm text-foreground/70 flex items-center gap-2">
                 <History className="h-4 w-4" />
                 Past Months
               </CardTitle>
               {showHistory ? (
-                <ChevronUp className="h-4 w-4 text-white/40" />
+                <ChevronUp className="h-4 w-4 text-muted-foreground/70" />
               ) : (
-                <ChevronDown className="h-4 w-4 text-white/40" />
+                <ChevronDown className="h-4 w-4 text-muted-foreground/70" />
               )}
             </div>
           </CardHeader>
@@ -573,16 +573,16 @@ export function EmployeeView({ user, snapshots, changeRequests, defaultMonth }: 
                     key={s.id}
                     onClick={() => setSelectedMonth(s.month)}
                     className={cn(
-                      "w-full flex items-center justify-between py-2 px-3 rounded-lg text-sm transition-colors hover:bg-white/10",
-                      selectedMonth === s.month && "bg-white/10"
+                      "w-full flex items-center justify-between py-2 px-3 rounded-lg text-sm transition-colors hover:bg-muted/60",
+                      selectedMonth === s.month && "bg-muted/60"
                     )}
                   >
                     <div className="flex items-center gap-2">
                       {MODE_ICONS[s.declared_mode as TransportMode]}
-                      <span className="text-white">{formatMonth(s.month)}</span>
-                      {s.locked && <Lock className="h-3 w-3 text-white/30" />}
+                      <span className="text-foreground">{formatMonth(s.month)}</span>
+                      {s.locked && <Lock className="h-3 w-3 text-muted-foreground/50" />}
                     </div>
-                    <span className="font-semibold text-white">{formatPHP(s.total_allowance)}</span>
+                    <span className="font-semibold text-foreground">{formatPHP(s.total_allowance)}</span>
                   </button>
                 ))}
               </div>

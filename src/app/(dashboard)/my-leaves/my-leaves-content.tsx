@@ -234,7 +234,7 @@ export function MyLeavesContent({ user, initialLeaves }: MyLeavesContentProps) {
                 setStatusFilter(isActive ? "all" : s.key)
               }
               className={cn(
-                "relative flex items-center gap-3 rounded-xl border p-4 text-left transition-all hover:shadow-md",
+                "relative flex items-center gap-3 rounded-xl border p-4 text-left transition-all hover:shadow-md bg-card",
                 isActive
                   ? s.bgActive
                   : "border-border/50 hover:border-border hover:bg-accent/30"
@@ -487,7 +487,7 @@ export function MyLeavesContent({ user, initialLeaves }: MyLeavesContentProps) {
                       key={leave.id}
                       onClick={() => handleLeaveClick(leave)}
                       className={cn(
-                        "group flex items-center gap-4 rounded-xl border p-4 transition-all",
+                        "group flex items-center gap-4 rounded-xl border p-4 transition-all bg-card",
                         isEditable
                           ? "cursor-pointer hover:shadow-md hover:border-border hover:bg-accent/20"
                           : "",
