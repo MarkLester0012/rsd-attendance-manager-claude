@@ -70,7 +70,7 @@ const NOTIFICATION_ROUTES: Record<NotificationType, string> = {
   suggestion_reply: "/suggestions",
   suggestion_upvote: "/suggestions",
   announcement_new: "/dashboard",
-  allowance_change_request: "/transportation-allowance",
+  allowance_change_request: "/transportation-allowance?tab=requests",
   allowance_request_reviewed: "/transportation-allowance",
 };
 

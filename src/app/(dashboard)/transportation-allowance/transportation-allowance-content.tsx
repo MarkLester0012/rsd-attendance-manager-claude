@@ -12,6 +12,7 @@ interface Props {
   initialSnapshots: AllowanceSnapshot[];
   initialChangeRequests: DistanceChangeRequest[];
   employeeDefaults: EmployeeDefaults;
+  initialTab?: string;
 }
 
 export function TransportationAllowanceContent({
@@ -21,6 +22,7 @@ export function TransportationAllowanceContent({
   initialSnapshots,
   initialChangeRequests,
   employeeDefaults,
+  initialTab,
 }: Props) {
   if (user.role === "hr") {
     return (
@@ -31,6 +33,7 @@ export function TransportationAllowanceContent({
         initialChangeRequests={initialChangeRequests}
         defaultMonth={defaultMonth}
         employeeDefaults={employeeDefaults}
+        initialTab={initialTab}
       />
     );
   }

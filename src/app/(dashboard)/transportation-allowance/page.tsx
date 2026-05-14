@@ -10,7 +10,12 @@ import { getPayPeriod } from "@/lib/utils/pay-period";
 
 export type EmployeeDefaults = Record<string, EmployeeDefaultValues>;
 
-export default async function TransportationAllowancePage() {
+export default async function TransportationAllowancePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ tab?: string }>;
+}) {
+  const { tab } = await searchParams;
   const supabase = await createClient();
   const {
     data: { user: authUser },
@@ -82,6 +87,7 @@ export default async function TransportationAllowancePage() {
         initialSnapshots={snapshots || []}
         initialChangeRequests={changeRequests || []}
         employeeDefaults={employeeDefaults}
+        initialTab={tab === "requests" ? "requests" : "snapshots"}
       />
     );
   }

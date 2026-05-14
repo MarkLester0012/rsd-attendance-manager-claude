@@ -5,10 +5,11 @@ import { format, parseISO } from "date-fns";
 import {
   Car, Bike, PersonStanding, Bus, Navigation,
   Lock, LockOpen, Save, Trash2, Users, AlertCircle, Check, X, Loader2,
-  Settings2, ChevronDown, ChevronUp, Search, CalendarIcon,
+  Settings2, ChevronDown, ChevronUp, Search, CalendarIcon, ClipboardList, Download,
 } from "lucide-react";
 import { getPayPeriod, getPaymentDate } from "@/lib/utils/pay-period";
 import { Card, CardContent } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -730,6 +731,7 @@ interface HRViewProps {
   initialChangeRequests: DistanceChangeRequest[];
   defaultMonth: string;
   employeeDefaults: EmployeeDefaults;
+  initialTab?: string;
 }
 
 export function HRView({
@@ -738,6 +740,7 @@ export function HRView({
   initialChangeRequests,
   defaultMonth,
   employeeDefaults,
+  initialTab,
 }: HRViewProps) {
   const [month, setMonth] = useState(defaultMonth);
   const [snapshots, setSnapshots] = useState(initialSnapshots);
@@ -749,6 +752,25 @@ export function HRView({
   const [snapshotFilter, setSnapshotFilter] = useState("all");
   const [editTarget, setEditTarget] = useState<User | null>(null);
   const [localDefaults, setLocalDefaults] = useState<EmployeeDefaults>(employeeDefaults);
+  const [activeTab, setActiveTab] = useState(initialTab === "requests" ? "requests" : "snapshots");
+  const [exporting, setExporting] = useState(false);
+
+  async function handleExportExcel() {
+    setExporting(true);
+    try {
+      const { exportAllowanceToExcel } = await import("@/lib/utils/export-allowance");
+      await exportAllowanceToExcel({
+        snapshots,
+        employees,
+        month,
+        payPeriodLabel: getPayPeriod(month).label,
+      });
+    } catch {
+      toast.error("Export failed. Please try again.");
+    } finally {
+      setExporting(false);
+    }
+  }
 
   const monthOptions = Array.from({ length: 9 }, (_, i) => {
     const d = new Date();
@@ -915,6 +937,19 @@ export function HRView({
             }
             {allLocked ? "Unlock Month" : "Lock Month"}
           </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-2 border-border text-muted-foreground hover:text-foreground hover:bg-muted/60"
+            onClick={handleExportExcel}
+            disabled={exporting || snapshots.length === 0}
+          >
+            {exporting
+              ? <Loader2 className="h-4 w-4 animate-spin" />
+              : <Download className="h-4 w-4" />
+            }
+            {exporting ? "Exporting…" : "Export Excel"}
+          </Button>
         </div>
       </div>
 
@@ -934,92 +969,132 @@ export function HRView({
             <p className="text-2xl font-bold text-emerald-400 mt-1">{formatPHP(totalBudget)}</p>
           </CardContent>
         </Card>
-        <Card>
+        <Card
+          className={cn(
+            "cursor-pointer transition-colors col-span-2 sm:col-span-1",
+            changeRequests.length > 0 && "border-amber-500/30 bg-amber-500/5"
+          )}
+          onClick={() => changeRequests.length > 0 && setActiveTab("requests")}
+        >
           <CardContent className="pt-4 pb-4">
             <p className="text-xs text-muted-foreground">Pending change requests</p>
-            <p className="text-2xl font-bold text-amber-400 mt-1">{changeRequests.length}</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Pending change requests */}
-      {changeRequests.length > 0 && (
-        <Card className="bg-amber-500/5 border-amber-500/20">
-          <div className="px-4 pt-4 pb-2">
-            <p className="text-sm text-amber-400 flex items-center gap-2 font-medium">
-              <AlertCircle className="h-4 w-4" />
-              Pending Change Requests ({changeRequests.length})
+            <p className={cn(
+              "text-2xl font-bold mt-1",
+              changeRequests.length > 0 ? "text-amber-400" : "text-foreground"
+            )}>
+              {changeRequests.length}
             </p>
-          </div>
-          <CardContent className="pt-2 space-y-2">
-            {changeRequests.map((r) => (
-              <ChangeRequestRow key={r.id} request={r} onReviewed={handleRequestReviewed} />
-            ))}
           </CardContent>
         </Card>
-      )}
-
-      {/* Search & filters */}
-      <div className="flex flex-wrap gap-2 items-center">
-        <div className="relative flex-1 min-w-[200px] max-w-sm">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/70" />
-          <Input
-            placeholder="Search by name or department..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-9 bg-background border-border"
-          />
-        </div>
-        <Select value={deptFilter} onValueChange={setDeptFilter}>
-          <SelectTrigger className="w-[160px] bg-background border-border">
-            <SelectValue placeholder="Department" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Departments</SelectItem>
-            {(departments as any[]).map((d: any) => (
-              <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select value={snapshotFilter} onValueChange={setSnapshotFilter}>
-          <SelectTrigger className="w-[170px] bg-background border-border">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Employees</SelectItem>
-            <SelectItem value="with">With Snapshot</SelectItem>
-            <SelectItem value="without">Missing Snapshot</SelectItem>
-          </SelectContent>
-        </Select>
-        {loadingMonth && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground/70" />}
       </div>
 
-      {/* Employee grid */}
-      <div>
-        <div className="flex items-center gap-2 text-xs text-muted-foreground/70 px-1 mb-3">
-          <Users className="h-3.5 w-3.5" />
-          <span>{filtered.length} of {employees.length} employees</span>
-        </div>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {filtered.map((emp) => {
-            const snap = snapshots.find((s) => s.employee_id === emp.id) ?? null;
-            return (
-              <EmployeeCard
-                key={emp.id}
-                employee={emp}
-                snapshot={snap}
-                onEdit={() => setEditTarget(emp)}
+      {/* Tabbed content */}
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsList className="bg-muted/40">
+          <TabsTrigger value="snapshots" className="gap-2">
+            <Users className="h-3.5 w-3.5" />
+            Snapshots
+          </TabsTrigger>
+          <TabsTrigger value="requests" className="gap-2">
+            <ClipboardList className="h-3.5 w-3.5" />
+            Requests
+            {changeRequests.length > 0 && (
+              <span className="ml-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-amber-500/20 px-1 text-[10px] font-semibold text-amber-400">
+                {changeRequests.length}
+              </span>
+            )}
+          </TabsTrigger>
+        </TabsList>
+
+        {/* Snapshots tab */}
+        <TabsContent value="snapshots" className="mt-4 space-y-4">
+          {/* Search & filters */}
+          <div className="flex flex-wrap gap-2 items-center">
+            <div className="relative flex-1 min-w-[200px] max-w-sm">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/70" />
+              <Input
+                placeholder="Search by name or department..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="pl-9 bg-background border-border"
               />
-            );
-          })}
-        </div>
-        {filtered.length === 0 && (
-          <div className="text-center py-12 text-muted-foreground/50">
-            <Users className="h-8 w-8 mx-auto mb-2 opacity-40" />
-            <p className="text-sm">No employees match your filters</p>
+            </div>
+            <Select value={deptFilter} onValueChange={setDeptFilter}>
+              <SelectTrigger className="w-[160px] bg-background border-border">
+                <SelectValue placeholder="Department" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Departments</SelectItem>
+                {(departments as any[]).map((d: any) => (
+                  <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={snapshotFilter} onValueChange={setSnapshotFilter}>
+              <SelectTrigger className="w-[170px] bg-background border-border">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Employees</SelectItem>
+                <SelectItem value="with">With Snapshot</SelectItem>
+                <SelectItem value="without">Missing Snapshot</SelectItem>
+              </SelectContent>
+            </Select>
+            {loadingMonth && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground/70" />}
           </div>
-        )}
-      </div>
+
+          {/* Employee grid */}
+          <div>
+            <div className="flex items-center gap-2 text-xs text-muted-foreground/70 px-1 mb-3">
+              <Users className="h-3.5 w-3.5" />
+              <span>{filtered.length} of {employees.length} employees</span>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {filtered.map((emp) => {
+                const snap = snapshots.find((s) => s.employee_id === emp.id) ?? null;
+                return (
+                  <EmployeeCard
+                    key={emp.id}
+                    employee={emp}
+                    snapshot={snap}
+                    onEdit={() => setEditTarget(emp)}
+                  />
+                );
+              })}
+            </div>
+            {filtered.length === 0 && (
+              <div className="text-center py-12 text-muted-foreground/50">
+                <Users className="h-8 w-8 mx-auto mb-2 opacity-40" />
+                <p className="text-sm">No employees match your filters</p>
+              </div>
+            )}
+          </div>
+        </TabsContent>
+
+        {/* Requests tab */}
+        <TabsContent value="requests" className="mt-4">
+          {changeRequests.length === 0 ? (
+            <div className="text-center py-16 text-muted-foreground/50">
+              <ClipboardList className="h-8 w-8 mx-auto mb-2 opacity-40" />
+              <p className="text-sm">No pending change requests</p>
+            </div>
+          ) : (
+            <Card className="bg-amber-500/5 border-amber-500/20">
+              <div className="px-4 pt-4 pb-2">
+                <p className="text-sm text-amber-400 flex items-center gap-2 font-medium">
+                  <AlertCircle className="h-4 w-4" />
+                  Pending Change Requests ({changeRequests.length})
+                </p>
+              </div>
+              <CardContent className="pt-2 space-y-2">
+                {changeRequests.map((r) => (
+                  <ChangeRequestRow key={r.id} request={r} onReviewed={handleRequestReviewed} />
+                ))}
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+      </Tabs>
 
       {/* Edit modal */}
       {editTarget && (
