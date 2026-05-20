@@ -219,7 +219,9 @@ export type NotificationType =
   | "suggestion_upvote"
   | "announcement_new"
   | "allowance_change_request"
-  | "allowance_request_reviewed";
+  | "allowance_request_reviewed"
+  | "allowance_submitted"
+  | "allowance_submission_reviewed";
 
 export interface Notification {
   id: string;
@@ -281,6 +283,12 @@ export interface DistanceChangeRequest {
   requested_distance_km: number;
   requested_mode: string | null;
   reason: string;
+  requested_days_worked?: number | null;
+  requested_wfh_days?: number | null;
+  requested_jeep_rides?: number | null;
+  requested_bus_rides?: number | null;
+  requested_undertime_days?: number | null;
+  requested_owns_vehicle?: boolean | null;
   status: ChangeRequestStatus;
   hr_note: string | null;
   reviewed_by: string | null;
@@ -289,4 +297,27 @@ export interface DistanceChangeRequest {
   employee?: User;
   reviewer?: User;
   snapshot?: AllowanceSnapshot;
+}
+
+export type SubmissionStatus = "pending" | "approved" | "rejected";
+
+export interface AllowanceSubmissionRequest {
+  id: string;
+  employee_id: string;
+  month: string;
+  distance_km: number;
+  declared_mode: TransportMode;
+  days_worked: number;
+  wfh_days: number;
+  jeep_rides: number;
+  bus_rides: number;
+  undertime_days: number;
+  owns_vehicle: boolean;
+  status: SubmissionStatus;
+  hr_note: string | null;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  created_at: string;
+  updated_at: string;
+  employee?: User;
 }

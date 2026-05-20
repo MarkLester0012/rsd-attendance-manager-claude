@@ -1,7 +1,7 @@
 import type { AllowanceSnapshot, User } from "@/lib/types";
 import { MODE_DEFAULTS } from "@/lib/utils/allowance-calculator";
 import type { TransportMode, SnapshotModeConfig } from "@/lib/utils/allowance-calculator";
-import { format, parseISO } from "date-fns";
+import { format } from "date-fns";
 
 export interface ExportAllowanceOptions {
   snapshots: AllowanceSnapshot[];
@@ -284,13 +284,13 @@ async function buildSheet(
       // E: Distance (car / motorcycle / walk)
       if (mr.distance !== null) {
         row.getCell(5).value = mr.distance;
-        row.getCell(5).numFmt = "0.##";
+        row.getCell(5).numFmt = "0.0#";
       }
 
       // F: Gas Mileage (car / motorcycle)
       if (mr.gas_mileage !== null) {
         row.getCell(6).value = mr.gas_mileage;
-        row.getCell(6).numFmt = "0.##";
+        row.getCell(6).numFmt = "0.0#";
       }
 
       // G: Gas Required = distance / gas_mileage (car / motorcycle)
@@ -301,7 +301,7 @@ async function buildSheet(
 
       // H: Days
       row.getCell(8).value = mr.days;
-      row.getCell(8).numFmt = "0";
+      row.getCell(8).numFmt = "0.0#";
 
       // I: Amount (before percentage)
       row.getCell(9).value = mr.amount;
@@ -353,8 +353,9 @@ export async function exportAllowanceToExcel({
     snapshots.map((s) => [s.employee_id, s])
   );
 
-  const firstPayDate = snapshots.find((s) => s.payment_date)?.payment_date;
-  const paymentDateStr = firstPayDate ? format(parseISO(firstPayDate), "MMMM d, yyyy") : null;
+  const [y, m] = month.split("-").map(Number);
+  const nextMonth15 = new Date(y, m, 15); // month is 0-indexed, so `m` (already 1-based) = next month
+  const paymentDateStr = format(nextMonth15, "MMMM d, yyyy");
 
   const totalBudget = snapshots.reduce((sum, s) => sum + s.total_allowance, 0);
   const empsWithSnaps = employees.filter((e) => snapMap.has(e.id));

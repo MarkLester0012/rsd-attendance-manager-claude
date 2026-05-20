@@ -1,32 +1,37 @@
-import { format, addMonths, parse } from "date-fns";
+import { format, addMonths, startOfMonth, endOfMonth, parse } from "date-fns";
 
 /**
  * Returns the pay-period window for a given snapshot month.
- * For month "2026-05", the period is May 15 → June 15.
+ * For month "2026-05", the period is May 1 → May 31.
+ * Payment is on the 15th of the following month.
  */
 export function getPayPeriod(month: string): {
   start: Date;
   end: Date;
   label: string;
 } {
-  const base = parse(month + "-15", "yyyy-MM-dd", new Date());
-  const end = addMonths(base, 1);
+  const base = parse(month + "-01", "yyyy-MM-dd", new Date());
+  const start = startOfMonth(base);
+  const end = endOfMonth(base);
 
-  const label = `${format(base, "MMM d")} – ${format(end, "MMM d, yyyy")}`;
+  const label = `${format(start, "MMM d")} – ${format(end, "MMM d, yyyy")}`;
 
-  return { start: base, end, label };
+  return { start, end, label };
 }
 
 /**
- * Returns the payment date (15th) for a given snapshot month.
+ * Returns the payment date (15th of the following month) for a given snapshot month.
+ * For "2026-05", returns June 15, 2026.
  */
 export function getPaymentDate(month: string): Date {
-  return parse(month + "-15", "yyyy-MM-dd", new Date());
+  const base = parse(month + "-01", "yyyy-MM-dd", new Date());
+  return parse(format(addMonths(base, 1), "yyyy-MM") + "-15", "yyyy-MM-dd", new Date());
 }
 
 /**
  * Returns the payment date as a yyyy-MM-dd string.
  */
 export function getPaymentDateString(month: string): string {
-  return month + "-15";
+  const base = parse(month + "-01", "yyyy-MM-dd", new Date());
+  return format(addMonths(base, 1), "yyyy-MM") + "-15";
 }

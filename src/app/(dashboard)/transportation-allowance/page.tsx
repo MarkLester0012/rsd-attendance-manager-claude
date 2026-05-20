@@ -1,14 +1,18 @@
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { TransportationAllowanceContent } from "./transportation-allowance-content";
-import { format } from "date-fns";
+import { format, subMonths } from "date-fns";
 import {
   buildTransportationEmployeeDefaults,
+  buildEmployeeStats,
   type EmployeeDefaultValues,
+  type EmployeeStats,
 } from "@/lib/utils/transportation-defaults";
 import { getPayPeriod } from "@/lib/utils/pay-period";
+import type { TransportMode } from "@/lib/types";
 
 export type EmployeeDefaults = Record<string, EmployeeDefaultValues>;
+export type { EmployeeStats };
 
 export default async function TransportationAllowancePage({
   searchParams,
@@ -40,6 +44,7 @@ export default async function TransportationAllowancePage({
       { data: employees },
       { data: snapshots },
       { data: changeRequests },
+      { data: submissionRequests },
       { data: holidays },
       { data: monthLeaves },
     ] = await Promise.all([
@@ -59,6 +64,12 @@ export default async function TransportationAllowancePage({
         .eq("status", "pending")
         .order("created_at", { ascending: true }),
       supabase
+        .from("allowance_submission_requests")
+        .select("*, employee:users!allowance_submission_requests_employee_id_fkey(id, name, email, role, department_id)")
+        .eq("month", defaultMonth)
+        .eq("status", "pending")
+        .order("created_at", { ascending: true }),
+      supabase
         .from("holidays")
         .select("observed_date")
         .gte("observed_date", startStr)
@@ -71,13 +82,28 @@ export default async function TransportationAllowancePage({
         .lte("leave_date", endStr),
     ]);
 
+    const holidayDates = (holidays ?? []).map((h) => h.observed_date);
+    const leaveSummaries = monthLeaves ?? [];
+
     const employeeDefaults = buildTransportationEmployeeDefaults(
-      (employees ?? []).map((employee) => employee.id),
+      (employees ?? []).map((e) => e.id),
       periodStart,
       periodEnd,
-      (holidays ?? []).map((holiday) => holiday.observed_date),
-      monthLeaves ?? []
+      holidayDates,
+      leaveSummaries
     );
+
+    // Build per-employee stats for HR modal display
+    const employeeStatsList: Record<string, EmployeeStats> = {};
+    for (const emp of employees ?? []) {
+      employeeStatsList[emp.id] = buildEmployeeStats(
+        emp.id,
+        periodStart,
+        periodEnd,
+        holidayDates,
+        leaveSummaries
+      );
+    }
 
     return (
       <TransportationAllowanceContent
@@ -86,13 +112,15 @@ export default async function TransportationAllowancePage({
         employees={employees || []}
         initialSnapshots={snapshots || []}
         initialChangeRequests={changeRequests || []}
+        initialSubmissionRequests={submissionRequests || []}
         employeeDefaults={employeeDefaults}
-        initialTab={tab === "requests" ? "requests" : "snapshots"}
+        employeeStatsList={employeeStatsList}
+        initialTab={tab === "requests" || tab === "submissions" ? "requests" : "snapshots"}
       />
     );
   }
 
-  // Employee: fetch own snapshots + change requests
+  // Employee branch
   const { data: userRecord } = await supabase
     .from("users")
     .select("id")
@@ -100,8 +128,18 @@ export default async function TransportationAllowancePage({
     .single();
 
   const currentMonth = format(new Date(), "yyyy-MM");
+  const prevMonth = format(subMonths(new Date(), 1), "yyyy-MM");
+  const { start: periodStart, end: periodEnd } = getPayPeriod(currentMonth);
+  const startStr = format(periodStart, "yyyy-MM-dd");
+  const endStr = format(periodEnd, "yyyy-MM-dd");
 
-  const [{ data: snapshots }, { data: changeRequests }] = await Promise.all([
+  const [
+    { data: snapshots },
+    { data: changeRequests },
+    { data: submissionRequests },
+    { data: holidays },
+    { data: monthLeaves },
+  ] = await Promise.all([
     supabase
       .from("allowance_snapshots")
       .select("*")
@@ -114,7 +152,38 @@ export default async function TransportationAllowancePage({
       .eq("employee_id", userRecord!.id)
       .order("created_at", { ascending: false })
       .limit(20),
+    supabase
+      .from("allowance_submission_requests")
+      .select("*")
+      .eq("employee_id", userRecord!.id)
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("holidays")
+      .select("observed_date")
+      .gte("observed_date", startStr)
+      .lte("observed_date", endStr),
+    supabase
+      .from("leaves")
+      .select("user_id, leave_type, duration_value")
+      .eq("status", "approved")
+      .eq("user_id", userRecord!.id)
+      .gte("leave_date", startStr)
+      .lte("leave_date", endStr),
   ]);
+
+  const holidayDates = (holidays ?? []).map((h) => h.observed_date);
+  const leaveSummaries = monthLeaves ?? [];
+
+  const employeeStats = buildEmployeeStats(
+    userRecord!.id,
+    periodStart,
+    periodEnd,
+    holidayDates,
+    leaveSummaries
+  );
+
+  const previousMonthMode =
+    ((snapshots ?? []).find((s) => s.month === prevMonth)?.declared_mode as TransportMode) ?? null;
 
   return (
     <TransportationAllowanceContent
@@ -123,7 +192,11 @@ export default async function TransportationAllowancePage({
       employees={[]}
       initialSnapshots={snapshots || []}
       initialChangeRequests={changeRequests || []}
+      initialSubmissionRequests={submissionRequests || []}
       employeeDefaults={{}}
+      employeeStatsList={{}}
+      employeeStats={employeeStats}
+      previousMonthMode={previousMonthMode}
     />
   );
 }
