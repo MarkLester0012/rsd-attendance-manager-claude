@@ -19,19 +19,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Calendar } from "@/components/ui/calendar";
 import { Badge } from "@/components/ui/badge";
+import { DatePickerButton } from "@/components/ui/date-picker-button";
 import {
   Loader2,
   CalendarRange,
   CalendarDays,
-  CalendarIcon,
   Save,
   Send,
 } from "lucide-react";
@@ -239,57 +234,21 @@ export function BulkApplyDialog({
 
             <TabsContent value="range">
               <div className="flex items-center gap-3">
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className={cn(
-                        "flex-1 justify-start gap-2 text-sm",
-                        rangeFrom && "border-primary/40 text-primary"
-                      )}
-                    >
-                      <CalendarIcon className="h-3.5 w-3.5" />
-                      {rangeFrom
-                        ? format(rangeFrom, "MMM d, yyyy")
-                        : "From date"}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0" align="start">
-                    <Calendar
-                      mode="single"
-                      selected={rangeFrom}
-                      onSelect={setRangeFrom}
-                    />
-                  </PopoverContent>
-                </Popover>
-
+                <DatePickerButton
+                  value={rangeFrom ?? null}
+                  onChange={(d) => setRangeFrom(d ?? undefined)}
+                  size="sm"
+                  placeholder="From date"
+                  className={cn("flex-1 justify-start text-sm", rangeFrom && "border-primary/40 text-primary")}
+                />
                 <span className="text-muted-foreground text-sm">to</span>
-
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className={cn(
-                        "flex-1 justify-start gap-2 text-sm",
-                        rangeTo && "border-primary/40 text-primary"
-                      )}
-                    >
-                      <CalendarIcon className="h-3.5 w-3.5" />
-                      {rangeTo
-                        ? format(rangeTo, "MMM d, yyyy")
-                        : "To date"}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0" align="start">
-                    <Calendar
-                      mode="single"
-                      selected={rangeTo}
-                      onSelect={setRangeTo}
-                    />
-                  </PopoverContent>
-                </Popover>
+                <DatePickerButton
+                  value={rangeTo ?? null}
+                  onChange={(d) => setRangeTo(d ?? undefined)}
+                  size="sm"
+                  placeholder="To date"
+                  className={cn("flex-1 justify-start text-sm", rangeTo && "border-primary/40 text-primary")}
+                />
               </div>
               {mode === "range" && dateStrings.length > 0 && (
                 <p className="text-xs text-muted-foreground mt-2">

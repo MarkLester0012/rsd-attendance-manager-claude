@@ -34,8 +34,9 @@ import {
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { registerUser, deleteUser } from "./actions";
-import { getInitials } from "@/lib/utils";
 import type { User, Department } from "@/lib/types";
+import { UserAvatar } from "@/components/ui/user-avatar";
+import { UserCard } from "@/components/shared/user-card";
 
 interface TeamContentProps {
   currentUser: User;
@@ -326,73 +327,44 @@ export function TeamContent({
           const used = usedLeavesMap[u.id] || 0;
           const remaining = u.leave_balance - used;
           return (
-            <Card
+            <UserCard
               key={u.id}
-              className="group cursor-pointer transition-all hover:shadow-md hover:border-border/80"
+              name={u.name}
+              department={u.department?.name || "No Dept"}
               onClick={() => openView(u)}
+              headerActions={
+                isHR ? (
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openEdit(u);
+                    }}
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                ) : undefined
+              }
             >
-              <CardContent className="p-4">
-                <div className="flex items-start gap-3">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary dark:bg-gradient-to-br dark:from-blue-500 dark:to-indigo-600 text-xs font-bold text-white">
-                    {getInitials(u.name)}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">{u.name}</p>
-                    <p className="text-xs text-muted-foreground truncate">
-                      {u.department?.name || "No Dept"}
-                    </p>
-                    <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-                      <Badge
-                        variant="secondary"
-                        className="text-[10px] capitalize"
-                      >
-                        {u.role}
-                      </Badge>
-                      <Badge
-                        variant="outline"
-                        className={`text-[10px] ${remaining <= 3 ? "border-red-500/50 text-red-500" : ""}`}
-                      >
-                        {remaining} / {u.leave_balance} days
-                      </Badge>
-                    </div>
-                    {userProjects.length > 0 && (
-                      <div className="flex gap-1 mt-1.5 flex-wrap">
-                        {userProjects.slice(0, 2).map((p: any) => (
-                          <Badge
-                            key={p.id}
-                            variant="outline"
-                            className="text-[9px] text-muted-foreground"
-                          >
-                            {p.name}
-                          </Badge>
-                        ))}
-                        {userProjects.length > 2 && (
-                          <Badge
-                            variant="outline"
-                            className="text-[9px] text-muted-foreground"
-                          >
-                            +{userProjects.length - 2}
-                          </Badge>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                  {isHR && (
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        openEdit(u);
-                      }}
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                    </Button>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <Badge variant="secondary" className="text-[10px] capitalize">{u.role}</Badge>
+                <Badge variant="outline" className={`text-[10px] ${remaining <= 3 ? "border-red-500/50 text-red-500" : ""}`}>
+                  {remaining} / {u.leave_balance} days
+                </Badge>
+              </div>
+              {userProjects.length > 0 && (
+                <div className="flex gap-1 flex-wrap">
+                  {userProjects.slice(0, 2).map((p: any) => (
+                    <Badge key={p.id} variant="outline" className="text-[9px] text-muted-foreground">{p.name}</Badge>
+                  ))}
+                  {userProjects.length > 2 && (
+                    <Badge variant="outline" className="text-[9px] text-muted-foreground">+{userProjects.length - 2}</Badge>
                   )}
                 </div>
-              </CardContent>
-            </Card>
+              )}
+            </UserCard>
           );
         })}
       </div>
@@ -412,9 +384,7 @@ export function TeamContent({
           {selectedUser && (
             <div className="space-y-4">
               <div className="flex items-center gap-3">
-                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-primary dark:bg-gradient-to-br dark:from-blue-500 dark:to-indigo-600 text-lg font-bold text-white">
-                  {getInitials(selectedUser.name)}
-                </div>
+                <UserAvatar size="lg" name={selectedUser.name} />
                 <div>
                   <p className="text-lg font-semibold">
                     {selectedUser.name}
@@ -503,9 +473,7 @@ export function TeamContent({
           {deleteTarget && (
             <div className="space-y-4 py-2">
               <div className="flex items-center gap-3 rounded-lg border border-destructive/20 bg-destructive/5 p-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary dark:bg-gradient-to-br dark:from-blue-500 dark:to-indigo-600 text-xs font-bold text-white">
-                  {getInitials(deleteTarget.name)}
-                </div>
+                <UserAvatar size="md" name={deleteTarget.name} />
                 <div>
                   <p className="text-sm font-semibold">
                     {deleteTarget.name}

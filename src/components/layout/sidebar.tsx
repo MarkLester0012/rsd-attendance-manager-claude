@@ -6,7 +6,8 @@ import { createClient } from "@/lib/supabase/client";
 import { useSidebarStore } from "@/stores/sidebar-store";
 import { useThemeStore } from "@/stores/theme-store";
 import { getNavItemsForRole, type NavItem } from "@/lib/constants/navigation";
-import { cn, getInitials } from "@/lib/utils";
+import { cn } from "@/lib/utils";
+import { UserAvatar } from "@/components/ui/user-avatar";
 import type { User } from "@/lib/types";
 import { usePendingCount } from "@/hooks/use-pending-count";
 import { Button } from "@/components/ui/button";
@@ -287,9 +288,7 @@ function SidebarContent({ user, livePendingCount: pendingCount }: SidebarInterna
             isCollapsed ? "flex-col gap-1.5" : "gap-3"
           )}
         >
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary dark:bg-gradient-to-br dark:from-blue-500 dark:to-indigo-600 text-[11px] font-bold text-primary-foreground dark:text-white">
-            {getInitials(user.name)}
-          </div>
+          <UserAvatar size="md" name={user.name} />
           {!isCollapsed && (
             <div className="flex-1 overflow-hidden">
               <p className="truncate text-sm font-medium text-sidebar-foreground">

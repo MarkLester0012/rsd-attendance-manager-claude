@@ -16,7 +16,8 @@ import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { createNotification } from "@/lib/notifications";
 import { LEAVE_TYPES } from "@/lib/constants/leave-types";
-import { getInitials, cn } from "@/lib/utils";
+import { cn } from "@/lib/utils";
+import { UserAvatar } from "@/components/ui/user-avatar";
 import type { User } from "@/lib/types";
 
 interface ApprovalsContentProps {
@@ -128,9 +129,7 @@ export function ApprovalsContent({
         <CardContent className="p-4">
           <div className="flex items-start gap-3">
             {/* Avatar */}
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary dark:bg-gradient-to-br dark:from-blue-500 dark:to-indigo-600 text-xs font-bold text-white">
-              {getInitials(leave.user?.name || "?")}
-            </div>
+            <UserAvatar size="md" name={leave.user?.name || "?"} />
 
             {/* Info */}
             <div className="flex-1 min-w-0 space-y-1">

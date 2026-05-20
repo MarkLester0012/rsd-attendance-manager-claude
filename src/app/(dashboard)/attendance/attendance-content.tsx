@@ -36,7 +36,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { LEAVE_TYPES, NON_DEDUCTIBLE_TYPES } from "@/lib/constants/leave-types";
-import { getInitials, cn } from "@/lib/utils";
+import { cn } from "@/lib/utils";
+import { UserAvatar } from "@/components/ui/user-avatar";
 import { createClient } from "@/lib/supabase/client";
 import type { User, LeaveEntry } from "@/lib/types";
 
@@ -285,9 +286,7 @@ export function AttendanceContent({
     return (
       <Card key={u.id} className="transition-all hover:shadow-md">
         <CardContent className="flex items-center gap-3 p-4">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary dark:bg-gradient-to-br dark:from-blue-500 dark:to-indigo-600 text-xs font-bold text-white">
-            {getInitials(u.name)}
-          </div>
+          <UserAvatar size="md" name={u.name} />
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium truncate">{u.name}</p>
             <p className="text-xs text-muted-foreground truncate">
@@ -598,9 +597,7 @@ export function AttendanceContent({
                     <tr key={u.id} className="border-b last:border-0">
                       <td className="p-3 sticky left-0 bg-card">
                         <div className="flex items-center gap-2">
-                          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary dark:bg-gradient-to-br dark:from-blue-500 dark:to-indigo-600 text-[10px] font-bold text-white">
-                            {getInitials(u.name)}
-                          </div>
+                          <UserAvatar size="xs" name={u.name} />
                           <div className="min-w-0">
                             <p className="text-sm font-medium truncate">
                               {u.name}

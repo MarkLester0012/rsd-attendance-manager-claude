@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
-import { getInitials } from "@/lib/utils";
+import { UserAvatar } from "@/components/ui/user-avatar";
 import type { User, Department } from "@/lib/types";
 
 interface ProfileContentProps {
@@ -67,9 +67,7 @@ export function ProfileContent({ user }: ProfileContentProps) {
         </CardHeader>
         <CardContent>
           <div className="flex items-center gap-4 mb-6">
-            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary dark:bg-gradient-to-br dark:from-blue-500 dark:to-indigo-600 text-xl font-bold text-white">
-              {getInitials(user.name)}
-            </div>
+            <UserAvatar size="xl" name={user.name} />
             <div>
               <h3 className="text-lg font-semibold">{user.name}</h3>
               <p className="text-sm text-muted-foreground">{user.email}</p>

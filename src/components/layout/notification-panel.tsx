@@ -57,6 +57,8 @@ const ICON_MAP: Record<
   announcement_new: { icon: Megaphone, color: "text-yellow-400" },
   allowance_change_request: { icon: Bus, color: "text-cyan-400" },
   allowance_request_reviewed: { icon: Bus, color: "text-cyan-400" },
+  allowance_submitted: { icon: Bus, color: "text-cyan-400" },
+  allowance_submission_reviewed: { icon: Bus, color: "text-cyan-400" },
 };
 
 const NOTIFICATION_ROUTES: Record<NotificationType, string> = {
@@ -72,6 +74,8 @@ const NOTIFICATION_ROUTES: Record<NotificationType, string> = {
   announcement_new: "/dashboard",
   allowance_change_request: "/transportation-allowance?tab=requests",
   allowance_request_reviewed: "/transportation-allowance",
+  allowance_submitted: "/transportation-allowance?tab=requests",
+  allowance_submission_reviewed: "/transportation-allowance",
 };
 
 function timeAgo(iso: string) {

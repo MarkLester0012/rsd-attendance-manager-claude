@@ -2,13 +2,8 @@
 
 import { format, addDays, subDays } from "date-fns";
 import { Button } from "@/components/ui/button";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import { Calendar } from "@/components/ui/calendar";
-import { ChevronLeft, ChevronRight, Calendar as CalendarIcon } from "lucide-react";
+import { DatePickerButton } from "@/components/ui/date-picker-button";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 
 interface DateNavProps {
   date: Date;
@@ -30,22 +25,13 @@ export function DateNav({ date, onDateChange }: DateNavProps) {
         <ChevronLeft className="h-4 w-4" />
       </Button>
 
-      <Popover>
-        <PopoverTrigger asChild>
-          <Button variant="outline" className="min-w-[180px] gap-2">
-            <CalendarIcon className="h-4 w-4" />
-            <span>{format(date, "EEE, MMM d, yyyy")}</span>
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent className="w-auto p-0" align="center">
-          <Calendar
-            mode="single"
-            selected={date}
-            onSelect={(d) => d && onDateChange(d)}
-            initialFocus
-          />
-        </PopoverContent>
-      </Popover>
+      <DatePickerButton
+        value={date}
+        onChange={(d) => d && onDateChange(d)}
+        align="center"
+        dateFormat="EEE, MMM d, yyyy"
+        className="min-w-[180px]"
+      />
 
       <Button
         variant="outline"
