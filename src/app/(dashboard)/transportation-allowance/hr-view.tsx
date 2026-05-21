@@ -1155,7 +1155,7 @@ export function HRView({
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
         <Card>
           <CardContent className="pt-4 pb-4">
             <p className="text-xs text-muted-foreground">Employees with snapshots</p>
@@ -1170,7 +1170,7 @@ export function HRView({
         </Card>
         <Card
           className={cn(
-            "cursor-pointer transition-colors sm:col-span-2",
+            "cursor-pointer transition-colors",
             (submissionRequests.length + changeRequests.length) > 0 && "border-blue-500/30 bg-blue-500/5"
           )}
           onClick={() => (submissionRequests.length + changeRequests.length) > 0 && setActiveTab("requests")}
