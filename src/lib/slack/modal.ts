@@ -6,31 +6,57 @@ export interface ModalMetadata {
   entries: Array<{ issueId: number; description: string }>;
 }
 
+// Strips leading bullet characters from each line and joins with commas.
+// "• Assist in task\n• Assist in this" → "Assist in task, Assist in this"
+export function formatDescription(description: string): string {
+  if (!description.trim()) return "";
+
+  const lines = description
+    .split("\n")
+    .map((line) => line.replace(/^[\s•\-*–▪◦]+/, "").trim())
+    .filter((line) => line.length > 0);
+
+  return lines.join(", ");
+}
+
 export function buildTimeLogModal(
   entries: ModalMetadata["entries"],
   date: string,
   metadata: ModalMetadata
 ): object {
-  const header = {
-    type: "section",
-    text: {
-      type: "mrkdwn",
-      text: `*Date:* ${date} | ${entries.length} ticket(s) parsed`,
-    },
-  };
+  const blocks: object[] = [];
 
-  const ticketBlocks = entries.flatMap((entry) => [
-    {
-      type: "section",
-      text: {
+  blocks.push({
+    type: "context",
+    elements: [
+      {
         type: "mrkdwn",
-        text: `*#${entry.issueId}*${entry.description ? ` — ${entry.description}` : ""}`,
+        text: `Date: *${date}*  |  ${entries.length} ticket${entries.length !== 1 ? "s" : ""} found`,
       },
-    },
-    {
+    ],
+  });
+
+  blocks.push({ type: "divider" });
+
+  entries.forEach((entry, index) => {
+    const formatted = formatDescription(entry.description);
+
+    blocks.push({
+      type: "section",
+      text: { type: "mrkdwn", text: `*#${entry.issueId}*` },
+    });
+
+    if (formatted) {
+      blocks.push({
+        type: "context",
+        elements: [{ type: "mrkdwn", text: formatted }],
+      });
+    }
+
+    blocks.push({
       type: "input",
       block_id: `ticket_${entry.issueId}`,
-      label: { type: "plain_text", text: `Hours for #${entry.issueId}` },
+      label: { type: "plain_text", text: "Hours" },
       element: {
         type: "number_input",
         action_id: `hours_${entry.issueId}`,
@@ -38,10 +64,14 @@ export function buildTimeLogModal(
         min_value: "0.1",
         placeholder: { type: "plain_text", text: "e.g. 2.5" },
       },
-    },
-  ]);
+    });
 
-  const saveDraftAction = {
+    if (index < entries.length - 1) {
+      blocks.push({ type: "divider" });
+    }
+  });
+
+  blocks.push({
     type: "actions",
     block_id: "modal_actions",
     elements: [
@@ -52,7 +82,7 @@ export function buildTimeLogModal(
         style: "primary",
       },
     ],
-  };
+  });
 
   return {
     type: "modal",
@@ -61,7 +91,7 @@ export function buildTimeLogModal(
     submit: { type: "plain_text", text: "Submit to Redmine" },
     close: { type: "plain_text", text: "Cancel" },
     private_metadata: JSON.stringify(metadata),
-    blocks: [header, { type: "divider" }, ...ticketBlocks, saveDraftAction],
+    blocks,
   };
 }
 
@@ -75,7 +105,7 @@ export function buildSuccessView(count: number): object {
         type: "section",
         text: {
           type: "mrkdwn",
-          text: `:white_check_mark: Saved ${count} draft${count !== 1 ? "s" : ""}. Open Time Logger to review.`,
+          text: `Saved ${count} draft${count !== 1 ? "s" : ""}. Open Time Logger to review.`,
         },
       },
     ],
