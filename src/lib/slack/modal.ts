@@ -16,9 +16,12 @@ function cleanForDisplay(description: string): string {
     .join("\n");
 }
 
-// Converts bullet lines to Redmine Textile list format (* item).
-// Single-line descriptions are returned as plain text (no bullet prefix needed).
-// "• Assist in task\n• Assist in this" → "* Assist in task\n* Assist in this"
+// Normalises all bullet variants (-, *, –, ▪, ◦) to • and preserves newlines.
+// Redmine time entry comments are plain text — no Textile/Markdown rendering.
+// Using • with \n gives the best result:
+//   - Redmine that preserves newlines → multi-line bullet list
+//   - Redmine that collapses newlines → "• item • item" which is still readable
+// Single-line descriptions are returned as plain text (no bullet prefix added).
 export function formatForRedmine(description: string): string {
   if (!description.trim()) return "";
 
@@ -30,7 +33,7 @@ export function formatForRedmine(description: string): string {
   if (lines.length === 0) return "";
   if (lines.length === 1) return lines[0];
 
-  return lines.map((line) => `* ${line}`).join("\n");
+  return lines.map((line) => `• ${line}`).join("\n");
 }
 
 export function buildTimeLogModal(
