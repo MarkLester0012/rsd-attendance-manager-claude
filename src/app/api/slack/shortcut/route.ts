@@ -6,7 +6,7 @@ import { parseSlackEOD } from "@/lib/redmine/parser";
 import { decryptApiKey } from "@/lib/redmine/encryption";
 import { decryptToken } from "@/lib/slack/encryption";
 import { createTimeEntry } from "@/lib/redmine/client";
-import { buildTimeLogModal, buildSuccessView, formatDescription } from "@/lib/slack/modal";
+import { buildTimeLogModal, buildSuccessView, formatForRedmine } from "@/lib/slack/modal";
 import type { ModalMetadata } from "@/lib/slack/modal";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -185,7 +185,7 @@ async function handleViewSubmission(payload: {
           spent_on: metadata.date,
           hours,
           activity_id: config.default_activity_id,
-          comments: formatDescription(entry.description),
+          comments: formatForRedmine(entry.description),
         });
         if (result.error) {
           failed++;
@@ -272,7 +272,7 @@ async function handleSaveDraft(payload: {
       hours: hoursMap[entry.issueId],
       activity_id: activityId,
       activity_name: null,
-      comment: formatDescription(entry.description) || null,
+      comment: formatForRedmine(entry.description) || null,
       status: "draft" as const,
       error_message: null,
     }));

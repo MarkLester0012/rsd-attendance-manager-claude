@@ -6,9 +6,20 @@ export interface ModalMetadata {
   entries: Array<{ issueId: number; description: string }>;
 }
 
-// Strips leading bullet characters from each line and joins with commas.
-// "• Assist in task\n• Assist in this" → "Assist in task, Assist in this"
-export function formatDescription(description: string): string {
+// Trims each line for clean display in Slack's context blocks.
+// Preserves bullet characters (•) and newlines so Slack renders them as-is.
+function cleanForDisplay(description: string): string {
+  return description
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .join("\n");
+}
+
+// Converts bullet lines to Redmine Textile list format (* item).
+// Single-line descriptions are returned as plain text (no bullet prefix needed).
+// "• Assist in task\n• Assist in this" → "* Assist in task\n* Assist in this"
+export function formatForRedmine(description: string): string {
   if (!description.trim()) return "";
 
   const lines = description
@@ -16,7 +27,10 @@ export function formatDescription(description: string): string {
     .map((line) => line.replace(/^[\s•\-*–▪◦]+/, "").trim())
     .filter((line) => line.length > 0);
 
-  return lines.join(", ");
+  if (lines.length === 0) return "";
+  if (lines.length === 1) return lines[0];
+
+  return lines.map((line) => `* ${line}`).join("\n");
 }
 
 export function buildTimeLogModal(
@@ -39,17 +53,17 @@ export function buildTimeLogModal(
   blocks.push({ type: "divider" });
 
   entries.forEach((entry, index) => {
-    const formatted = formatDescription(entry.description);
+    const display = cleanForDisplay(entry.description);
 
     blocks.push({
       type: "section",
       text: { type: "mrkdwn", text: `*#${entry.issueId}*` },
     });
 
-    if (formatted) {
+    if (display) {
       blocks.push({
         type: "context",
-        elements: [{ type: "mrkdwn", text: formatted }],
+        elements: [{ type: "mrkdwn", text: display }],
       });
     }
 

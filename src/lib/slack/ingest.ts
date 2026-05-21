@@ -3,6 +3,7 @@ import { decryptApiKey } from "@/lib/redmine/encryption";
 import { getIssueDetails } from "@/lib/redmine/client";
 import { parseSlackEOD } from "@/lib/redmine/parser";
 import { postResponseUrl } from "@/lib/slack/client";
+import { formatForRedmine } from "@/lib/slack/modal";
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 
@@ -66,7 +67,7 @@ export async function ingestSlackEOD(
         hours: 1,
         activity_id: config.default_activity_id,
         activity_name: null,
-        comment: entry.description || null,
+        comment: formatForRedmine(entry.description) || null,
         status: "draft" as const,
         error_message: null,
       };
@@ -79,7 +80,7 @@ export async function ingestSlackEOD(
         hours: 1,
         activity_id: config.default_activity_id,
         activity_name: null,
-        comment: entry.description || null,
+        comment: formatForRedmine(entry.description) || null,
         status: "failed" as const,
         error_message: result.error || "Failed to fetch issue",
       };
