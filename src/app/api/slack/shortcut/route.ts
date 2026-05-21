@@ -1,13 +1,293 @@
 import { after } from "next/server";
 import type { NextRequest } from "next/server";
 import { verifySlackSignature } from "@/lib/slack/signature";
-import { postResponseUrl } from "@/lib/slack/client";
-import { ingestSlackEOD } from "@/lib/slack/ingest";
+import { postResponseUrl, openModal, updateModal } from "@/lib/slack/client";
+import { parseSlackEOD } from "@/lib/redmine/parser";
+import { decryptApiKey } from "@/lib/redmine/encryption";
+import { decryptToken } from "@/lib/slack/encryption";
+import { createTimeEntry } from "@/lib/redmine/client";
+import { buildTimeLogModal, buildSuccessView } from "@/lib/slack/modal";
+import type { ModalMetadata } from "@/lib/slack/modal";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+
+// ─── shared helpers ───────────────────────────────────────────────────────────
+
+function jsonResponse(body: object, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+async function lookupUser(slackUserId: string, slackTeamId: string) {
+  const supabase = createAdminClient();
+  const { data } = await supabase
+    .from("users")
+    .select(
+      "id, slack_bot_token_encrypted, slack_bot_token_iv, slack_bot_token_tag"
+    )
+    .eq("slack_user_id", slackUserId)
+    .eq("slack_team_id", slackTeamId)
+    .single();
+  return data;
+}
+
+// ─── message_action handler (INLINE — must complete within 3 s) ───────────────
+
+async function handleMessageAction(payload: {
+  trigger_id: string;
+  user: { id: string };
+  team: { id: string };
+  message: { text: string };
+  response_url: string;
+}): Promise<Response> {
+  const { trigger_id, user, team, message, response_url } = payload;
+  const messageText = message?.text ?? "";
+  const today = new Date().toISOString().slice(0, 10);
+
+  const dbUser = await lookupUser(user.id, team.id);
+
+  if (!dbUser) {
+    await postResponseUrl(response_url, {
+      text: `Connect your Slack account at <${APP_URL}/settings/integrations/slack|Settings → Integrations → Slack>.`,
+    });
+    return new Response(null, { status: 200 });
+  }
+
+  if (!dbUser.slack_bot_token_encrypted) {
+    await postResponseUrl(response_url, {
+      text: `Please reconnect your Slack account at <${APP_URL}/settings/integrations/slack|Settings → Integrations → Slack> to enable the new modal flow.`,
+    });
+    return new Response(null, { status: 200 });
+  }
+
+  const botToken = decryptToken(
+    dbUser.slack_bot_token_encrypted,
+    dbUser.slack_bot_token_iv,
+    dbUser.slack_bot_token_tag
+  );
+
+  const parsed = parseSlackEOD(messageText);
+
+  if (parsed.length === 0) {
+    await postResponseUrl(response_url, {
+      text: "No ticket entries found in that message.",
+    });
+    return new Response(null, { status: 200 });
+  }
+
+  const entries = parsed.map((e) => ({
+    issueId: e.issueId,
+    description: e.description,
+  }));
+
+  const metadata: ModalMetadata = {
+    userId: dbUser.id,
+    date: today,
+    responseUrl: response_url,
+    entries,
+  };
+
+  const modal = buildTimeLogModal(entries, today, metadata);
+  const result = await openModal(botToken, trigger_id, modal);
+
+  if (!result.ok) {
+    await postResponseUrl(response_url, {
+      text: `Failed to open the time log modal: ${result.error ?? "unknown error"}. Please try again.`,
+    });
+  }
+
+  return new Response(null, { status: 200 });
+}
+
+// ─── view_submission handler ──────────────────────────────────────────────────
+
+async function handleViewSubmission(payload: {
+  view: {
+    callback_id: string;
+    private_metadata: string;
+    state: { values: Record<string, Record<string, { value: string | null }>> };
+  };
+}): Promise<Response> {
+  const { view } = payload;
+
+  let metadata: ModalMetadata;
+  try {
+    metadata = JSON.parse(view.private_metadata) as ModalMetadata;
+  } catch {
+    return new Response(null, { status: 200 });
+  }
+
+  // Collect hours for each entry
+  const hoursMap: Record<number, number> = {};
+  const errors: Record<string, string> = {};
+
+  for (const entry of metadata.entries) {
+    const blockId = `ticket_${entry.issueId}`;
+    const actionId = `hours_${entry.issueId}`;
+    const raw = view.state.values[blockId]?.[actionId]?.value ?? null;
+    const hours = raw !== null ? parseFloat(raw) : 0;
+
+    if (!raw || isNaN(hours) || hours <= 0) {
+      errors[blockId] = "Enter hours greater than 0";
+    } else {
+      hoursMap[entry.issueId] = hours;
+    }
+  }
+
+  if (Object.keys(errors).length > 0) {
+    return jsonResponse({ response_action: "errors", errors });
+  }
+
+  // Close modal immediately; do Redmine work in background
+  after(async () => {
+    const supabase = createAdminClient();
+
+    const { data: config } = await supabase
+      .from("redmine_configs")
+      .select("*")
+      .eq("user_id", metadata.userId)
+      .single();
+
+    if (!config) {
+      await postResponseUrl(metadata.responseUrl, {
+        text: `Configure Redmine at <${APP_URL}/time-logger|Time Logger settings> before submitting.`,
+      });
+      return;
+    }
+
+    if (!config.default_activity_id) {
+      await postResponseUrl(metadata.responseUrl, {
+        text: `Pick a default activity in <${APP_URL}/time-logger|Time Logger settings> before submitting.`,
+      });
+      return;
+    }
+
+    const apiKey = decryptApiKey(
+      config.encrypted_api_key,
+      config.encryption_iv,
+      config.encryption_tag
+    );
+    const opts = { redmineUrl: config.redmine_url, apiKey };
+
+    let submitted = 0;
+    let failed = 0;
+
+    await Promise.all(
+      metadata.entries.map(async (entry) => {
+        const hours = hoursMap[entry.issueId];
+        const result = await createTimeEntry(opts, {
+          issue_id: entry.issueId,
+          spent_on: metadata.date,
+          hours,
+          activity_id: config.default_activity_id,
+          comments: entry.description || "",
+        });
+        if (result.error) {
+          failed++;
+        } else {
+          submitted++;
+        }
+      })
+    );
+
+    const failedPart = failed > 0 ? ` (${failed} failed)` : "";
+    await postResponseUrl(metadata.responseUrl, {
+      text: `✅ Submitted ${submitted} entr${submitted !== 1 ? "ies" : "y"} to Redmine${failedPart}.`,
+    });
+  });
+
+  return jsonResponse({ response_action: "clear" });
+}
+
+// ─── block_actions handler (Save as Draft button) ────────────────────────────
+
+async function handleSaveDraft(payload: {
+  user: { id: string };
+  team: { id: string };
+  view: {
+    id: string;
+    private_metadata: string;
+    state: { values: Record<string, Record<string, { value: string | null }>> };
+  };
+}): Promise<Response> {
+  const { view } = payload;
+
+  let metadata: ModalMetadata;
+  try {
+    metadata = JSON.parse(view.private_metadata) as ModalMetadata;
+  } catch {
+    return new Response(null, { status: 200 });
+  }
+
+  const viewId = view.id;
+
+  // Extract hours from current state (default to 1 for empty/invalid)
+  const hoursMap: Record<number, number> = {};
+  for (const entry of metadata.entries) {
+    const raw =
+      view.state.values[`ticket_${entry.issueId}`]?.[
+        `hours_${entry.issueId}`
+      ]?.value ?? null;
+    const parsed = raw !== null ? parseFloat(raw) : NaN;
+    hoursMap[entry.issueId] = isNaN(parsed) || parsed <= 0 ? 1 : parsed;
+  }
+
+  after(async () => {
+    const supabase = createAdminClient();
+
+    // Need bot token to update the modal
+    const { data: dbUser } = await supabase
+      .from("users")
+      .select("slack_bot_token_encrypted, slack_bot_token_iv, slack_bot_token_tag")
+      .eq("id", metadata.userId)
+      .single();
+
+    const botToken =
+      dbUser?.slack_bot_token_encrypted
+        ? decryptToken(
+            dbUser.slack_bot_token_encrypted,
+            dbUser.slack_bot_token_iv,
+            dbUser.slack_bot_token_tag
+          )
+        : null;
+
+    const { data: config } = await supabase
+      .from("redmine_configs")
+      .select("default_activity_id")
+      .eq("user_id", metadata.userId)
+      .single();
+
+    const activityId = config?.default_activity_id ?? 0;
+
+    const rows = metadata.entries.map((entry) => ({
+      user_id: metadata.userId,
+      log_date: metadata.date,
+      issue_id: entry.issueId,
+      project_name: null,
+      hours: hoursMap[entry.issueId],
+      activity_id: activityId,
+      activity_name: null,
+      comment: entry.description || null,
+      status: "draft" as const,
+      error_message: null,
+    }));
+
+    await supabase.from("time_log_entries").insert(rows);
+
+    if (botToken) {
+      await updateModal(botToken, viewId, buildSuccessView(rows.length));
+    }
+  });
+
+  return new Response(null, { status: 200 });
+}
+
+// ─── main POST handler ────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
   const raw = await req.text();
@@ -28,15 +308,8 @@ export async function POST(req: NextRequest) {
     return new Response(null, { status: 200 });
   }
 
-  let payload: {
-    type: string;
-    callback_id: string;
-    user: { id: string };
-    team: { id: string };
-    message: { text: string };
-    response_url: string;
-  };
-
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let payload: any;
   try {
     payload = JSON.parse(payloadStr);
   } catch {
@@ -44,39 +317,26 @@ export async function POST(req: NextRequest) {
   }
 
   if (
-    payload.type !== "message_action" ||
-    payload.callback_id !== "log_eod_to_time_logger"
+    payload.type === "message_action" &&
+    payload.callback_id === "log_eod_to_time_logger"
   ) {
-    return new Response(null, { status: 200 });
+    return handleMessageAction(payload);
   }
 
-  const slackUserId = payload.user?.id;
-  const slackTeamId = payload.team?.id;
-  const messageText = payload.message?.text ?? "";
-  const responseUrl = payload.response_url;
-
-  if (!slackUserId || !slackTeamId || !responseUrl) {
-    return new Response(null, { status: 200 });
+  if (
+    payload.type === "view_submission" &&
+    payload.view?.callback_id === "log_eod_to_time_logger"
+  ) {
+    return handleViewSubmission(payload);
   }
 
-  after(async () => {
-    const supabase = createAdminClient();
-    const { data: user } = await supabase
-      .from("users")
-      .select("id")
-      .eq("slack_user_id", slackUserId)
-      .eq("slack_team_id", slackTeamId)
-      .single();
-
-    if (!user) {
-      await postResponseUrl(responseUrl, {
-        text: `Connect your Slack account at <${APP_URL}/settings/integrations/slack|Settings → Integrations → Slack>.`,
-      });
-      return;
-    }
-
-    await ingestSlackEOD(user.id, messageText, responseUrl);
-  });
+  if (
+    payload.type === "block_actions" &&
+    Array.isArray(payload.actions) &&
+    payload.actions[0]?.action_id === "save_draft"
+  ) {
+    return handleSaveDraft(payload);
+  }
 
   return new Response(null, { status: 200 });
 }

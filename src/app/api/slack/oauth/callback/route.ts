@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { verifyState } from "@/lib/slack/state";
 import { exchangeOAuthCode } from "@/lib/slack/client";
+import { encryptToken } from "@/lib/slack/encryption";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
@@ -56,12 +57,17 @@ export async function GET(req: NextRequest) {
     return NextResponse.redirect(`${settingsUrl}?error=oauth_failed`);
   }
 
+  const { encrypted, iv, tag } = encryptToken(result.bot_token);
+
   const supabase = createAdminClient();
   const { error: updateError } = await supabase
     .from("users")
     .update({
-      slack_user_id: result.authed_user.id,
-      slack_team_id: result.team.id,
+      slack_user_id:             result.authed_user.id,
+      slack_team_id:             result.team.id,
+      slack_bot_token_encrypted: encrypted,
+      slack_bot_token_iv:        iv,
+      slack_bot_token_tag:       tag,
     })
     .eq("id", statePayload.userId);
 

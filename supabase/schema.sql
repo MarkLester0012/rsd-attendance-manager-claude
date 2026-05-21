@@ -417,8 +417,11 @@ create trigger time_log_entries_updated_at before update on public.time_log_entr
 -- ============================================
 
 alter table public.users
-  add column if not exists slack_user_id text unique,
-  add column if not exists slack_team_id text;
+  add column if not exists slack_user_id             text unique,
+  add column if not exists slack_team_id             text,
+  add column if not exists slack_bot_token_encrypted text,
+  add column if not exists slack_bot_token_iv        text,
+  add column if not exists slack_bot_token_tag       text;
 
 create index if not exists idx_users_slack_user_id
   on public.users(slack_user_id) where slack_user_id is not null;
