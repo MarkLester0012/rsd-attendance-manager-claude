@@ -397,44 +397,39 @@ export function AttendanceContent({
         <div className="hidden sm:block w-[120px]" />
       </div>
 
-      {/* Summary counters — day view only */}
+      {/* Summary counters — day view only, clickable to filter */}
       {viewMode === "day" && (
         <div className="grid grid-cols-3 gap-2 sm:gap-4">
-          <Card>
-            <CardContent className="flex items-center gap-2 sm:gap-3 p-3 sm:p-4">
-              <div className="rounded-lg bg-emerald-500/10 p-1.5 sm:p-2">
-                <Users className="h-4 w-4 sm:h-5 sm:w-5 text-emerald-500" />
-              </div>
-              <div>
-                <p className="text-xl sm:text-2xl font-bold">{inOfficeCount}</p>
-                <p className="text-[10px] sm:text-xs text-muted-foreground">In Office</p>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="flex items-center gap-2 sm:gap-3 p-3 sm:p-4">
-              <div className="rounded-lg bg-blue-500/10 p-1.5 sm:p-2">
-                <Monitor className="h-4 w-4 sm:h-5 sm:w-5 text-blue-500" />
-              </div>
-              <div>
-                <p className="text-xl sm:text-2xl font-bold">{wfhCount}</p>
-                <p className="text-[10px] sm:text-xs text-muted-foreground">
-                  WFH
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="flex items-center gap-2 sm:gap-3 p-3 sm:p-4">
-              <div className="rounded-lg bg-orange-500/10 p-1.5 sm:p-2">
-                <Plane className="h-4 w-4 sm:h-5 sm:w-5 text-orange-500" />
-              </div>
-              <div>
-                <p className="text-xl sm:text-2xl font-bold">{onLeaveCount}</p>
-                <p className="text-[10px] sm:text-xs text-muted-foreground">On Leave</p>
-              </div>
-            </CardContent>
-          </Card>
+          {[
+            { key: "in-office", label: "In Office", count: inOfficeCount, icon: Users, color: "text-emerald-500", bg: "bg-emerald-500/10", activeBorder: "border-emerald-500/50" },
+            { key: "wfh", label: "WFH", count: wfhCount, icon: Monitor, color: "text-blue-500", bg: "bg-blue-500/10", activeBorder: "border-blue-500/50" },
+            { key: "on-leave", label: "On Leave", count: onLeaveCount, icon: Plane, color: "text-orange-500", bg: "bg-orange-500/10", activeBorder: "border-orange-500/50" },
+          ].map(({ key, label, count, icon: Icon, color, bg, activeBorder }) => {
+            const isActive = statusFilter === key;
+            return (
+              <button
+                key={key}
+                onClick={() => setStatusFilter(isActive ? "all" : key)}
+                className={cn(
+                  "relative flex items-center gap-2 sm:gap-3 rounded-xl border p-3 sm:p-4 text-left transition-all hover:shadow-md bg-card",
+                  isActive ? `${activeBorder} bg-accent/30` : "border-border/50 hover:border-border hover:bg-accent/30"
+                )}
+              >
+                <div className={cn("rounded-lg p-1.5 sm:p-2", bg)}>
+                  <Icon className={cn("h-4 w-4 sm:h-5 sm:w-5", color)} />
+                </div>
+                <div>
+                  <p className="text-xl sm:text-2xl font-bold">{count}</p>
+                  <p className="text-[10px] sm:text-xs text-muted-foreground">{label}</p>
+                </div>
+                {isActive && (
+                  <div className="absolute top-2 right-2">
+                    <div className={cn("h-2 w-2 rounded-full", color.replace("text-", "bg-"))} />
+                  </div>
+                )}
+              </button>
+            );
+          })}
         </div>
       )}
 
@@ -476,29 +471,16 @@ export function AttendanceContent({
           </SelectContent>
         </Select>
         {viewMode === "day" && (
-          <>
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-[calc(50%-0.25rem)] sm:w-[140px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Status</SelectItem>
-                <SelectItem value="in-office">In Office</SelectItem>
-                <SelectItem value="wfh">WFH</SelectItem>
-                <SelectItem value="on-leave">On Leave</SelectItem>
-              </SelectContent>
-            </Select>
-            <div className="flex items-center gap-2">
-              <Switch
-                id="group-dept"
-                checked={groupByDept}
-                onCheckedChange={setGroupByDept}
-              />
-              <Label htmlFor="group-dept" className="text-sm cursor-pointer">
-                Group by Dept
-              </Label>
-            </div>
-          </>
+          <div className="flex items-center gap-2">
+            <Switch
+              id="group-dept"
+              checked={groupByDept}
+              onCheckedChange={setGroupByDept}
+            />
+            <Label htmlFor="group-dept" className="text-sm cursor-pointer">
+              Group by Dept
+            </Label>
+          </div>
         )}
       </div>
 

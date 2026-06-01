@@ -5,8 +5,13 @@ import { postResponseUrl, openModal, updateModal } from "@/lib/slack/client";
 import { parseSlackEOD } from "@/lib/redmine/parser";
 import { decryptApiKey } from "@/lib/redmine/encryption";
 import { decryptToken } from "@/lib/slack/encryption";
-import { createTimeEntry } from "@/lib/redmine/client";
-import { buildTimeLogModal, buildSuccessView, formatForRedmine } from "@/lib/slack/modal";
+import { createTimeEntry, getTimeEntries } from "@/lib/redmine/client";
+import {
+  buildTimeLogModal,
+  buildSubmittingView,
+  buildSuccessView,
+  formatForRedmine,
+} from "@/lib/slack/modal";
 import type { ModalMetadata } from "@/lib/slack/modal";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -34,6 +39,46 @@ async function lookupUser(slackUserId: string, slackTeamId: string) {
     .eq("slack_team_id", slackTeamId)
     .single();
   return data;
+}
+
+/** Fetch how many hours the user has already logged to Redmine for a given date.
+ *  Returns null if no Redmine config exists or if the fetch fails. */
+async function fetchLoggedHours(
+  userId: string,
+  date: string
+): Promise<number | null> {
+  const supabase = createAdminClient();
+  const { data: config } = await supabase
+    .from("redmine_configs")
+    .select("*")
+    .eq("user_id", userId)
+    .single();
+
+  if (!config) return null;
+
+  try {
+    const apiKey = decryptApiKey(
+      config.encrypted_api_key,
+      config.encryption_iv,
+      config.encryption_tag
+    );
+    const { entries, error } = await getTimeEntries(
+      { redmineUrl: config.redmine_url, apiKey },
+      date
+    );
+    if (error) return null;
+    return entries.reduce((sum, e) => sum + e.hours, 0);
+  } catch {
+    return null;
+  }
+}
+
+/** Extract the user's chosen date from modal state, falling back to metadata. */
+function getSelectedDate(
+  stateValues: Record<string, Record<string, { selected_date?: string | null; value?: string | null }>>,
+  fallback: string
+): string {
+  return stateValues.date_block?.date_select?.selected_date ?? fallback;
 }
 
 // ─── message_action handler (INLINE — must complete within 3 s) ───────────────
@@ -92,26 +137,45 @@ async function handleMessageAction(payload: {
     entries,
   };
 
-  const modal = buildTimeLogModal(entries, today, metadata);
+  // Open the modal immediately (loggedHours: null = "loading…" placeholder).
+  // The Redmine baseline fetch happens in the background after the trigger_id
+  // window closes, then updates the modal via views.update.
+  const modal = buildTimeLogModal(entries, today, metadata, { loggedHours: null });
   const result = await openModal(botToken, trigger_id, modal);
 
   if (!result.ok) {
     await postResponseUrl(response_url, {
       text: `Failed to open the time log modal: ${result.error ?? "unknown error"}. Please try again.`,
     });
+    return new Response(null, { status: 200 });
+  }
+
+  const viewId = result.view?.id;
+  if (viewId) {
+    after(async () => {
+      const logged = await fetchLoggedHours(dbUser.id, today);
+      await updateModal(
+        botToken,
+        viewId,
+        buildTimeLogModal(entries, today, metadata, { loggedHours: logged })
+      );
+    });
   }
 
   return new Response(null, { status: 200 });
 }
 
-// ─── view_submission handler ──────────────────────────────────────────────────
+// ─── block_actions: date changed ─────────────────────────────────────────────
 
-async function handleViewSubmission(payload: {
+async function handleDateChange(payload: {
+  user: { id: string };
+  team: { id: string };
   view: {
-    callback_id: string;
+    id: string;
     private_metadata: string;
-    state: { values: Record<string, Record<string, { value: string | null }>> };
+    state: { values: Record<string, Record<string, { selected_date?: string | null; value?: string | null }>> };
   };
+  actions: Array<{ action_id: string; selected_date?: string }>;
 }): Promise<Response> {
   const { view } = payload;
 
@@ -122,89 +186,44 @@ async function handleViewSubmission(payload: {
     return new Response(null, { status: 200 });
   }
 
-  // Collect hours for each entry
-  const hoursMap: Record<number, number> = {};
-  const errors: Record<string, string> = {};
+  const viewId = view.id;
+  const newDate =
+    payload.actions[0]?.selected_date ??
+    getSelectedDate(view.state.values, metadata.date);
 
-  for (const entry of metadata.entries) {
-    const blockId = `ticket_${entry.issueId}`;
-    const actionId = `hours_${entry.issueId}`;
-    const raw = view.state.values[blockId]?.[actionId]?.value ?? null;
-    const hours = raw !== null ? parseFloat(raw) : 0;
-
-    if (!raw || isNaN(hours) || hours <= 0) {
-      errors[blockId] = "Enter hours greater than 0";
-    } else {
-      hoursMap[entry.issueId] = hours;
-    }
-  }
-
-  if (Object.keys(errors).length > 0) {
-    return jsonResponse({ response_action: "errors", errors });
-  }
-
-  // Close modal immediately; do Redmine work in background
   after(async () => {
     const supabase = createAdminClient();
-
-    const { data: config } = await supabase
-      .from("redmine_configs")
-      .select("*")
-      .eq("user_id", metadata.userId)
+    const { data: dbUser } = await supabase
+      .from("users")
+      .select("slack_bot_token_encrypted, slack_bot_token_iv, slack_bot_token_tag")
+      .eq("id", metadata.userId)
       .single();
 
-    if (!config) {
-      await postResponseUrl(metadata.responseUrl, {
-        text: `Configure Redmine at <${APP_URL}/time-logger|Time Logger settings> before submitting.`,
-      });
-      return;
-    }
+    const botToken =
+      dbUser?.slack_bot_token_encrypted
+        ? decryptToken(
+            dbUser.slack_bot_token_encrypted,
+            dbUser.slack_bot_token_iv,
+            dbUser.slack_bot_token_tag
+          )
+        : null;
 
-    if (!config.default_activity_id) {
-      await postResponseUrl(metadata.responseUrl, {
-        text: `Pick a default activity in <${APP_URL}/time-logger|Time Logger settings> before submitting.`,
-      });
-      return;
-    }
+    if (!botToken) return;
 
-    const apiKey = decryptApiKey(
-      config.encrypted_api_key,
-      config.encryption_iv,
-      config.encryption_tag
-    );
-    const opts = { redmineUrl: config.redmine_url, apiKey };
-
-    let submitted = 0;
-    let failed = 0;
-
-    await Promise.all(
-      metadata.entries.map(async (entry) => {
-        const hours = hoursMap[entry.issueId];
-        const result = await createTimeEntry(opts, {
-          issue_id: entry.issueId,
-          spent_on: metadata.date,
-          hours,
-          activity_id: config.default_activity_id,
-          comments: formatForRedmine(entry.description),
-        });
-        if (result.error) {
-          failed++;
-        } else {
-          submitted++;
-        }
+    const logged = await fetchLoggedHours(metadata.userId, newDate);
+    await updateModal(
+      botToken,
+      viewId,
+      buildTimeLogModal(metadata.entries, newDate, metadata, {
+        loggedHours: logged,
       })
     );
-
-    const failedPart = failed > 0 ? ` (${failed} failed)` : "";
-    await postResponseUrl(metadata.responseUrl, {
-      text: `✅ Submitted ${submitted} entr${submitted !== 1 ? "ies" : "y"} to Redmine${failedPart}.`,
-    });
   });
 
-  return jsonResponse({ response_action: "clear" });
+  return new Response(null, { status: 200 });
 }
 
-// ─── block_actions handler (Save as Draft button) ────────────────────────────
+// ─── block_actions: Save as Draft ────────────────────────────────────────────
 
 async function handleSaveDraft(payload: {
   user: { id: string };
@@ -212,7 +231,7 @@ async function handleSaveDraft(payload: {
   view: {
     id: string;
     private_metadata: string;
-    state: { values: Record<string, Record<string, { value: string | null }>> };
+    state: { values: Record<string, Record<string, { selected_date?: string | null; value?: string | null }>> };
   };
 }): Promise<Response> {
   const { view } = payload;
@@ -225,6 +244,7 @@ async function handleSaveDraft(payload: {
   }
 
   const viewId = view.id;
+  const logDate = getSelectedDate(view.state.values, metadata.date);
 
   // Extract hours from current state (default to 1 for empty/invalid)
   const hoursMap: Record<number, number> = {};
@@ -240,7 +260,6 @@ async function handleSaveDraft(payload: {
   after(async () => {
     const supabase = createAdminClient();
 
-    // Need bot token to update the modal
     const { data: dbUser } = await supabase
       .from("users")
       .select("slack_bot_token_encrypted, slack_bot_token_iv, slack_bot_token_tag")
@@ -266,7 +285,7 @@ async function handleSaveDraft(payload: {
 
     const rows = metadata.entries.map((entry) => ({
       user_id: metadata.userId,
-      log_date: metadata.date,
+      log_date: logDate,
       issue_id: entry.issueId,
       project_name: null,
       hours: hoursMap[entry.issueId],
@@ -281,6 +300,146 @@ async function handleSaveDraft(payload: {
 
     if (botToken) {
       await updateModal(botToken, viewId, buildSuccessView(rows.length));
+    }
+  });
+
+  return new Response(null, { status: 200 });
+}
+
+// ─── block_actions: Submit to Redmine ────────────────────────────────────────
+
+async function handleSubmitRedmine(payload: {
+  user: { id: string };
+  team: { id: string };
+  view: {
+    id: string;
+    private_metadata: string;
+    state: { values: Record<string, Record<string, { selected_date?: string | null; value?: string | null }>> };
+  };
+}): Promise<Response> {
+  const { view } = payload;
+
+  let metadata: ModalMetadata;
+  try {
+    metadata = JSON.parse(view.private_metadata) as ModalMetadata;
+  } catch {
+    return new Response(null, { status: 200 });
+  }
+
+  const viewId = view.id;
+  const logDate = getSelectedDate(view.state.values, metadata.date);
+
+  // Validate hours — every ticket must have a valid positive number.
+  const hoursMap: Record<number, number> = {};
+  let hasError = false;
+
+  for (const entry of metadata.entries) {
+    const raw =
+      view.state.values[`ticket_${entry.issueId}`]?.[
+        `hours_${entry.issueId}`
+      ]?.value ?? null;
+    const hours = raw !== null ? parseFloat(raw) : NaN;
+    if (!raw || isNaN(hours) || hours <= 0) {
+      hasError = true;
+    } else {
+      hoursMap[entry.issueId] = hours;
+    }
+  }
+
+  after(async () => {
+    const supabase = createAdminClient();
+
+    const { data: dbUser } = await supabase
+      .from("users")
+      .select("slack_bot_token_encrypted, slack_bot_token_iv, slack_bot_token_tag")
+      .eq("id", metadata.userId)
+      .single();
+
+    const botToken =
+      dbUser?.slack_bot_token_encrypted
+        ? decryptToken(
+            dbUser.slack_bot_token_encrypted,
+            dbUser.slack_bot_token_iv,
+            dbUser.slack_bot_token_tag
+          )
+        : null;
+
+    // On validation error: update modal with error banner; entered values preserved.
+    if (hasError) {
+      if (botToken) {
+        const logged = await fetchLoggedHours(metadata.userId, logDate);
+        await updateModal(
+          botToken,
+          viewId,
+          buildTimeLogModal(metadata.entries, logDate, metadata, {
+            loggedHours: logged,
+            errorText: "Enter valid hours (greater than 0) for every ticket.",
+          })
+        );
+      }
+      return;
+    }
+
+    const { data: config } = await supabase
+      .from("redmine_configs")
+      .select("*")
+      .eq("user_id", metadata.userId)
+      .single();
+
+    if (!config) {
+      await postResponseUrl(metadata.responseUrl, {
+        text: `Configure Redmine at <${APP_URL}/time-logger|Time Logger settings> before submitting.`,
+      });
+      return;
+    }
+
+    if (!config.default_activity_id) {
+      await postResponseUrl(metadata.responseUrl, {
+        text: `Pick a default activity in <${APP_URL}/time-logger|Time Logger settings> before submitting.`,
+      });
+      return;
+    }
+
+    // Show submitting interstitial to prevent double-clicks.
+    if (botToken) {
+      await updateModal(botToken, viewId, buildSubmittingView());
+    }
+
+    const apiKey = decryptApiKey(
+      config.encrypted_api_key,
+      config.encryption_iv,
+      config.encryption_tag
+    );
+    const opts = { redmineUrl: config.redmine_url, apiKey };
+
+    let submitted = 0;
+    let failed = 0;
+
+    await Promise.all(
+      metadata.entries.map(async (entry) => {
+        const hours = hoursMap[entry.issueId];
+        const result = await createTimeEntry(opts, {
+          issue_id: entry.issueId,
+          spent_on: logDate,
+          hours,
+          activity_id: config.default_activity_id,
+          comments: formatForRedmine(entry.description),
+        });
+        if (result.error) {
+          failed++;
+        } else {
+          submitted++;
+        }
+      })
+    );
+
+    const failedPart = failed > 0 ? ` (${failed} failed)` : "";
+    await postResponseUrl(metadata.responseUrl, {
+      text: `✅ Submitted ${submitted} entr${submitted !== 1 ? "ies" : "y"} to Redmine on ${logDate}${failedPart}.`,
+    });
+
+    if (botToken) {
+      await updateModal(botToken, viewId, buildSuccessView(submitted));
     }
   });
 
@@ -323,19 +482,11 @@ export async function POST(req: NextRequest) {
     return handleMessageAction(payload);
   }
 
-  if (
-    payload.type === "view_submission" &&
-    payload.view?.callback_id === "log_eod_to_time_logger"
-  ) {
-    return handleViewSubmission(payload);
-  }
-
-  if (
-    payload.type === "block_actions" &&
-    Array.isArray(payload.actions) &&
-    payload.actions[0]?.action_id === "save_draft"
-  ) {
-    return handleSaveDraft(payload);
+  if (payload.type === "block_actions" && Array.isArray(payload.actions)) {
+    const actionId = payload.actions[0]?.action_id;
+    if (actionId === "date_select") return handleDateChange(payload);
+    if (actionId === "save_draft") return handleSaveDraft(payload);
+    if (actionId === "submit_redmine") return handleSubmitRedmine(payload);
   }
 
   return new Response(null, { status: 200 });

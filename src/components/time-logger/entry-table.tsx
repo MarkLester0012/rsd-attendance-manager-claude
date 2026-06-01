@@ -17,7 +17,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { cn } from "@/lib/utils";
+import { cn, redmineIssueUrl } from "@/lib/utils";
 import {
   Plus,
   Trash2,
@@ -56,6 +56,7 @@ interface EntryTableProps {
     activity_name: string;
     comments: string;
   }>;
+  redmineUrl: string | null;
 }
 
 export function EntryTable({
@@ -64,6 +65,7 @@ export function EntryTable({
   onEntriesChange,
   onIssueBlur,
   existingRedmineEntries,
+  redmineUrl,
 }: EntryTableProps) {
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
@@ -181,12 +183,20 @@ export function EntryTable({
       </div>
 
       {/* Existing Redmine entries (read-only) */}
-      {existingRedmineEntries.map((entry) => (
+      {existingRedmineEntries.map((entry) => {
+        const issueUrl = redmineIssueUrl(redmineUrl, entry.issue_id);
+        return (
         <div
           key={`redmine-${entry.id}`}
-          className="grid grid-cols-[80px_1fr_80px_160px_1fr_40px_40px] gap-2 items-center rounded-lg border border-border/30 bg-muted/20 px-2 py-2 opacity-60"
+          onClick={() => issueUrl && window.open(issueUrl, "_blank", "noopener,noreferrer")}
+          className={cn(
+            "grid grid-cols-[80px_1fr_80px_160px_1fr_40px_40px] gap-2 items-center rounded-lg border border-border/30 bg-muted/20 px-2 py-2 opacity-60 transition-opacity",
+            issueUrl && "cursor-pointer hover:opacity-80"
+          )}
         >
-          <div className="text-sm font-mono min-w-0 truncate">#{entry.issue_id}</div>
+          <div className="text-sm font-mono min-w-0 truncate">
+            #{entry.issue_id}
+          </div>
           <div className="text-sm text-muted-foreground min-w-0 truncate">
             {entry.project_name}
           </div>
@@ -209,7 +219,7 @@ export function EntryTable({
           </div>
           <div />
         </div>
-      ))}
+      );})}
 
       {/* Editable entries */}
       {entries.map((entry, index) => (

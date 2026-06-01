@@ -40,6 +40,7 @@ interface TimeLoggerContentProps {
   currentUser: User;
   hasConfig: boolean;
   defaultActivityId: number | null;
+  redmineUrl: string | null;
   initialEntries: TimeLogEntry[];
   initialDate: string;
 }
@@ -63,6 +64,7 @@ export function TimeLoggerContent({
   currentUser,
   hasConfig: initialHasConfig,
   defaultActivityId,
+  redmineUrl,
   initialEntries,
   initialDate,
 }: TimeLoggerContentProps) {
@@ -790,6 +792,7 @@ export function TimeLoggerContent({
                   onEntriesChange={setEntries}
                   onIssueBlur={handleIssueBlur}
                   existingRedmineEntries={existingRedmineEntries}
+                  redmineUrl={redmineUrl}
                 />
               )}
             </>
@@ -803,6 +806,7 @@ export function TimeLoggerContent({
               onMonthChange={handleMonthChange}
               onOpenDayView={handleOpenDayView}
               loading={loadingMonth}
+              redmineUrl={redmineUrl}
             />
           )}
         </>

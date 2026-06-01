@@ -39,6 +39,7 @@ export default async function TimeLoggerPage() {
       currentUser={user}
       hasConfig={!!redmineConfig}
       defaultActivityId={redmineConfig?.default_activity_id ?? null}
+      redmineUrl={redmineConfig?.redmine_url ?? null}
       initialEntries={entries || []}
       initialDate={today}
     />

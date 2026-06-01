@@ -6,6 +6,8 @@ export interface ModalMetadata {
   entries: Array<{ issueId: number; description: string }>;
 }
 
+const WORKDAY_HOURS = 8;
+
 // Trims each line for clean display in Slack's context blocks.
 // Preserves bullet characters (•) and newlines so Slack renders them as-is.
 function cleanForDisplay(description: string): string {
@@ -36,25 +38,62 @@ export function formatForRedmine(description: string): string {
   return lines.map((line) => `• ${line}`).join("\n");
 }
 
+interface BuildModalOpts {
+  /** Total hours already logged to Redmine for this date. null = still loading. */
+  loggedHours?: number | null;
+  /** Validation / error message to show near the top of the modal. */
+  errorText?: string;
+}
+
 export function buildTimeLogModal(
   entries: ModalMetadata["entries"],
   date: string,
-  metadata: ModalMetadata
+  metadata: ModalMetadata,
+  opts: BuildModalOpts = {}
 ): object {
+  const { loggedHours, errorText } = opts;
   const blocks: object[] = [];
+
+  // ── Date picker ──────────────────────────────────────────────────────────
+  blocks.push({
+    type: "input",
+    block_id: "date_block",
+    dispatch_action: true,
+    label: { type: "plain_text", text: "Date" },
+    element: {
+      type: "datepicker",
+      action_id: "date_select",
+      initial_date: date,
+    },
+  });
+
+  // ── Logged-hours baseline ─────────────────────────────────────────────────
+  const loggedText =
+    loggedHours != null
+      ? `Logged on ${date}: *${loggedHours}h* / ${WORKDAY_HOURS}h`
+      : `Logged on ${date}: _loading…_`;
 
   blocks.push({
     type: "context",
     elements: [
       {
         type: "mrkdwn",
-        text: `Date: *${date}*  |  ${entries.length} ticket${entries.length !== 1 ? "s" : ""} found`,
+        text: `${loggedText}  |  ${entries.length} ticket${entries.length !== 1 ? "s" : ""} found`,
       },
     ],
   });
 
+  // ── Error banner (hand-rolled validation feedback) ────────────────────────
+  if (errorText) {
+    blocks.push({
+      type: "context",
+      elements: [{ type: "mrkdwn", text: `⚠️ ${errorText}` }],
+    });
+  }
+
   blocks.push({ type: "divider" });
 
+  // ── Ticket entry rows ─────────────────────────────────────────────────────
   entries.forEach((entry, index) => {
     const display = cleanForDisplay(entry.description);
 
@@ -88,6 +127,7 @@ export function buildTimeLogModal(
     }
   });
 
+  // ── Action buttons (Save as Draft | Submit to Redmine) ────────────────────
   blocks.push({
     type: "actions",
     block_id: "modal_actions",
@@ -96,6 +136,11 @@ export function buildTimeLogModal(
         type: "button",
         action_id: "save_draft",
         text: { type: "plain_text", text: "Save as Draft" },
+      },
+      {
+        type: "button",
+        action_id: "submit_redmine",
+        text: { type: "plain_text", text: "Submit to Redmine" },
         style: "primary",
       },
     ],
@@ -105,10 +150,27 @@ export function buildTimeLogModal(
     type: "modal",
     callback_id: "log_eod_to_time_logger",
     title: { type: "plain_text", text: "Log EOD to Redmine" },
-    submit: { type: "plain_text", text: "Submit to Redmine" },
+    // No `submit` field — both actions are in-body buttons.
     close: { type: "plain_text", text: "Cancel" },
     private_metadata: JSON.stringify(metadata),
     blocks,
+  };
+}
+
+export function buildSubmittingView(): object {
+  return {
+    type: "modal",
+    title: { type: "plain_text", text: "Submitting…" },
+    close: { type: "plain_text", text: "Close" },
+    blocks: [
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: "Submitting entries to Redmine, please wait…",
+        },
+      },
+    ],
   };
 }
 

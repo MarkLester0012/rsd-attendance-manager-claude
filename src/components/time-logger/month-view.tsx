@@ -36,7 +36,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { cn } from "@/lib/utils";
+import { cn, redmineIssueUrl } from "@/lib/utils";
 import type { Holiday, LeaveEntry } from "@/lib/types";
 import { LEAVE_TYPES } from "@/lib/constants/leave-types";
 
@@ -59,6 +59,7 @@ interface MonthViewProps {
   onMonthChange: (date: Date) => void;
   onOpenDayView: (date: string) => void;
   loading?: boolean;
+  redmineUrl?: string | null;
 }
 
 const DAY_HEADERS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -77,6 +78,7 @@ export function MonthView({
   onMonthChange,
   onOpenDayView,
   loading,
+  redmineUrl,
 }: MonthViewProps) {
   const [drawerDate, setDrawerDate] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -327,14 +329,28 @@ export function MonthView({
                     {/* Issue chips */}
                     {inCurrentMonth && visibleIssues.length > 0 && (
                       <div className="flex flex-wrap gap-0.5">
-                        {visibleIssues.map((id) => (
-                          <span
-                            key={id}
-                            className="text-[9px] font-mono bg-muted/60 text-muted-foreground rounded px-1 leading-4"
-                          >
-                            #{id}
-                          </span>
-                        ))}
+                        {visibleIssues.map((id) => {
+                          const url = redmineIssueUrl(redmineUrl, id);
+                          return url ? (
+                            <a
+                              key={id}
+                              href={url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="text-[9px] font-mono bg-muted/60 text-muted-foreground rounded px-1 leading-4 hover:underline hover:text-primary"
+                            >
+                              #{id}
+                            </a>
+                          ) : (
+                            <span
+                              key={id}
+                              className="text-[9px] font-mono bg-muted/60 text-muted-foreground rounded px-1 leading-4"
+                            >
+                              #{id}
+                            </span>
+                          );
+                        })}
                         {overflowCount > 0 && (
                           <span className="text-[9px] text-muted-foreground leading-4">
                             +{overflowCount}
@@ -441,14 +457,20 @@ export function MonthView({
               </p>
             ) : (
               <div className="space-y-2">
-                {drawerEntries.map((entry, idx) => (
+                {drawerEntries.map((entry, idx) => {
+                  const issueUrl = entry.issue_id ? redmineIssueUrl(redmineUrl, entry.issue_id) : null;
+                  return (
                   <div
                     key={`${entry.log_date}-${entry.issue_id ?? "no-issue"}-${idx}`}
-                    className="rounded-lg border border-border/50 bg-card p-3 space-y-1"
+                    onClick={() => issueUrl && window.open(issueUrl, "_blank", "noopener,noreferrer")}
+                    className={cn(
+                      "rounded-lg border border-border/50 bg-card p-3 space-y-1 transition-colors",
+                      issueUrl && "cursor-pointer hover:border-border hover:bg-accent/30"
+                    )}
                   >
                     <div className="flex items-center justify-between gap-2">
                       <span className="font-mono text-sm font-medium">
-                        {entry.issue_id ? `#${entry.issue_id}` : entry.project_name ?? "—"}
+                        {entry.issue_id ? `#${entry.issue_id}` : (entry.project_name ?? "—")}
                       </span>
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-semibold tabular-nums">
@@ -473,7 +495,7 @@ export function MonthView({
                       </p>
                     )}
                   </div>
-                ))}
+                ); })}
               </div>
             )}
           </div>

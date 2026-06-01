@@ -14,6 +14,10 @@ export function getInitials(name: string): string {
     .slice(0, 2);
 }
 
+export function redmineIssueUrl(baseUrl: string | null | undefined, issueId: number): string | null {
+  return baseUrl ? `${baseUrl.replace(/\/$/, "")}/issues/${issueId}` : null;
+}
+
 export function formatDate(date: Date | string): string {
   const d = typeof date === "string" ? new Date(date) : date;
   return d.toLocaleDateString("en-US", {
