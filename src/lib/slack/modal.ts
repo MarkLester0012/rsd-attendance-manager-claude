@@ -41,8 +41,6 @@ export function formatForRedmine(description: string): string {
 interface BuildModalOpts {
   /** Total hours already logged to Redmine for this date. null = still loading. */
   loggedHours?: number | null;
-  /** Validation / error message to show near the top of the modal. */
-  errorText?: string;
 }
 
 export function buildTimeLogModal(
@@ -51,7 +49,7 @@ export function buildTimeLogModal(
   metadata: ModalMetadata,
   opts: BuildModalOpts = {}
 ): object {
-  const { loggedHours, errorText } = opts;
+  const { loggedHours } = opts;
   const blocks: object[] = [];
 
   // ── Date picker ──────────────────────────────────────────────────────────
@@ -82,14 +80,6 @@ export function buildTimeLogModal(
       },
     ],
   });
-
-  // ── Error banner (hand-rolled validation feedback) ────────────────────────
-  if (errorText) {
-    blocks.push({
-      type: "context",
-      elements: [{ type: "mrkdwn", text: `⚠️ ${errorText}` }],
-    });
-  }
 
   blocks.push({ type: "divider" });
 
@@ -127,7 +117,7 @@ export function buildTimeLogModal(
     }
   });
 
-  // ── Action buttons side by side ───────────────────────────────────────────
+  // ── Save as Draft (in-body button) ────────────────────────────────────────
   blocks.push({
     type: "actions",
     block_id: "modal_actions",
@@ -137,12 +127,6 @@ export function buildTimeLogModal(
         action_id: "save_draft",
         text: { type: "plain_text", text: "Save as Draft" },
       },
-      {
-        type: "button",
-        action_id: "submit_to_redmine",
-        style: "primary",
-        text: { type: "plain_text", text: "Submit to Redmine" },
-      },
     ],
   });
 
@@ -150,6 +134,10 @@ export function buildTimeLogModal(
     type: "modal",
     callback_id: "log_eod_to_time_logger",
     title: { type: "plain_text", text: "Log EOD to Redmine" },
+    // Slack rejects views.open with `invalid_arguments` unless a modal that
+    // contains input blocks also defines a `submit` button.
+    submit: { type: "plain_text", text: "Submit to Redmine" },
+    close: { type: "plain_text", text: "Cancel" },
     private_metadata: JSON.stringify(metadata),
     blocks,
   };

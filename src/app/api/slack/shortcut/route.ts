@@ -302,72 +302,46 @@ async function handleSaveDraft(payload: {
   return new Response(null, { status: 200 });
 }
 
-// ─── block_actions: Submit to Redmine ────────────────────────────────────────
+// ─── view_submission: Submit to Redmine ──────────────────────────────────────
 
-async function handleSubmitToRedmine(payload: {
+async function handleViewSubmission(payload: {
   view: {
-    id: string;
     private_metadata: string;
     state: { values: Record<string, Record<string, { selected_date?: string | null; value?: string | null }>> };
   };
 }): Promise<Response> {
   const { view } = payload;
-  const viewId = view.id;
 
   let metadata: ModalMetadata;
   try {
     metadata = JSON.parse(view.private_metadata) as ModalMetadata;
   } catch {
-    return new Response(null, { status: 200 });
+    return jsonResponse({ response_action: "clear" });
   }
 
   const logDate = getSelectedDate(view.state.values, metadata.date);
 
-  // Validate hours — show inline error if any are missing/invalid
+  // Validate hours synchronously — Slack shows native inline errors per ticket.
   const hoursMap: Record<number, number> = {};
-  let hasError = false;
+  const errors: Record<string, string> = {};
   for (const entry of metadata.entries) {
     const raw = view.state.values[`ticket_${entry.issueId}`]?.[`hours_${entry.issueId}`]?.value ?? null;
     const hours = raw !== null ? parseFloat(raw) : NaN;
     if (!raw || isNaN(hours) || hours <= 0) {
-      hasError = true;
+      errors[`ticket_${entry.issueId}`] = "Enter valid hours (greater than 0).";
     } else {
       hoursMap[entry.issueId] = hours;
     }
   }
 
-  if (hasError) {
-    // Fetch bot token to update the modal with the error banner
-    const supabase = createAdminClient();
-    const { data: dbUser } = await supabase
-      .from("users")
-      .select("slack_bot_token_encrypted, slack_bot_token_iv, slack_bot_token_tag")
-      .eq("id", metadata.userId)
-      .single();
-
-    if (dbUser?.slack_bot_token_encrypted) {
-      const botToken = decryptToken(
-        dbUser.slack_bot_token_encrypted,
-        dbUser.slack_bot_token_iv,
-        dbUser.slack_bot_token_tag
-      );
-      await updateModal(
-        botToken,
-        viewId,
-        buildTimeLogModal(metadata.entries, logDate, metadata, {
-          errorText: "Enter valid hours (greater than 0) for every ticket.",
-        })
-      );
-    }
-    return new Response(null, { status: 200 });
+  if (Object.keys(errors).length > 0) {
+    return jsonResponse({ response_action: "errors", errors });
   }
 
-  // Valid — close the modal and submit to Redmine in the background
-  await closeModal(metadata.userId, viewId);
-
+  // Valid — `clear` closes the modal immediately; submit to Redmine in the background.
   after(async () => {
-    const supabase2 = createAdminClient();
-    const { data: config } = await supabase2
+    const supabase = createAdminClient();
+    const { data: config } = await supabase
       .from("redmine_configs")
       .select("*")
       .eq("user_id", metadata.userId)
@@ -412,7 +386,7 @@ async function handleSubmitToRedmine(payload: {
     });
   });
 
-  return new Response(null, { status: 200 });
+  return jsonResponse({ response_action: "clear" });
 }
 
 // ─── main POST handler ────────────────────────────────────────────────────────
@@ -451,11 +425,17 @@ export async function POST(req: NextRequest) {
     return handleMessageAction(payload);
   }
 
+  if (
+    payload.type === "view_submission" &&
+    payload.view?.callback_id === "log_eod_to_time_logger"
+  ) {
+    return handleViewSubmission(payload);
+  }
+
   if (payload.type === "block_actions" && Array.isArray(payload.actions)) {
     const actionId = payload.actions[0]?.action_id;
     if (actionId === "date_select") return handleDateChange(payload);
     if (actionId === "save_draft") return handleSaveDraft(payload);
-    if (actionId === "submit_to_redmine") return handleSubmitToRedmine(payload);
   }
 
   return new Response(null, { status: 200 });
