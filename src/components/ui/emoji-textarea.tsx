@@ -10,6 +10,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { cn } from "@/lib/utils";
 
 // Load picker client-side only — it references browser globals
 const Picker = dynamic(
@@ -25,7 +26,7 @@ interface EmojiTextareaProps extends React.ComponentProps<"textarea"> {
 export const EmojiTextarea = React.forwardRef<
   HTMLTextAreaElement,
   EmojiTextareaProps
->(({ value, onChange, ...props }, ref) => {
+>(({ value, onChange, className, ...props }, ref) => {
   const internalRef = React.useRef<HTMLTextAreaElement>(null);
   const [open, setOpen] = React.useState(false);
 
@@ -66,8 +67,8 @@ export const EmojiTextarea = React.forwardRef<
   }
 
   return (
-    <div className="relative">
-      <Textarea ref={internalRef} value={value} onChange={onChange} {...props} />
+    <div className="relative flex-1 min-w-0">
+      <Textarea ref={internalRef} value={value} onChange={onChange} className={cn("pr-7", className)} {...props} />
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
           <button

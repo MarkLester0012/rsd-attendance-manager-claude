@@ -218,11 +218,33 @@ async function handleDateChange(payload: {
   return new Response(null, { status: 200 });
 }
 
+// ─── shared: close modal helper ──────────────────────────────────────────────
+
+async function closeModal(userId: string, viewId: string): Promise<void> {
+  const supabase = createAdminClient();
+  const { data: dbUser } = await supabase
+    .from("users")
+    .select("slack_bot_token_encrypted, slack_bot_token_iv, slack_bot_token_tag")
+    .eq("id", userId)
+    .single();
+
+  if (!dbUser?.slack_bot_token_encrypted) return;
+
+  const botToken = decryptToken(
+    dbUser.slack_bot_token_encrypted,
+    dbUser.slack_bot_token_iv,
+    dbUser.slack_bot_token_tag
+  );
+  await updateModal(botToken, viewId, {
+    type: "modal",
+    title: { type: "plain_text", text: "Log EOD to Redmine" },
+    blocks: [{ type: "context", elements: [{ type: "mrkdwn", text: " " }] }],
+  });
+}
+
 // ─── block_actions: Save as Draft ────────────────────────────────────────────
 
 async function handleSaveDraft(payload: {
-  user: { id: string };
-  team: { id: string };
   view: {
     id: string;
     private_metadata: string;
@@ -240,27 +262,23 @@ async function handleSaveDraft(payload: {
 
   const logDate = getSelectedDate(view.state.values, metadata.date);
 
-  // Extract hours from current state (default to 1 for empty/invalid)
+  // Default empty/invalid hours to 1 — drafts don't require valid input
   const hoursMap: Record<number, number> = {};
   for (const entry of metadata.entries) {
-    const raw =
-      view.state.values[`ticket_${entry.issueId}`]?.[
-        `hours_${entry.issueId}`
-      ]?.value ?? null;
+    const raw = view.state.values[`ticket_${entry.issueId}`]?.[`hours_${entry.issueId}`]?.value ?? null;
     const parsed = raw !== null ? parseFloat(raw) : NaN;
     hoursMap[entry.issueId] = isNaN(parsed) || parsed <= 0 ? 1 : parsed;
   }
 
+  await closeModal(metadata.userId, view.id);
+
   after(async () => {
     const supabase = createAdminClient();
-
     const { data: config } = await supabase
       .from("redmine_configs")
       .select("default_activity_id")
       .eq("user_id", metadata.userId)
       .single();
-
-    const activityId = config?.default_activity_id ?? 0;
 
     const rows = metadata.entries.map((entry) => ({
       user_id: metadata.userId,
@@ -268,7 +286,7 @@ async function handleSaveDraft(payload: {
       issue_id: entry.issueId,
       project_name: null,
       hours: hoursMap[entry.issueId],
-      activity_id: activityId,
+      activity_id: config?.default_activity_id ?? 0,
       activity_name: null,
       comment: formatForRedmine(entry.description) || null,
       status: "draft" as const,
@@ -276,20 +294,17 @@ async function handleSaveDraft(payload: {
     }));
 
     await supabase.from("time_log_entries").insert(rows);
-
     await postResponseUrl(metadata.responseUrl, {
-      text: `📝 Saved ${rows.length} draft${rows.length !== 1 ? "s" : ""}. Open Time Logger to review.`,
+      text: `📝 Saved ${rows.length} draft${rows.length !== 1 ? "s" : ""}. Open <${APP_URL}/time-logger|Time Logger> to review.`,
     });
   });
 
   return new Response(null, { status: 200 });
 }
 
-// ─── view_submission: Submit to Redmine ──────────────────────────────────────
+// ─── block_actions: Submit to Redmine ────────────────────────────────────────
 
-async function handleViewSubmission(payload: {
-  user: { id: string };
-  team: { id: string };
+async function handleSubmitToRedmine(payload: {
   view: {
     id: string;
     private_metadata: string;
@@ -297,6 +312,7 @@ async function handleViewSubmission(payload: {
   };
 }): Promise<Response> {
   const { view } = payload;
+  const viewId = view.id;
 
   let metadata: ModalMetadata;
   try {
@@ -307,15 +323,11 @@ async function handleViewSubmission(payload: {
 
   const logDate = getSelectedDate(view.state.values, metadata.date);
 
-  // Validate hours synchronously so we can respond to Slack within 3 s.
+  // Validate hours — show inline error if any are missing/invalid
   const hoursMap: Record<number, number> = {};
   let hasError = false;
-
   for (const entry of metadata.entries) {
-    const raw =
-      view.state.values[`ticket_${entry.issueId}`]?.[
-        `hours_${entry.issueId}`
-      ]?.value ?? null;
+    const raw = view.state.values[`ticket_${entry.issueId}`]?.[`hours_${entry.issueId}`]?.value ?? null;
     const hours = raw !== null ? parseFloat(raw) : NaN;
     if (!raw || isNaN(hours) || hours <= 0) {
       hasError = true;
@@ -324,21 +336,38 @@ async function handleViewSubmission(payload: {
     }
   }
 
-  // On validation error: replace modal inline with an error banner.
   if (hasError) {
-    return jsonResponse({
-      response_action: "update",
-      view: buildTimeLogModal(metadata.entries, logDate, metadata, {
-        errorText: "Enter valid hours (greater than 0) for every ticket.",
-      }),
-    });
+    // Fetch bot token to update the modal with the error banner
+    const supabase = createAdminClient();
+    const { data: dbUser } = await supabase
+      .from("users")
+      .select("slack_bot_token_encrypted, slack_bot_token_iv, slack_bot_token_tag")
+      .eq("id", metadata.userId)
+      .single();
+
+    if (dbUser?.slack_bot_token_encrypted) {
+      const botToken = decryptToken(
+        dbUser.slack_bot_token_encrypted,
+        dbUser.slack_bot_token_iv,
+        dbUser.slack_bot_token_tag
+      );
+      await updateModal(
+        botToken,
+        viewId,
+        buildTimeLogModal(metadata.entries, logDate, metadata, {
+          errorText: "Enter valid hours (greater than 0) for every ticket.",
+        })
+      );
+    }
+    return new Response(null, { status: 200 });
   }
 
-  // Valid — close the modal immediately; do actual Redmine work in after().
-  after(async () => {
-    const supabase = createAdminClient();
+  // Valid — close the modal and submit to Redmine in the background
+  await closeModal(metadata.userId, viewId);
 
-    const { data: config } = await supabase
+  after(async () => {
+    const supabase2 = createAdminClient();
+    const { data: config } = await supabase2
       .from("redmine_configs")
       .select("*")
       .eq("user_id", metadata.userId)
@@ -358,11 +387,7 @@ async function handleViewSubmission(payload: {
       return;
     }
 
-    const apiKey = decryptApiKey(
-      config.encrypted_api_key,
-      config.encryption_iv,
-      config.encryption_tag
-    );
+    const apiKey = decryptApiKey(config.encrypted_api_key, config.encryption_iv, config.encryption_tag);
     const opts = { redmineUrl: config.redmine_url, apiKey };
 
     let submitted = 0;
@@ -370,19 +395,14 @@ async function handleViewSubmission(payload: {
 
     await Promise.all(
       metadata.entries.map(async (entry) => {
-        const hours = hoursMap[entry.issueId];
         const result = await createTimeEntry(opts, {
           issue_id: entry.issueId,
           spent_on: logDate,
-          hours,
+          hours: hoursMap[entry.issueId],
           activity_id: config.default_activity_id,
           comments: formatForRedmine(entry.description),
         });
-        if (result.error) {
-          failed++;
-        } else {
-          submitted++;
-        }
+        if (result.error) failed++; else submitted++;
       })
     );
 
@@ -392,7 +412,7 @@ async function handleViewSubmission(payload: {
     });
   });
 
-  return jsonResponse({ response_action: "clear" });
+  return new Response(null, { status: 200 });
 }
 
 // ─── main POST handler ────────────────────────────────────────────────────────
@@ -431,17 +451,11 @@ export async function POST(req: NextRequest) {
     return handleMessageAction(payload);
   }
 
-  if (
-    payload.type === "view_submission" &&
-    payload.view?.callback_id === "log_eod_to_time_logger"
-  ) {
-    return handleViewSubmission(payload);
-  }
-
   if (payload.type === "block_actions" && Array.isArray(payload.actions)) {
     const actionId = payload.actions[0]?.action_id;
     if (actionId === "date_select") return handleDateChange(payload);
     if (actionId === "save_draft") return handleSaveDraft(payload);
+    if (actionId === "submit_to_redmine") return handleSubmitToRedmine(payload);
   }
 
   return new Response(null, { status: 200 });
