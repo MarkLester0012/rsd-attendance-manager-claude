@@ -6,7 +6,8 @@ import { Plus, Pencil, Trash2, Megaphone, Loader2 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
+import { EmojiTextarea } from "@/components/ui/emoji-textarea";
+import { emojify } from "@/lib/emoji";
 import { Label } from "@/components/ui/label";
 import {
   Dialog,
@@ -153,9 +154,9 @@ export function AnnouncementsContent({
               <CardContent className="p-4">
                 <div className="flex items-start gap-3">
                   <div className="flex-1 min-w-0 space-y-1">
-                    <p className="text-sm font-semibold">{a.title}</p>
+                    <p className="text-sm font-semibold">{emojify(a.title)}</p>
                     <p className="text-sm text-muted-foreground line-clamp-3">
-                      {a.content}
+                      {emojify(a.content)}
                     </p>
                     <p className="text-[10px] text-muted-foreground/50">
                       {a.author?.name || "HR"} &middot;{" "}
@@ -205,7 +206,7 @@ export function AnnouncementsContent({
             </div>
             <div className="space-y-2">
               <Label>Content</Label>
-              <Textarea
+              <EmojiTextarea
                 value={formContent}
                 onChange={(e) => setFormContent(e.target.value)}
                 placeholder="Write your announcement..."

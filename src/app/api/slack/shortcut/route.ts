@@ -6,12 +6,7 @@ import { parseSlackEOD } from "@/lib/redmine/parser";
 import { decryptApiKey } from "@/lib/redmine/encryption";
 import { decryptToken } from "@/lib/slack/encryption";
 import { createTimeEntry, getTimeEntries } from "@/lib/redmine/client";
-import {
-  buildTimeLogModal,
-  buildSubmittingView,
-  buildSuccessView,
-  formatForRedmine,
-} from "@/lib/slack/modal";
+import { buildTimeLogModal, formatForRedmine } from "@/lib/slack/modal";
 import type { ModalMetadata } from "@/lib/slack/modal";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -243,7 +238,6 @@ async function handleSaveDraft(payload: {
     return new Response(null, { status: 200 });
   }
 
-  const viewId = view.id;
   const logDate = getSelectedDate(view.state.values, metadata.date);
 
   // Extract hours from current state (default to 1 for empty/invalid)
@@ -259,21 +253,6 @@ async function handleSaveDraft(payload: {
 
   after(async () => {
     const supabase = createAdminClient();
-
-    const { data: dbUser } = await supabase
-      .from("users")
-      .select("slack_bot_token_encrypted, slack_bot_token_iv, slack_bot_token_tag")
-      .eq("id", metadata.userId)
-      .single();
-
-    const botToken =
-      dbUser?.slack_bot_token_encrypted
-        ? decryptToken(
-            dbUser.slack_bot_token_encrypted,
-            dbUser.slack_bot_token_iv,
-            dbUser.slack_bot_token_tag
-          )
-        : null;
 
     const { data: config } = await supabase
       .from("redmine_configs")
@@ -298,9 +277,9 @@ async function handleSaveDraft(payload: {
 
     await supabase.from("time_log_entries").insert(rows);
 
-    if (botToken) {
-      await updateModal(botToken, viewId, buildSuccessView(rows.length));
-    }
+    await postResponseUrl(metadata.responseUrl, {
+      text: `📝 Saved ${rows.length} draft${rows.length !== 1 ? "s" : ""}. Open Time Logger to review.`,
+    });
   });
 
   return new Response(null, { status: 200 });
@@ -326,7 +305,6 @@ async function handleViewSubmission(payload: {
     return new Response(null, { status: 200 });
   }
 
-  const viewId = view.id;
   const logDate = getSelectedDate(view.state.values, metadata.date);
 
   // Validate hours synchronously so we can respond to Slack within 3 s.
@@ -356,24 +334,9 @@ async function handleViewSubmission(payload: {
     });
   }
 
-  // Valid — show submitting interstitial immediately; do actual work in after().
+  // Valid — close the modal immediately; do actual Redmine work in after().
   after(async () => {
     const supabase = createAdminClient();
-
-    const { data: dbUser } = await supabase
-      .from("users")
-      .select("slack_bot_token_encrypted, slack_bot_token_iv, slack_bot_token_tag")
-      .eq("id", metadata.userId)
-      .single();
-
-    const botToken =
-      dbUser?.slack_bot_token_encrypted
-        ? decryptToken(
-            dbUser.slack_bot_token_encrypted,
-            dbUser.slack_bot_token_iv,
-            dbUser.slack_bot_token_tag
-          )
-        : null;
 
     const { data: config } = await supabase
       .from("redmine_configs")
@@ -427,13 +390,9 @@ async function handleViewSubmission(payload: {
     await postResponseUrl(metadata.responseUrl, {
       text: `✅ Submitted ${submitted} entr${submitted !== 1 ? "ies" : "y"} to Redmine on ${logDate}${failedPart}.`,
     });
-
-    if (botToken) {
-      await updateModal(botToken, viewId, buildSuccessView(submitted));
-    }
   });
 
-  return jsonResponse({ response_action: "update", view: buildSubmittingView() });
+  return jsonResponse({ response_action: "clear" });
 }
 
 // ─── main POST handler ────────────────────────────────────────────────────────

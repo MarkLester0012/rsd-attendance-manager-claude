@@ -17,6 +17,7 @@ import { createClient } from "@/lib/supabase/client";
 import { createNotification } from "@/lib/notifications";
 import { LEAVE_TYPES } from "@/lib/constants/leave-types";
 import { cn } from "@/lib/utils";
+import { emojify } from "@/lib/emoji";
 import { UserAvatar } from "@/components/ui/user-avatar";
 import type { User } from "@/lib/types";
 
@@ -162,7 +163,7 @@ export function ApprovalsContent({
 
               {leave.reason && (
                 <p className="text-xs text-muted-foreground/80 line-clamp-2">
-                  {leave.reason}
+                  {emojify(leave.reason)}
                 </p>
               )}
 

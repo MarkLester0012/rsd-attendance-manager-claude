@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
+import { EmojiTextarea } from "@/components/ui/emoji-textarea";
 import {
   Select,
   SelectContent,
@@ -441,7 +441,7 @@ export function LeaveModal({
                 <span className="text-destructive">*</span>
               )}
             </Label>
-            <Textarea
+            <EmojiTextarea
               placeholder={
                 config.requiresReason
                   ? "Please provide a reason..."

@@ -29,6 +29,7 @@ import {
   NON_DEDUCTIBLE_TYPES,
 } from "@/lib/constants/leave-types";
 import { cn } from "@/lib/utils";
+import { emojify } from "@/lib/emoji";
 import type { User, LeaveEntry, LeaveTypeCode } from "@/lib/types";
 import { LeaveModal } from "@/components/leaves/leave-modal";
 import { createClient } from "@/lib/supabase/client";
@@ -561,7 +562,7 @@ export function MyLeavesContent({ user, initialLeaves }: MyLeavesContentProps) {
                         </div>
                         {leave.reason && (
                           <p className="text-xs text-muted-foreground mt-1 truncate max-w-md">
-                            {leave.reason}
+                            {emojify(leave.reason)}
                           </p>
                         )}
                         <p className="text-[10px] text-muted-foreground/50 mt-1">

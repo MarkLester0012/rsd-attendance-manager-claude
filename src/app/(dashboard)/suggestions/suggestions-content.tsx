@@ -16,7 +16,8 @@ import {
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
+import { EmojiTextarea } from "@/components/ui/emoji-textarea";
+import { emojify } from "@/lib/emoji";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -481,7 +482,7 @@ export function SuggestionsContent({
       {/* Submit form */}
       <Card>
         <CardContent className="p-4 space-y-3">
-          <Textarea
+          <EmojiTextarea
             placeholder="Share your suggestion or idea..."
             value={content}
             onChange={(e) => setContent(e.target.value)}
@@ -579,7 +580,7 @@ export function SuggestionsContent({
           <DialogHeader>
             <DialogTitle>Edit suggestion</DialogTitle>
           </DialogHeader>
-          <Textarea
+          <EmojiTextarea
             value={editContent}
             onChange={(e) => setEditContent(e.target.value)}
             rows={4}
@@ -733,7 +734,7 @@ function SuggestionItem({
 
         {/* Content */}
         <p className="text-sm text-foreground/90 whitespace-pre-wrap">
-          {s.content}
+          {emojify(s.content)}
         </p>
 
         {/* Actions */}
@@ -770,7 +771,7 @@ function SuggestionItem({
             {getInitials(currentUser.name || "?")}
           </div>
           <div className="flex-1 flex gap-2">
-            <Textarea
+            <EmojiTextarea
               rows={1}
               placeholder="Write a comment..."
               value={commentText}
@@ -931,7 +932,7 @@ function CommentItem({
           </div>
           {editing ? (
             <div className="space-y-2 mt-1">
-              <Textarea
+              <EmojiTextarea
                 rows={2}
                 value={editText}
                 onChange={(e) => setEditText(e.target.value)}
@@ -957,7 +958,7 @@ function CommentItem({
             </div>
           ) : (
             <p className="text-sm text-foreground/90 whitespace-pre-wrap">
-              {c.content}
+              {emojify(c.content)}
             </p>
           )}
         </div>
@@ -986,7 +987,7 @@ function CommentItem({
 
         {replying && (
           <div className="flex gap-2 pt-1">
-            <Textarea
+            <EmojiTextarea
               rows={1}
               placeholder={`Reply to ${c.user?.name ?? "comment"}...`}
               value={replyText}

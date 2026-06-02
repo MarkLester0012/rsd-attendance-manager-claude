@@ -152,36 +152,3 @@ export function buildTimeLogModal(
   };
 }
 
-export function buildSubmittingView(): object {
-  return {
-    type: "modal",
-    title: { type: "plain_text", text: "Submitting…" },
-    close: { type: "plain_text", text: "Close" },
-    blocks: [
-      {
-        type: "section",
-        text: {
-          type: "mrkdwn",
-          text: "Submitting entries to Redmine, please wait…",
-        },
-      },
-    ],
-  };
-}
-
-export function buildSuccessView(count: number): object {
-  return {
-    type: "modal",
-    title: { type: "plain_text", text: "Saved" },
-    close: { type: "plain_text", text: "Close" },
-    blocks: [
-      {
-        type: "section",
-        text: {
-          type: "mrkdwn",
-          text: `Saved ${count} draft${count !== 1 ? "s" : ""}. Open Time Logger to review.`,
-        },
-      },
-    ],
-  };
-}

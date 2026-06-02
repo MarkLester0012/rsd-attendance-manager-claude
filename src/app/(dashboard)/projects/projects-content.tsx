@@ -31,6 +31,13 @@ import { createNotification } from "@/lib/notifications";
 import { getInitials } from "@/lib/utils";
 import type { User } from "@/lib/types";
 
+const COLOR_PALETTE = [
+  "#6366f1", "#0ea5e9", "#10b981", "#f59e0b", "#ef4444",
+  "#8b5cf6", "#f97316", "#14b8a6", "#ec4899", "#64748b",
+];
+
+const DEFAULT_COLOR = "#6366f1";
+
 interface ProjectsContentProps {
   currentUser: User;
   initialProjects: any[];
@@ -53,6 +60,8 @@ export function ProjectsContent({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formName, setFormName] = useState("");
   const [formDesc, setFormDesc] = useState("");
+  const [formColor, setFormColor] = useState(DEFAULT_COLOR);
+  const [formRedmineCode, setFormRedmineCode] = useState("");
   const [formLeaders, setFormLeaders] = useState<string[]>([currentUser.id]);
   const [memberSearch, setMemberSearch] = useState<Record<string, string>>({});
 
@@ -82,7 +91,12 @@ export function ProjectsContent({
     try {
       const { data: project, error } = await supabase
         .from("projects")
-        .insert({ name: formName, description: formDesc || null })
+        .insert({
+          name: formName,
+          description: formDesc || null,
+          color: formColor || null,
+          redmine_code: formRedmineCode.trim() || null,
+        })
         .select()
         .single();
 
@@ -109,6 +123,8 @@ export function ProjectsContent({
     setEditingProject(project);
     setFormName(project.name);
     setFormDesc(project.description || "");
+    setFormColor(project.color || DEFAULT_COLOR);
+    setFormRedmineCode(project.redmine_code || "");
     setIsEditOpen(true);
   }
 
@@ -122,7 +138,12 @@ export function ProjectsContent({
     try {
       const { error } = await supabase
         .from("projects")
-        .update({ name: formName, description: formDesc || null })
+        .update({
+          name: formName,
+          description: formDesc || null,
+          color: formColor || null,
+          redmine_code: formRedmineCode.trim() || null,
+        })
         .eq("id", editingProject.id);
       if (error) throw error;
       toast.success("Project updated");
@@ -216,6 +237,8 @@ export function ProjectsContent({
   function openCreate() {
     setFormName("");
     setFormDesc("");
+    setFormColor(DEFAULT_COLOR);
+    setFormRedmineCode("");
     setFormLeaders([currentUser.id]);
     setIsCreateOpen(true);
   }
@@ -270,8 +293,19 @@ export function ProjectsContent({
                   className="flex items-center gap-3 cursor-pointer"
                   onClick={() => toggleExpand(project.id)}
                 >
+                  <span
+                    className="shrink-0 w-2.5 h-2.5 rounded-full"
+                    style={{ background: project.color ?? "#64748b" }}
+                  />
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold">{project.name}</p>
+                    <div className="flex items-center gap-1.5">
+                      <p className="text-sm font-semibold">{project.name}</p>
+                      {project.redmine_code && (
+                        <span className="text-[10px] text-muted-foreground font-mono">
+                          {project.redmine_code}
+                        </span>
+                      )}
+                    </div>
                     {project.description && (
                       <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">
                         {project.description}
@@ -434,6 +468,39 @@ export function ProjectsContent({
               />
             </div>
             <div className="space-y-2">
+              <Label>Color</Label>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {COLOR_PALETTE.map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => setFormColor(c)}
+                    className="w-6 h-6 rounded-full transition-transform hover:scale-110"
+                    style={{
+                      background: c,
+                      outline: formColor === c ? `2px solid ${c}` : undefined,
+                      outlineOffset: formColor === c ? "2px" : undefined,
+                    }}
+                  />
+                ))}
+                <input
+                  type="color"
+                  value={formColor}
+                  onChange={(e) => setFormColor(e.target.value)}
+                  className="w-6 h-6 rounded cursor-pointer border-0 p-0 bg-transparent"
+                  title="Custom color"
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Redmine Project Code</Label>
+              <Input
+                value={formRedmineCode}
+                onChange={(e) => setFormRedmineCode(e.target.value)}
+                placeholder="e.g. R003"
+              />
+            </div>
+            <div className="space-y-2">
               <Label>Initial Leaders</Label>
               <div className="space-y-1.5">
                 {leaders.map((l) => (
@@ -496,6 +563,39 @@ export function ProjectsContent({
                 onChange={(e) => setFormDesc(e.target.value)}
                 placeholder="Optional description"
                 rows={3}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Color</Label>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {COLOR_PALETTE.map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => setFormColor(c)}
+                    className="w-6 h-6 rounded-full transition-transform hover:scale-110"
+                    style={{
+                      background: c,
+                      outline: formColor === c ? `2px solid ${c}` : undefined,
+                      outlineOffset: formColor === c ? "2px" : undefined,
+                    }}
+                  />
+                ))}
+                <input
+                  type="color"
+                  value={formColor}
+                  onChange={(e) => setFormColor(e.target.value)}
+                  className="w-6 h-6 rounded cursor-pointer border-0 p-0 bg-transparent"
+                  title="Custom color"
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Redmine Project Code</Label>
+              <Input
+                value={formRedmineCode}
+                onChange={(e) => setFormRedmineCode(e.target.value)}
+                placeholder="e.g. R003"
               />
             </div>
           </div>

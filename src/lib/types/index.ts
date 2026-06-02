@@ -67,6 +67,8 @@ export interface Project {
   id: string;
   name: string;
   description: string | null;
+  color: string | null;
+  redmine_code: string | null;
   created_at: string;
   updated_at: string;
 }

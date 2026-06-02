@@ -66,6 +66,8 @@ create table public.projects (
   id uuid default uuid_generate_v4() primary key,
   name text not null,
   description text,
+  color text,
+  redmine_code text,
   created_at timestamptz default now() not null,
   updated_at timestamptz default now() not null
 );
