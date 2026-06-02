@@ -306,9 +306,9 @@ async function handleSaveDraft(payload: {
   return new Response(null, { status: 200 });
 }
 
-// ─── block_actions: Submit to Redmine ────────────────────────────────────────
+// ─── view_submission: Submit to Redmine ──────────────────────────────────────
 
-async function handleSubmitRedmine(payload: {
+async function handleViewSubmission(payload: {
   user: { id: string };
   team: { id: string };
   view: {
@@ -329,7 +329,7 @@ async function handleSubmitRedmine(payload: {
   const viewId = view.id;
   const logDate = getSelectedDate(view.state.values, metadata.date);
 
-  // Validate hours — every ticket must have a valid positive number.
+  // Validate hours synchronously so we can respond to Slack within 3 s.
   const hoursMap: Record<number, number> = {};
   let hasError = false;
 
@@ -346,6 +346,17 @@ async function handleSubmitRedmine(payload: {
     }
   }
 
+  // On validation error: replace modal inline with an error banner.
+  if (hasError) {
+    return jsonResponse({
+      response_action: "update",
+      view: buildTimeLogModal(metadata.entries, logDate, metadata, {
+        errorText: "Enter valid hours (greater than 0) for every ticket.",
+      }),
+    });
+  }
+
+  // Valid — show submitting interstitial immediately; do actual work in after().
   after(async () => {
     const supabase = createAdminClient();
 
@@ -363,22 +374,6 @@ async function handleSubmitRedmine(payload: {
             dbUser.slack_bot_token_tag
           )
         : null;
-
-    // On validation error: update modal with error banner; entered values preserved.
-    if (hasError) {
-      if (botToken) {
-        const logged = await fetchLoggedHours(metadata.userId, logDate);
-        await updateModal(
-          botToken,
-          viewId,
-          buildTimeLogModal(metadata.entries, logDate, metadata, {
-            loggedHours: logged,
-            errorText: "Enter valid hours (greater than 0) for every ticket.",
-          })
-        );
-      }
-      return;
-    }
 
     const { data: config } = await supabase
       .from("redmine_configs")
@@ -398,11 +393,6 @@ async function handleSubmitRedmine(payload: {
         text: `Pick a default activity in <${APP_URL}/time-logger|Time Logger settings> before submitting.`,
       });
       return;
-    }
-
-    // Show submitting interstitial to prevent double-clicks.
-    if (botToken) {
-      await updateModal(botToken, viewId, buildSubmittingView());
     }
 
     const apiKey = decryptApiKey(
@@ -443,7 +433,7 @@ async function handleSubmitRedmine(payload: {
     }
   });
 
-  return new Response(null, { status: 200 });
+  return jsonResponse({ response_action: "update", view: buildSubmittingView() });
 }
 
 // ─── main POST handler ────────────────────────────────────────────────────────
@@ -482,11 +472,17 @@ export async function POST(req: NextRequest) {
     return handleMessageAction(payload);
   }
 
+  if (
+    payload.type === "view_submission" &&
+    payload.view?.callback_id === "log_eod_to_time_logger"
+  ) {
+    return handleViewSubmission(payload);
+  }
+
   if (payload.type === "block_actions" && Array.isArray(payload.actions)) {
     const actionId = payload.actions[0]?.action_id;
     if (actionId === "date_select") return handleDateChange(payload);
     if (actionId === "save_draft") return handleSaveDraft(payload);
-    if (actionId === "submit_redmine") return handleSubmitRedmine(payload);
   }
 
   return new Response(null, { status: 200 });

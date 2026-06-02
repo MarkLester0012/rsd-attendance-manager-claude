@@ -127,7 +127,7 @@ export function buildTimeLogModal(
     }
   });
 
-  // ── Action buttons (Save as Draft | Submit to Redmine) ────────────────────
+  // ── Save as Draft (in-body button) ───────────────────────────────────────
   blocks.push({
     type: "actions",
     block_id: "modal_actions",
@@ -137,12 +137,6 @@ export function buildTimeLogModal(
         action_id: "save_draft",
         text: { type: "plain_text", text: "Save as Draft" },
       },
-      {
-        type: "button",
-        action_id: "submit_redmine",
-        text: { type: "plain_text", text: "Submit to Redmine" },
-        style: "primary",
-      },
     ],
   });
 
@@ -150,7 +144,8 @@ export function buildTimeLogModal(
     type: "modal",
     callback_id: "log_eod_to_time_logger",
     title: { type: "plain_text", text: "Log EOD to Redmine" },
-    // No `submit` field — both actions are in-body buttons.
+    // Slack requires `submit` whenever the modal has non-dispatch-action input blocks.
+    submit: { type: "plain_text", text: "Submit to Redmine" },
     close: { type: "plain_text", text: "Cancel" },
     private_metadata: JSON.stringify(metadata),
     blocks,
