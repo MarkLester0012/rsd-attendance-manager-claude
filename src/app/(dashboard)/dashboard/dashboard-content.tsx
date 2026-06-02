@@ -32,6 +32,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { LEAVE_TYPES, NON_DEDUCTIBLE_TYPES } from "@/lib/constants/leave-types";
 import type { User, LeaveEntry, Announcement, Holiday } from "@/lib/types";
+import { emojify } from "@/lib/emoji";
 
 interface DashboardContentProps {
   user: User;
@@ -505,7 +506,7 @@ function AnnouncementItem({
       className="w-full text-left space-y-1 border-b border-border/50 pb-3 last:border-0 last:pb-0 rounded-md transition-colors hover:bg-accent/50 -mx-1 px-1 py-1 cursor-pointer"
     >
       <div className="flex items-start justify-between gap-2">
-        <p className="text-sm font-medium text-foreground">{a.title}</p>
+        <p className="text-sm font-medium text-foreground">{emojify(a.title)}</p>
         <ChevronDown
           className={`h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform duration-200 mt-0.5 ${
             expanded ? "rotate-180" : ""
@@ -517,7 +518,7 @@ function AnnouncementItem({
           expanded ? "" : "line-clamp-2"
         }`}
       >
-        {a.content}
+        {emojify(a.content)}
       </p>
       <p className="text-[10px] text-muted-foreground/60">
         {a.author?.name} &middot; {format(new Date(a.created_at), "MMM d")}

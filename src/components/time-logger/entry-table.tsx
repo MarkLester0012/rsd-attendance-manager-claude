@@ -57,6 +57,7 @@ interface EntryTableProps {
     comments: string;
   }>;
   redmineUrl: string | null;
+  projectColorMap?: Record<string, string>;
 }
 
 export function EntryTable({
@@ -66,6 +67,7 @@ export function EntryTable({
   onIssueBlur,
   existingRedmineEntries,
   redmineUrl,
+  projectColorMap = {},
 }: EntryTableProps) {
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
@@ -185,6 +187,7 @@ export function EntryTable({
       {/* Existing Redmine entries (read-only) */}
       {existingRedmineEntries.map((entry) => {
         const issueUrl = redmineIssueUrl(redmineUrl, entry.issue_id);
+        const entryColor = projectColorMap[entry.project_name.slice(0, 4).toUpperCase()];
         return (
         <div
           key={`redmine-${entry.id}`}
@@ -195,7 +198,16 @@ export function EntryTable({
           )}
         >
           <div className="text-sm font-mono min-w-0 truncate">
-            #{entry.issue_id}
+            <span
+              className={cn("rounded px-1 py-0.5", entryColor ? "border" : "")}
+              style={entryColor ? {
+                backgroundColor: `${entryColor}20`,
+                color: entryColor,
+                borderColor: `${entryColor}40`,
+              } : undefined}
+            >
+              #{entry.issue_id}
+            </span>
           </div>
           <div className="text-sm text-muted-foreground min-w-0 truncate">
             {entry.project_name}

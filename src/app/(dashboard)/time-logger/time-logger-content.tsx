@@ -43,6 +43,7 @@ interface TimeLoggerContentProps {
   redmineUrl: string | null;
   initialEntries: TimeLogEntry[];
   initialDate: string;
+  projectColorMap?: Record<string, string>;
 }
 
 function toEntryFromDB(e: TimeLogEntry): DraftEntry {
@@ -67,6 +68,7 @@ export function TimeLoggerContent({
   redmineUrl,
   initialEntries,
   initialDate,
+  projectColorMap = {},
 }: TimeLoggerContentProps) {
   const [hasConfig, setHasConfig] = useState(initialHasConfig);
   const [settingsOpen, setSettingsOpen] = useState(!initialHasConfig);
@@ -793,6 +795,7 @@ export function TimeLoggerContent({
                   onIssueBlur={handleIssueBlur}
                   existingRedmineEntries={existingRedmineEntries}
                   redmineUrl={redmineUrl}
+                  projectColorMap={projectColorMap}
                 />
               )}
             </>
@@ -807,6 +810,7 @@ export function TimeLoggerContent({
               onOpenDayView={handleOpenDayView}
               loading={loadingMonth}
               redmineUrl={redmineUrl}
+              projectColorMap={projectColorMap}
             />
           )}
         </>

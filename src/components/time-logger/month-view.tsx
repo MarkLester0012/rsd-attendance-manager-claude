@@ -60,6 +60,7 @@ interface MonthViewProps {
   onOpenDayView: (date: string) => void;
   loading?: boolean;
   redmineUrl?: string | null;
+  projectColorMap?: Record<string, string>;
 }
 
 const DAY_HEADERS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -79,6 +80,7 @@ export function MonthView({
   onOpenDayView,
   loading,
   redmineUrl,
+  projectColorMap = {},
 }: MonthViewProps) {
   const [drawerDate, setDrawerDate] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -97,6 +99,19 @@ export function MonthView({
     }
     return map;
   }, [entries]);
+
+  // Map issue_id → project color by matching first 4 chars of project_name to redmine_code
+  const issueColorMap = useMemo(() => {
+    const map = new Map<number, string>();
+    for (const entry of entries) {
+      if (entry.issue_id && entry.project_name && !map.has(entry.issue_id)) {
+        const code = entry.project_name.slice(0, 4).toUpperCase();
+        const color = projectColorMap[code];
+        if (color) map.set(entry.issue_id, color);
+      }
+    }
+    return map;
+  }, [entries, projectColorMap]);
 
   const holidayByDate = useMemo(() => {
     const map = new Map<string, Holiday>();
@@ -331,6 +346,13 @@ export function MonthView({
                       <div className="flex flex-wrap gap-0.5">
                         {visibleIssues.map((id) => {
                           const url = redmineIssueUrl(redmineUrl, id);
+                          const chipColor = issueColorMap.get(id);
+                          const chipStyle = chipColor
+                            ? { backgroundColor: `${chipColor}20`, color: chipColor, borderColor: `${chipColor}40` }
+                            : undefined;
+                          const chipClass = chipColor
+                            ? "text-[9px] font-mono rounded px-1 leading-4 border"
+                            : "text-[9px] font-mono bg-muted/60 text-muted-foreground rounded px-1 leading-4";
                           return url ? (
                             <a
                               key={id}
@@ -338,14 +360,16 @@ export function MonthView({
                               target="_blank"
                               rel="noopener noreferrer"
                               onClick={(e) => e.stopPropagation()}
-                              className="text-[9px] font-mono bg-muted/60 text-muted-foreground rounded px-1 leading-4 hover:underline hover:text-primary"
+                              className={cn(chipClass, "hover:underline")}
+                              style={chipStyle}
                             >
                               #{id}
                             </a>
                           ) : (
                             <span
                               key={id}
-                              className="text-[9px] font-mono bg-muted/60 text-muted-foreground rounded px-1 leading-4"
+                              className={chipClass}
+                              style={chipStyle}
                             >
                               #{id}
                             </span>
@@ -459,6 +483,7 @@ export function MonthView({
               <div className="space-y-2">
                 {drawerEntries.map((entry, idx) => {
                   const issueUrl = entry.issue_id ? redmineIssueUrl(redmineUrl, entry.issue_id) : null;
+                  const drawerChipColor = entry.issue_id ? issueColorMap.get(entry.issue_id) : undefined;
                   return (
                   <div
                     key={`${entry.log_date}-${entry.issue_id ?? "no-issue"}-${idx}`}
@@ -469,9 +494,25 @@ export function MonthView({
                     )}
                   >
                     <div className="flex items-center justify-between gap-2">
-                      <span className="font-mono text-sm font-medium">
-                        {entry.issue_id ? `#${entry.issue_id}` : (entry.project_name ?? "—")}
-                      </span>
+                      {entry.issue_id ? (
+                        <span
+                          className={cn(
+                            "font-mono text-sm font-medium rounded px-1.5 py-0.5",
+                            drawerChipColor ? "border" : "bg-muted/60"
+                          )}
+                          style={drawerChipColor ? {
+                            backgroundColor: `${drawerChipColor}20`,
+                            color: drawerChipColor,
+                            borderColor: `${drawerChipColor}40`,
+                          } : undefined}
+                        >
+                          #{entry.issue_id}
+                        </span>
+                      ) : (
+                        <span className="font-mono text-sm font-medium">
+                          {entry.project_name ?? "—"}
+                        </span>
+                      )}
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-semibold tabular-nums">
                           {formatHours(entry.hours)}

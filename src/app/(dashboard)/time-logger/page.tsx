@@ -34,6 +34,20 @@ export default async function TimeLoggerPage() {
     .in("status", ["draft", "failed"])
     .order("created_at", { ascending: true });
 
+  // Fetch projects for code→color mapping on ticket pills
+  const { data: projects } = await supabase
+    .from("projects")
+    .select("redmine_code, color")
+    .not("redmine_code", "is", null)
+    .not("color", "is", null);
+
+  const projectColorMap: Record<string, string> = {};
+  for (const p of projects || []) {
+    if (p.redmine_code && p.color) {
+      projectColorMap[p.redmine_code.toUpperCase()] = p.color;
+    }
+  }
+
   return (
     <TimeLoggerContent
       currentUser={user}
@@ -42,6 +56,7 @@ export default async function TimeLoggerPage() {
       redmineUrl={redmineConfig?.redmine_url ?? null}
       initialEntries={entries || []}
       initialDate={today}
+      projectColorMap={projectColorMap}
     />
   );
 }
