@@ -20,6 +20,16 @@ Required in `.env.local`:
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=         # Used by admin.ts for user registration
+
+# Slack integration
+SLACK_CLIENT_ID=
+SLACK_CLIENT_SECRET=
+SLACK_SIGNING_SECRET=              # Webhook signature verification
+SLACK_ENCRYPTION_KEY=              # Encrypts stored OAuth tokens
+
+# Redmine integration
+REDMINE_URL=
+REDMINE_ENCRYPTION_KEY=            # Encrypts stored API keys
 ```
 
 ## Architecture
@@ -38,17 +48,27 @@ src/
       holidays/          # Holiday management (hr)
       projects/          # Project management (hr)
       reports/           # Reports (leader/hr)
-      announcements/     # Company announcements
-      suggestions/       # Suggestion box
+      announcements/     # Company announcements (hr CRUD, all read)
+      suggestions/       # Suggestion box with voting + comments
       profile/           # User profile
+      time-logger/       # Daily time logging (Slack + manual entry)
+      transportation-allowance/ # Transportation allowance management
+      settings/
+        integrations/    # Slack OAuth connection
+    api/
+      slack/             # Slack webhook endpoints (shortcut, OAuth install/callback)
   components/
-    ui/                  # shadcn/ui primitives
+    ui/                  # shadcn/ui primitives + EmojiTextarea
     layout/              # Sidebar, header
     leaves/              # Leave modal, shared leave components
     auth/                # Auth forms
+    shared/              # Cross-feature shared components
+    time-logger/         # Time logger UI components
+    transportation-allowance/ # TA UI components
   hooks/
     use-user.ts          # Current user hook
     use-pending-count.ts # Pending approvals count (sidebar badge)
+    use-notifications.ts # Unread notification count + list
   lib/
     constants/
       leave-types.ts     # 9 leave types with rules (VL, PL, ML, SPL, SL, NW, RGA, AB, WFH)
@@ -56,10 +76,24 @@ src/
     supabase/
       client.ts          # Browser client
       server.ts          # Server component client
-      middleware.ts       # Session refresh middleware
+      middleware.ts      # Session refresh middleware
       admin.ts           # Service role client (user registration)
+    slack/
+      client.ts          # Slack API client
+      ingest.ts          # EOD message ingest → Redmine
+      modal.ts           # Time-logger modal builder
+      signature.ts       # Webhook signature verification
+      state.ts           # Modal state persistence
+      encryption.ts      # OAuth token encryption
+    redmine/
+      client.ts          # Redmine REST API client
+      parser.ts          # Formats descriptions/comments for Redmine
+      encryption.ts      # API key encryption
     types/index.ts       # All TypeScript interfaces
+    notifications.ts     # createNotification / createNotifications helpers
+    emoji.ts             # emojify() — converts :shortcode: to native emoji
     utils.ts             # cn() helper
+    utils/               # Domain-specific utilities (allowance, pay-period, export)
   stores/
     sidebar-store.ts     # Sidebar open/close (Zustand)
     theme-store.ts       # Theme state (Zustand)
@@ -75,7 +109,7 @@ supabase/
 
 Three roles: `member`, `leader`, `hr`. Defined in `src/lib/types/index.ts`.
 
-- **member**: Dashboard, calendar, my-leaves, attendance, suggestions, profile
+- **member**: Dashboard, calendar, my-leaves, attendance, suggestions, time-logger, transportation-allowance, profile, settings/integrations
 - **leader**: + approvals, reports, team (read-only)
 - **hr**: + team management, holidays, projects, announcements (full CRUD)
 
@@ -89,6 +123,19 @@ Navigation is role-gated via `src/lib/constants/navigation.ts`. Page-level acces
 - HR users have unlimited leave balance
 - Leave overlap checking is enforced
 - Half-day support: `whole`, `half_am`, `half_pm`
+
+## Integrations
+
+### Slack
+- Users connect their Slack workspace via OAuth at `settings/integrations/`
+- A Slack shortcut opens a time-logger modal (`api/slack/shortcut` → `src/lib/slack/modal.ts`)
+- EOD messages are ingested and posted as Redmine time entries (`src/lib/slack/ingest.ts`)
+- Every incoming webhook is signature-verified (`src/lib/slack/signature.ts`) — requests without a valid `X-Slack-Signature` are rejected
+
+### Redmine
+- Time entries and comments are posted via the Redmine REST API (`src/lib/redmine/client.ts`)
+- `src/lib/redmine/parser.ts` normalizes descriptions (strips Slack markdown, formats bullets) before posting
+- Per-user API keys are stored encrypted in the DB
 
 ## Code Patterns
 
@@ -107,3 +154,4 @@ Navigation is role-gated via `src/lib/constants/navigation.ts`. Page-level acces
 - **RLS is enabled** on all tables — queries must go through authenticated Supabase clients
 - **Middleware** refreshes auth sessions on every request — don't bypass it
 - The app is hardcoded to dark mode (`<html class="dark">`)
+- **Emoji input**: use `EmojiTextarea` from `src/components/ui/emoji-textarea.tsx` (wraps `Textarea` + picker button) wherever users enter freeform text. Use `emojify()` from `src/lib/emoji.ts` to render `:shortcode:` → native emoji on display.
