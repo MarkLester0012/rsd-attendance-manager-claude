@@ -218,96 +218,24 @@ async function handleDateChange(payload: {
   return new Response(null, { status: 200 });
 }
 
-// ─── shared: close modal helper ──────────────────────────────────────────────
-
-async function closeModal(userId: string, viewId: string): Promise<void> {
-  const supabase = createAdminClient();
-  const { data: dbUser } = await supabase
-    .from("users")
-    .select("slack_bot_token_encrypted, slack_bot_token_iv, slack_bot_token_tag")
-    .eq("id", userId)
-    .single();
-
-  if (!dbUser?.slack_bot_token_encrypted) return;
-
-  const botToken = decryptToken(
-    dbUser.slack_bot_token_encrypted,
-    dbUser.slack_bot_token_iv,
-    dbUser.slack_bot_token_tag
-  );
-  await updateModal(botToken, viewId, {
-    type: "modal",
-    title: { type: "plain_text", text: "Log EOD to Redmine" },
-    blocks: [{ type: "context", elements: [{ type: "mrkdwn", text: " " }] }],
-  });
-}
-
-// ─── block_actions: Save as Draft ────────────────────────────────────────────
-
-async function handleSaveDraft(payload: {
-  view: {
-    id: string;
-    private_metadata: string;
-    state: { values: Record<string, Record<string, { selected_date?: string | null; value?: string | null }>> };
-  };
-}): Promise<Response> {
-  const { view } = payload;
-
-  let metadata: ModalMetadata;
-  try {
-    metadata = JSON.parse(view.private_metadata) as ModalMetadata;
-  } catch {
-    return new Response(null, { status: 200 });
-  }
-
-  const logDate = getSelectedDate(view.state.values, metadata.date);
-
-  // Default empty/invalid hours to 1 — drafts don't require valid input
-  const hoursMap: Record<number, number> = {};
-  for (const entry of metadata.entries) {
-    const raw = view.state.values[`ticket_${entry.issueId}`]?.[`hours_${entry.issueId}`]?.value ?? null;
-    const parsed = raw !== null ? parseFloat(raw) : NaN;
-    hoursMap[entry.issueId] = isNaN(parsed) || parsed <= 0 ? 1 : parsed;
-  }
-
-  await closeModal(metadata.userId, view.id);
-
-  after(async () => {
-    const supabase = createAdminClient();
-    const { data: config } = await supabase
-      .from("redmine_configs")
-      .select("default_activity_id")
-      .eq("user_id", metadata.userId)
-      .single();
-
-    const rows = metadata.entries.map((entry) => ({
-      user_id: metadata.userId,
-      log_date: logDate,
-      issue_id: entry.issueId,
-      project_name: null,
-      hours: hoursMap[entry.issueId],
-      activity_id: config?.default_activity_id ?? 0,
-      activity_name: null,
-      comment: formatForRedmine(entry.description) || null,
-      status: "draft" as const,
-      error_message: null,
-    }));
-
-    await supabase.from("time_log_entries").insert(rows);
-    await postResponseUrl(metadata.responseUrl, {
-      text: `📝 Saved ${rows.length} draft${rows.length !== 1 ? "s" : ""}. Open <${APP_URL}/time-logger|Time Logger> to review.`,
-    });
-  });
-
-  return new Response(null, { status: 200 });
-}
-
 // ─── view_submission: Submit to Redmine ──────────────────────────────────────
 
 async function handleViewSubmission(payload: {
   view: {
     private_metadata: string;
-    state: { values: Record<string, Record<string, { selected_date?: string | null; value?: string | null }>> };
+    state: {
+      values: Record<
+        string,
+        Record<
+          string,
+          {
+            selected_date?: string | null;
+            value?: string | null;
+            selected_option?: { value?: string } | null;
+          }
+        >
+      >;
+    };
   };
 }): Promise<Response> {
   const { view } = payload;
@@ -435,7 +363,6 @@ export async function POST(req: NextRequest) {
   if (payload.type === "block_actions" && Array.isArray(payload.actions)) {
     const actionId = payload.actions[0]?.action_id;
     if (actionId === "date_select") return handleDateChange(payload);
-    if (actionId === "save_draft") return handleSaveDraft(payload);
   }
 
   return new Response(null, { status: 200 });

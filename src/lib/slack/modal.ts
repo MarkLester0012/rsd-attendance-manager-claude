@@ -117,19 +117,6 @@ export function buildTimeLogModal(
     }
   });
 
-  // ── Save as Draft (in-body button) ────────────────────────────────────────
-  blocks.push({
-    type: "actions",
-    block_id: "modal_actions",
-    elements: [
-      {
-        type: "button",
-        action_id: "save_draft",
-        text: { type: "plain_text", text: "Save as Draft" },
-      },
-    ],
-  });
-
   return {
     type: "modal",
     callback_id: "log_eod_to_time_logger",
