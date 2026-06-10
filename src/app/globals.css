@@ -48,6 +48,10 @@
     --status-approved: 142 71% 45%;
     --status-pending: 45 93% 47%;
     --status-rejected: 0 84% 60%;
+
+    /* AI assistant accent — red in light mode, blue in dark mode (matches profile avatar behavior) */
+    --ai-accent: 357 75% 45%;
+    --ai-accent-2: 12 80% 52%;
   }
 
   .dark {
@@ -93,6 +97,10 @@
     --status-approved: 142 71% 52%;
     --status-pending: 45 93% 55%;
     --status-rejected: 0 84% 65%;
+
+    /* AI assistant accent — blue/indigo in dark (matches profile avatar dark:from-blue-500 dark:to-indigo-600) */
+    --ai-accent: 217 91% 60%;
+    --ai-accent-2: 243 75% 59%;
   }
 }
 
@@ -230,6 +238,28 @@
 .animate-fade-in {
   animation: fade-in 600ms ease-out;
 }
+
+/* AI assistant: conic shimmer gradient for the launcher button */
+@keyframes ai-shimmer {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.animate-ai-shimmer {
+  background-size: 200% 200%;
+  animation: ai-shimmer 4s ease-in-out infinite;
+}
+
+/* AI assistant: typing dots stagger */
+@keyframes ai-dot-bounce {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+  30% { transform: translateY(-6px); opacity: 1; }
+}
+
+.ai-dot-1 { animation: ai-dot-bounce 1.2s ease-in-out infinite; animation-delay: 0ms; }
+.ai-dot-2 { animation: ai-dot-bounce 1.2s ease-in-out infinite; animation-delay: 160ms; }
+.ai-dot-3 { animation: ai-dot-bounce 1.2s ease-in-out infinite; animation-delay: 320ms; }
 
 /* Radial gradient utility for portal effect */
 .bg-gradient-radial {

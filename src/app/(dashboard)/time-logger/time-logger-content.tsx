@@ -7,7 +7,9 @@ import {
   endOfMonth,
   startOfWeek,
   endOfWeek,
+  isSameMonth,
 } from "date-fns";
+import { useRegisterPageContext } from "@/hooks/use-register-page-context";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { SettingsDialog } from "@/components/time-logger/settings-dialog";
@@ -330,6 +332,17 @@ export function TimeLoggerContent({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasConfig]);
 
+  // Keep monthlyEntries populated for whichever month `date` falls in,
+  // regardless of viewMode — the AI context needs the full month available
+  // even while the user is in Day View.
+  useEffect(() => {
+    if (!hasConfig) return;
+    const month = startOfMonth(date);
+    if (!isSameMonth(month, calendarMonth)) setCalendarMonth(month);
+    loadMonthEntries(month);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasConfig, date]);
+
   // Handle date change — cache + stale-guard handled inside loadDateEntries
   function handleDateChange(newDate: Date) {
     // Ignore no-op clicks (same date)
@@ -637,6 +650,49 @@ export function TimeLoggerContent({
       typeof e.hours === "number" &&
       typeof e.issue_id === "number"
   );
+
+  const currentDateStr = format(date, "yyyy-MM-dd");
+
+  const monthEntriesByDate = new Map<string, { hours: number; tickets: string[] }>();
+  for (const e of monthlyEntries) {
+    const bucket = monthEntriesByDate.get(e.log_date) ?? { hours: 0, tickets: [] };
+    bucket.hours += e.hours || 0;
+    const parts = [
+      e.issue_id ? `#${e.issue_id}` : null,
+      e.project_name || null,
+      `${e.hours}h`,
+      e.activity_name || null,
+      e.comment || null,
+    ].filter(Boolean).join(", ");
+    bucket.tickets.push(parts);
+    monthEntriesByDate.set(e.log_date, bucket);
+  }
+
+  const monthEntriesForAi = Array.from(monthEntriesByDate.entries())
+    .filter(([d]) => d !== currentDateStr)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([d, v]) => ({ date: d, hours: v.hours, tickets: v.tickets.join(", ") }));
+
+useRegisterPageContext("Time Logger", {
+    viewMode,
+    contextDate: currentDateStr,
+    daySummary: { totalHours, draftHours, existingHours, submittedCount, failedCount },
+    dayDetails: {
+      holiday: holiday ? { name: holiday.name, is_local: holiday.is_local } : null,
+      leave: leave ? { type: LEAVE_TYPES[leave.leave_type].label, status: leave.status } : null,
+      entries: [
+        ...existingRedmineEntries.map(e => ({ source: "redmine", issue: e.issue_id, project: e.project_name, hours: e.hours, activity: e.activity_name, comment: e.comments })),
+        ...entries.map(e => ({ source: e.status, issue: e.issue_id, project: e.project_name, hours: e.hours, activity: e.activity_name, comment: e.comment }))
+      ]
+    },
+    monthLabel: format(date, "MMMM yyyy"),
+    monthSummary: {
+      totalHours: monthlyEntries.reduce((sum, e) => sum + (e.hours || 0), 0),
+      holidaysCount: monthlyHolidays.length,
+      leavesCount: monthlyLeaves.length
+    },
+    monthEntries: monthEntriesForAi
+  });
 
   return (
     <div className="space-y-6">

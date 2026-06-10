@@ -35,6 +35,7 @@ import type { AllowanceSnapshot, AllowanceSubmissionRequest, DistanceChangeReque
 import type { EmployeeStats } from "./page";
 import { NumericInput } from "@/components/ui/numeric-input";
 import { StatsPanel } from "@/components/transportation-allowance/stats-panel";
+import { useRegisterPageContext } from "@/hooks/use-register-page-context";
 
 const MODE_ICONS_SMALL: Record<TransportMode, React.ReactNode> = {
   car: <Car className="h-3.5 w-3.5" />,
@@ -733,6 +734,44 @@ export function EmployeeView({
       return [sub, ...prev];
     });
   }
+
+  // Register page context for the AI assistant
+  useRegisterPageContext("Transportation Allowance", {
+    view: "employee",
+    selectedMonth,
+    payPeriod: getPayPeriod(selectedMonth).label,
+    submissionState,
+    hasPendingChangeRequest: !!pendingRequest,
+    currentMonth: snapshot
+      ? {
+          mode: snapshot.declared_mode,
+          distanceKm: snapshot.distance_km,
+          daysWorked: snapshot.days_worked,
+          wfhDays: snapshot.wfh_days,
+          jeepRides: snapshot.jeep_rides,
+          busRides: snapshot.bus_rides,
+          undertimeDays: snapshot.undertime_days,
+          total: formatPHP(snapshot.total_allowance),
+          locked: snapshot.locked,
+          paymentDate: snapshot.payment_date,
+        }
+      : null,
+    stats: currentStats
+      ? {
+          businessDays: currentStats.business_days,
+          holidays: currentStats.holiday_count,
+          wfhDays: currentStats.wfh_days,
+          daysWorked: currentStats.days_worked,
+          leaveBreakdown: currentStats.leave_breakdown,
+        }
+      : null,
+    pastMonths: localSnapshots.slice(0, 12).map((s) => ({
+      month: s.month,
+      mode: s.declared_mode,
+      total: formatPHP(s.total_allowance),
+      locked: s.locked,
+    })),
+  });
 
   return (
     <div className="max-w-2xl mx-auto space-y-6">

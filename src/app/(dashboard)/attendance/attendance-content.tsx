@@ -39,6 +39,7 @@ import { LEAVE_TYPES, NON_DEDUCTIBLE_TYPES } from "@/lib/constants/leave-types";
 import { cn } from "@/lib/utils";
 import { UserAvatar } from "@/components/ui/user-avatar";
 import { createClient } from "@/lib/supabase/client";
+import { useRegisterPageContext } from "@/hooks/use-register-page-context";
 import type { User, LeaveEntry } from "@/lib/types";
 
 type ViewMode = "day" | "week";
@@ -57,6 +58,8 @@ export function AttendanceContent({
   projects,
 }: AttendanceContentProps) {
   const [viewMode, setViewMode] = useState<ViewMode>("day");
+
+
   const [currentDate, setCurrentDate] = useState(
     new Date(initialDate + "T00:00:00")
   );
@@ -343,6 +346,29 @@ export function AttendanceContent({
       </Badge>
     );
   }
+
+  useRegisterPageContext("Attendance", {
+    viewMode,
+    activeFilters: { search, deptFilter, projectFilter, statusFilter, groupByDept },
+    dateContext: viewMode === "day" 
+      ? format(currentDate, "yyyy-MM-dd")
+      : `${format(weekDays[0], "yyyy-MM-dd")} to ${format(weekDays[4], "yyyy-MM-dd")}`,
+    daySummary: viewMode === "day" ? { inOfficeCount, wfhCount, onLeaveCount } : undefined,
+    visibleUsers: filtered.slice(0, 50).map(u => {
+      if (viewMode === "day") {
+        const status = getStatusForUser(u.id);
+        return { name: u.name, dept: u.department?.name, status: status.status, type: status.type };
+      } else {
+        const weekStatus: Record<string, string> = {};
+        weekDays.forEach(d => {
+          const dateStr = format(d, "yyyy-MM-dd");
+          const s = getStatusForUserOnDate(u.id, dateStr);
+          weekStatus[dateStr] = s.status;
+        });
+        return { name: u.name, dept: u.department?.name, weekStatus };
+      }
+    })
+  });
 
   return (
     <div className="space-y-6">

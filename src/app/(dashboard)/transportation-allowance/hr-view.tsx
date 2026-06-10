@@ -42,6 +42,7 @@ import {
 import { createNotification } from "@/lib/notifications";
 import type { AllowanceSnapshot, AllowanceSubmissionRequest, DistanceChangeRequest, User } from "@/lib/types";
 import type { EmployeeDefaults, EmployeeStats } from "./page";
+import { useRegisterPageContext } from "@/hooks/use-register-page-context";
 
 const MODE_ICONS: Record<TransportMode, React.ReactNode> = {
   car: <Car className="h-4 w-4" />,
@@ -1122,6 +1123,35 @@ export function HRView({
     () => new Set(submissionRequests.map((r) => r.employee_id)),
     [submissionRequests]
   );
+
+  // Register page context for the AI assistant
+  useRegisterPageContext("Transportation Allowance", {
+    view: "hr",
+    payPeriod: getPayPeriod(month).label,
+    month,
+    coverage: { withSnapshots: snapshots.length, totalEmployees: employees.length },
+    totalBudget: formatPHP(totalBudget),
+    pendingRequests: submissionRequests.length + changeRequests.length,
+    allLocked,
+    activeFilters: {
+      search,
+      department: deptFilter,
+      snapshot: snapshotFilter,
+      mode: modeFilter,
+    },
+    employees: filtered.slice(0, 30).map((e) => {
+      const snap = snapshots.find((s) => s.employee_id === e.id);
+      return {
+        name: e.name,
+        department: (e as any).department?.name ?? null,
+        mode: snap?.declared_mode ?? null,
+        distanceKm: snap?.distance_km ?? null,
+        total: snap ? formatPHP(snap.total_allowance) : null,
+        locked: snap?.locked ?? false,
+        hasPendingSubmission: pendingSubmissionEmployeeIds.has(e.id),
+      };
+    }),
+  });
 
   return (
     <div className="space-y-6">

@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from "react";
 import { format, parseISO } from "date-fns";
+import { useRegisterPageContext } from "@/hooks/use-register-page-context";
 import {
   BarChart,
   Bar,
@@ -40,6 +41,8 @@ export function ReportsContent({ leaves, departments }: ReportsContentProps) {
     return true;
   });
 
+
+
   // By department
   const byDepartment = useMemo(() => {
     const map: Record<string, number> = {};
@@ -75,6 +78,22 @@ export function ReportsContent({ leaves, departments }: ReportsContentProps) {
         days,
       }));
   }, [filtered]);
+
+  useRegisterPageContext("Reports", {
+    activeFilters: { departmentFilter: deptFilter, typeFilter },
+    totalApprovedLeaves: filtered.length,
+    chartsData: {
+      byDepartment,
+      byType,
+      monthlyTrend
+    },
+    recentLeaves: filtered.slice(0, 30).map((l: any) => ({
+      user: l.user?.name,
+      type: l.leave_type,
+      date: l.leave_date,
+      department: l.user?.department?.name,
+    })),
+  });
 
   return (
     <div className="space-y-6">

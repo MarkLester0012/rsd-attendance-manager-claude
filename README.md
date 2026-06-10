@@ -148,6 +148,27 @@ The `/calendar` page renders a 7-column CSS grid, computing all cells manually w
 - Color coding: green (≥ 8h), yellow (< 8h), red dot (failed submissions), yellow dot (unsaved drafts)
 - Click any cell to open a detail drawer listing all entries for that day
 
+### Transportation Allowance
+Monthly transportation allowance based on each employee's commute mode and attendance.
+
+- **Snapshot-based**: one snapshot per employee per month — declares transport mode, distance (km), and vehicle ownership
+- **Pay period**: calendar month; payment is issued on the 15th of the following month
+- **Effective days**: `days_worked - undertime_days + (undertime_days × 0.5)`, where `days_worked = business_days - wfh_days - leave_days`
+- **WFH days**: capped at 8/month, always paid additively on top of the primary mode
+- **Walk eligibility**: only available if `distance_km ≤ 2.4` (1.2km each way) AND the employee doesn't own a vehicle
+- **Secondary jeep/bus**: if the primary mode isn't jeep/bus but the employee also takes jeep/bus rides, those are paid additively using `days_worked` (not `effective_days`)
+- HR can override `unit_price`, `gas_mileage`, or `refund_pct` per mode per snapshot
+- Locked snapshots block edits; each snapshot allows at most one pending change request
+
+| Mode | Unit Price | Gas Mileage | Refund % | Formula |
+|---|---|---|---|---|
+| Car | ₱95 | 8 km/L | 50% | `unit_price × (distance ÷ mileage) × effective_days × refund%` |
+| Motorcycle | ₱95 | 25 km/L | 80% | same as Car |
+| Walk | ₱80/km | — | 100% | `unit_price × distance_km × effective_days × refund%` |
+| Jeep | ₱15/ride | — | 100% | `unit_price × rides × effective_days × refund%` |
+| Bus | ₱20/ride | — | 100% | same as Jeep |
+| Work From Home | ₱120/day | — | 100% | `unit_price × min(wfh_days, 8) × refund%` |
+
 ### In-App Notifications (Real-time)
 - Bell icon in the header with unread count badge
 - Live delivery via Supabase `postgres_changes` subscriptions

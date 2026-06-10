@@ -33,6 +33,7 @@ import { Badge } from "@/components/ui/badge";
 import { LEAVE_TYPES, NON_DEDUCTIBLE_TYPES } from "@/lib/constants/leave-types";
 import type { User, LeaveEntry, Announcement, Holiday } from "@/lib/types";
 import { emojify } from "@/lib/emoji";
+import { useRegisterPageContext } from "@/hooks/use-register-page-context";
 
 interface DashboardContentProps {
   user: User;
@@ -97,6 +98,26 @@ export function DashboardContent({
     },
     {} as Record<string, number>
   );
+
+  useRegisterPageContext("Dashboard", {
+    userName: user.name,
+    userRole: user.role,
+    leaveBalance: user.leave_balance,
+    statCards: [
+      { label: "Leave Balance", value: user.leave_balance - totalUsed, max: user.leave_balance },
+      { label: "WFH This Month", value: wfhUsed, max: 8.0 },
+      { label: user.role === "member" ? "In Office Today" : "Pending Approvals", value: user.role === "member" ? inOfficeCount : pendingCount },
+      { label: "Next Scheduled Leave", value: nextLeave ? `${nextLeave.leave_type} on ${format(new Date(nextLeave.leave_date), "MMM d")}` : "None" }
+    ],
+    upcomingHolidays: upcomingHolidays
+      .slice(0, 10)
+      .map((h) => ({ name: h.name, date: h.observed_date })),
+    recentAnnouncements: announcements
+      .slice(0, 10)
+      .map((a) => ({ title: a.title, content: a.content, author: a.author?.name })),
+    monthlyLeaveBreakdown: monthlyChartData,
+    overallLeaveBreakdownByType: leaveBreakdown,
+  });
 
   const statCards = [
     {

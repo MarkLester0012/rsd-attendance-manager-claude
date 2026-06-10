@@ -33,6 +33,7 @@ import { emojify } from "@/lib/emoji";
 import type { User, LeaveEntry, LeaveTypeCode } from "@/lib/types";
 import { LeaveModal } from "@/components/leaves/leave-modal";
 import { createClient } from "@/lib/supabase/client";
+import { useRegisterPageContext } from "@/hooks/use-register-page-context";
 
 interface MyLeavesContentProps {
   user: User;
@@ -98,6 +99,8 @@ export function MyLeavesContent({ user, initialLeaves }: MyLeavesContentProps) {
   const filteredDays = useMemo(() => {
     return filtered.reduce((sum, l) => sum + l.duration_value, 0);
   }, [filtered]);
+
+
 
   const hasActiveFilters =
     statusFilter !== "all" ||
@@ -178,6 +181,32 @@ export function MyLeavesContent({ user, initialLeaves }: MyLeavesContentProps) {
     });
     return Object.entries(groups);
   }, [filtered]);
+
+  useRegisterPageContext("My Leaves", {
+    userName: user.name,
+    leaveBalance: user.leave_balance,
+    totalDaysUsed,
+    statusCounts,
+    typeCounts,
+    activeFilters: { 
+      status: statusFilter, 
+      type: typeFilter, 
+      dateFrom: dateFrom ? format(dateFrom, "yyyy-MM-dd") : null, 
+      dateTo: dateTo ? format(dateTo, "yyyy-MM-dd") : null, 
+      sortOrder 
+    },
+    resultsSummary: {
+      totalEntries: filtered.length,
+      totalDays: filteredDays
+    },
+    visibleLeaves: filtered.slice(0, 30).map((l) => ({
+      date: l.leave_date,
+      type: l.leave_type,
+      status: l.status,
+      days: l.duration_value,
+      reason: l.reason
+    })),
+  });
 
   return (
     <div className="space-y-6">

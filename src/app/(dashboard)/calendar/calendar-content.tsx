@@ -47,6 +47,7 @@ interface WfhEntry {
 }
 import { LeaveModal } from "@/components/leaves/leave-modal";
 import { createClient } from "@/lib/supabase/client";
+import { useRegisterPageContext } from "@/hooks/use-register-page-context";
 
 interface CalendarContentProps {
   user: User;
@@ -65,6 +66,8 @@ export function CalendarContent({
   const [leaves, setLeaves] = useState(initialLeaves);
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [selectedLeave, setSelectedLeave] = useState<LeaveEntry | null>(null);
+
+
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [allHolidays, setAllHolidays] = useState(holidays);
   const [wfhAll, setWfhAll] = useState<WfhEntry[]>(initialWfhAll);
@@ -245,6 +248,23 @@ export function CalendarContent({
       .sort()
       .map((d) => parseISO(d))
     : null;
+
+  useRegisterPageContext("Calendar", {
+    month: format(currentMonth, "MMMM yyyy"),
+    monthlySummary: { totalLeaveDays, approvedDays, pendingDays, wfhDays },
+    myLeaves: leaves.slice(0, 30).map((l) => ({
+      date: l.leave_date,
+      type: l.leave_type,
+      status: l.status,
+    })),
+    holidays: allHolidays.slice(0, 20).map((h) => ({ name: h.name, date: h.observed_date })),
+    wfhCapacities: Array.from(wfhByDate.entries()).slice(0, 31).map(([date, data]) => ({
+      date,
+      count: data.count,
+      maxCap: WFH_DAILY_GLOBAL_CAP,
+      users: data.names
+    }))
+  });
 
   return (
     <TooltipProvider>
