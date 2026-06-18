@@ -10,8 +10,8 @@ export interface ChatMessage {
   content: string;
 }
 
-export const AI_MODEL = "deepseek/deepseek-v4-pro";
-export const AI_MAX_TOKENS = 1024;
+export const AI_MODEL = "deepseek/deepseek-v4-flash";
+export const AI_MAX_TOKENS = 2048;
 
 export async function createChatCompletionStream(
   opts: OpenRouterOptions,

@@ -101,7 +101,7 @@ export function AiChatWidget() {
                 >
                   {/* Screen-reader title — satisfies Radix Dialog contract */}
                   <DialogPrimitive.Title className="sr-only">
-                    AI Assistant
+                    Virtual HR Assistant
                   </DialogPrimitive.Title>
 
                   {/* Signature red gradient bar at top */}
@@ -117,7 +117,7 @@ export function AiChatWidget() {
                       </div>
                       <div>
                         <p className="text-sm font-semibold leading-tight tracking-tight text-foreground">
-                          AI Assistant
+                          Virtual HR Assistant
                         </p>
                         <p className="text-[11px] text-muted-foreground">
                           Ask about this page
@@ -126,7 +126,7 @@ export function AiChatWidget() {
                     </div>
                     <button
                       onClick={handleClose}
-                      aria-label="Close AI assistant"
+                      aria-label="Close Virtual HR Assistant"
                       className="flex h-8 w-8 items-center justify-center rounded-xl text-muted-foreground
                         transition-colors hover:bg-muted hover:text-foreground"
                     >
