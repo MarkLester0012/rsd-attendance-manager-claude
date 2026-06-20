@@ -1,3 +1,4 @@
+import { getAINews } from "@/lib/news/client";
 import { createClient } from "@/lib/supabase/server";
 import { DashboardContent } from "./dashboard-content";
 
@@ -89,6 +90,8 @@ export default async function DashboardPage() {
   ).length || 0;
   const inOfficeCount = (totalUsers || 0) - actualAbsent;
 
+  const aiNews = await getAINews();
+
   return (
     <DashboardContent
       user={user!}
@@ -99,6 +102,7 @@ export default async function DashboardPage() {
       inOfficeCount={inOfficeCount}
       pendingCount={pendingCount}
       nextLeave={nextLeave?.[0] || null}
+      aiNews={aiNews}
     />
   );
 }
