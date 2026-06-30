@@ -47,8 +47,8 @@ create table public.leaves (
   reviewed_at timestamptz,
   created_at timestamptz default now() not null,
   updated_at timestamptz default now() not null,
-  -- Prevent duplicate leaves for same user on same date
-  unique(user_id, leave_date)
+  -- Prevent duplicate leaves for same user on same date+slot (allows AM+PM pair)
+  unique(user_id, leave_date, duration)
 );
 
 -- Holidays

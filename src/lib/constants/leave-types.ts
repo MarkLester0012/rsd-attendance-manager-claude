@@ -126,3 +126,6 @@ export const NON_DEDUCTIBLE_TYPES: LeaveTypeCode[] = Object.values(LEAVE_TYPES)
   .filter((t) => !t.deductsBalance)
   .map((t) => t.code);
 export const HALF_DAY_TYPES: LeaveTypeCode[] = ["SL", "VL", "WFH"];
+
+// Leave types allowed in the secondary (other-half) slot of a split-day
+export const SECONDARY_LEAVE_TYPES: LeaveTypeCode[] = ["SL", "NW", "RGA", "AB", "WFH"];

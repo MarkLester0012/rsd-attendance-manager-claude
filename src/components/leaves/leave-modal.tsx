@@ -21,12 +21,15 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Trash2 } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { Separator } from "@/components/ui/separator";
+import { Loader2, Trash2, Plus } from "lucide-react";
 import { toast } from "sonner";
 import {
   LEAVE_TYPES,
   LEAVE_TYPE_LIST,
   HALF_DAY_TYPES,
+  SECONDARY_LEAVE_TYPES,
   NON_DEDUCTIBLE_TYPES,
   WFH_MONTHLY_CAP,
   WFH_DAILY_GLOBAL_CAP,
@@ -85,6 +88,9 @@ export function LeaveModal({
   const [leaveType, setLeaveType] = useState<LeaveTypeCode>("VL");
   const [duration, setDuration] = useState<LeaveDuration>("whole");
   const [reason, setReason] = useState("");
+  const [addSecondHalf, setAddSecondHalf] = useState(false);
+  const [secondLeaveType, setSecondLeaveType] = useState<LeaveTypeCode>("WFH");
+  const [secondReason, setSecondReason] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
@@ -102,15 +108,46 @@ export function LeaveModal({
       setDuration("whole");
       setReason("");
     }
+    setAddSecondHalf(false);
+    setSecondLeaveType("WFH");
+    setSecondReason("");
   }, [existingLeave, open]);
 
   const durationValue = duration === "whole" ? 1.0 : 0.5;
   const canHalfDay = HALF_DAY_TYPES.includes(leaveType);
+  const isHalfDay = duration === "half_am" || duration === "half_pm";
+  const showSecondHalf = !isMultiDay && !isEditMode && isHalfDay;
+  const secondDuration: LeaveDuration = duration === "half_am" ? "half_pm" : "half_am";
+  const secondConfig = LEAVE_TYPES[secondLeaveType];
+  const availableSecondaryTypes = SECONDARY_LEAVE_TYPES.filter((c) => c !== leaveType);
+
+  useEffect(() => {
+    if (showSecondHalf && !availableSecondaryTypes.includes(secondLeaveType)) {
+      setSecondLeaveType(availableSecondaryTypes[0]);
+    }
+  }, [showSecondHalf, leaveType, secondLeaveType, availableSecondaryTypes]);
 
   async function handleSubmit() {
-    if (config.requiresReason && !reason.trim()) {
-      toast.error("Reason is required for this leave type");
-      return;
+    // Build entries array (1 or 2 for split-day create)
+    const entries: { type: LeaveTypeCode; dur: LeaveDuration; durVal: number; reason: string }[] = [
+      { type: leaveType, dur: duration, durVal: durationValue, reason },
+    ];
+    if (addSecondHalf && showSecondHalf) {
+      entries.push({
+        type: secondLeaveType,
+        dur: secondDuration,
+        durVal: 0.5,
+        reason: secondReason,
+      });
+    }
+
+    // Validate required reasons for each entry
+    for (const entry of entries) {
+      const entryConfig = LEAVE_TYPES[entry.type];
+      if (entryConfig.requiresReason && !entry.reason.trim()) {
+        toast.error(`Reason is required for ${entryConfig.label}`);
+        return;
+      }
     }
 
     setIsSubmitting(true);
@@ -121,24 +158,50 @@ export function LeaveModal({
       const targetDates = isMultiDay ? dates! : [date!];
       const dateStrs = targetDates.map((d) => format(d, "yyyy-MM-dd"));
 
-      // Overlap check — check all dates at once
+      // Duration-aware overlap check
       if (!isEditMode) {
         const { data: existing } = await supabase
           .from("leaves")
-          .select("leave_date")
+          .select("leave_date, duration")
           .eq("user_id", user.id)
           .in("leave_date", dateStrs);
 
         if (existing && existing.length > 0) {
-          const conflicting = existing.map((e) => e.leave_date).join(", ");
-          toast.error(`You already have leave entries on: ${conflicting}`);
-          setIsSubmitting(false);
-          return;
+          for (const dateStr of dateStrs) {
+            const dayExisting = existing.filter((e) => e.leave_date === dateStr);
+            if (dayExisting.length === 0) continue;
+
+            const hasWhole = dayExisting.some((e) => e.duration === "whole");
+            const existingSlots = new Set(dayExisting.map((e) => e.duration));
+
+            for (const entry of entries) {
+              // Block if existing whole-day leave
+              if (hasWhole) {
+                toast.error(`${dateStr} already has a whole-day leave`);
+                setIsSubmitting(false);
+                return;
+              }
+              // Block if submitting whole-day and any leave exists
+              if (entry.dur === "whole") {
+                toast.error(`${dateStr} already has a leave entry — cannot add whole-day`);
+                setIsSubmitting(false);
+                return;
+              }
+              // Block if the specific half slot is taken
+              if (existingSlots.has(entry.dur)) {
+                const slotLabel = entry.dur === "half_am" ? "AM" : "PM";
+                toast.error(`${dateStr} already has a ${slotLabel} leave`);
+                setIsSubmitting(false);
+                return;
+              }
+            }
+          }
         }
       }
 
-      // WFH validations
-      if (leaveType === "WFH") {
+      // WFH validations — check for each WFH entry
+      const wfhEntries = entries.filter((e) => e.type === "WFH");
+      if (wfhEntries.length > 0) {
         // Monthly cap check — group dates by month
         const monthGroups = new Map<string, Date[]>();
         for (const d of targetDates) {
@@ -146,6 +209,9 @@ export function LeaveModal({
           if (!monthGroups.has(key)) monthGroups.set(key, []);
           monthGroups.get(key)!.push(d);
         }
+
+        // Sum WFH duration being added per date (could be 0.5 if one entry is WFH)
+        const wfhDurationPerDate = wfhEntries.reduce((sum, e) => sum + e.durVal, 0);
 
         for (const [monthKey, monthDates] of monthGroups) {
           const [year, month] = monthKey.split("-").map(Number);
@@ -162,7 +228,7 @@ export function LeaveModal({
 
           const currentMonthWfh =
             monthWfh?.reduce((sum, l) => sum + l.duration_value, 0) || 0;
-          const addingDays = monthDates.length * durationValue;
+          const addingDays = monthDates.length * wfhDurationPerDate;
 
           if (currentMonthWfh + addingDays > WFH_MONTHLY_CAP) {
             toast.error(
@@ -193,7 +259,8 @@ export function LeaveModal({
       }
 
       // Balance check for deductible types (HR has unlimited balance — LEAV-14)
-      if (config.deductsBalance && user.role !== "hr") {
+      const deductibleEntries = entries.filter((e) => LEAVE_TYPES[e.type].deductsBalance);
+      if (deductibleEntries.length > 0 && user.role !== "hr") {
         let query = supabase
           .from("leaves")
           .select("duration_value")
@@ -207,7 +274,9 @@ export function LeaveModal({
         const totalUsed =
           approvedLeaves?.reduce((sum, l) => sum + l.duration_value, 0) || 0;
         const remaining = user.leave_balance - totalUsed;
-        const totalNeeded = targetDates.length * durationValue;
+        const totalNeeded = deductibleEntries.reduce(
+          (sum, e) => sum + targetDates.length * e.durVal, 0
+        );
 
         if (remaining - totalNeeded < 0) {
           toast.error(
@@ -218,9 +287,8 @@ export function LeaveModal({
         }
       }
 
-      const status = config.requiresApproval ? "pending" : "approved";
-
       if (isEditMode) {
+        const status = config.requiresApproval ? "pending" : "approved";
         const { error } = await supabase
           .from("leaves")
           .update({
@@ -236,33 +304,38 @@ export function LeaveModal({
         if (error) throw error;
         toast.success("Leave updated successfully");
       } else {
-        // Insert all dates
-        const rows = dateStrs.map((dateStr) => ({
-          user_id: user.id,
-          leave_type: leaveType,
-          leave_date: dateStr,
-          duration,
-          duration_value: durationValue,
-          reason: reason || null,
-          status,
-        }));
+        // Build rows from entries × dates
+        const rows = dateStrs.flatMap((dateStr) =>
+          entries.map((entry) => ({
+            user_id: user.id,
+            leave_type: entry.type,
+            leave_date: dateStr,
+            duration: entry.dur,
+            duration_value: entry.durVal,
+            reason: entry.reason || null,
+            status: LEAVE_TYPES[entry.type].requiresApproval ? "pending" : "approved",
+          }))
+        );
 
         const { error } = await supabase.from("leaves").insert(rows);
 
         if (error) throw error;
 
-        if (config.requiresApproval) {
+        // Notify reviewers if any entry requires approval
+        const needsApproval = entries.some((e) => LEAVE_TYPES[e.type].requiresApproval);
+        if (needsApproval) {
           const reviewers = await getLeaveReviewers(user.id);
           if (reviewers.length) {
             const dateLabel = isMultiDay
               ? `${dateStrs.length} days starting ${dateStrs[0]}`
               : dateStrs[0];
+            const typeLabels = entries.map((e) => LEAVE_TYPES[e.type].label).join(" + ");
             await createNotifications(
               reviewers.map((r) => ({
                 user_id: r.id,
                 type: "leave_submitted" as const,
                 title: `${user.name} submitted a leave request`,
-                body: `${config.label} — ${dateLabel}`,
+                body: `${typeLabels} — ${dateLabel}`,
                 data: { employee_name: user.name, leave_type: leaveType },
               }))
             );
@@ -271,16 +344,17 @@ export function LeaveModal({
 
         if (isMultiDay) {
           toast.success(
-            config.requiresApproval
+            needsApproval
               ? `${targetDates.length} leave requests submitted for approval`
               : `${targetDates.length} leave entries applied successfully`
           );
         } else {
-          toast.success(
-            config.requiresApproval
+          const msg = entries.length > 1
+            ? "Split-day leave applied successfully"
+            : needsApproval
               ? "Leave request submitted for approval"
-              : "Leave applied successfully"
-          );
+              : "Leave applied successfully";
+          toast.success(msg);
         }
       }
 
@@ -379,6 +453,7 @@ export function LeaveModal({
                 setLeaveType(v as LeaveTypeCode);
                 if (!HALF_DAY_TYPES.includes(v as LeaveTypeCode)) {
                   setDuration("whole");
+                  setAddSecondHalf(false);
                 }
               }}
             >
@@ -416,7 +491,10 @@ export function LeaveModal({
             <Label>Duration</Label>
             <Select
               value={duration}
-              onValueChange={(v) => setDuration(v as LeaveDuration)}
+              onValueChange={(v) => {
+                setDuration(v as LeaveDuration);
+                if (v === "whole") setAddSecondHalf(false);
+              }}
             >
               <SelectTrigger>
                 <SelectValue />
@@ -452,6 +530,86 @@ export function LeaveModal({
               rows={3}
             />
           </div>
+
+          {/* Second half-day toggle + fields */}
+          {showSecondHalf && (
+            <>
+              <Separator />
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Plus className="h-4 w-4 text-muted-foreground" />
+                  <Label htmlFor="add-second-half" className="text-sm cursor-pointer">
+                    Add {secondDuration === "half_pm" ? "afternoon (PM)" : "morning (AM)"} leave
+                  </Label>
+                </div>
+                <Switch
+                  id="add-second-half"
+                  checked={addSecondHalf}
+                  onCheckedChange={setAddSecondHalf}
+                />
+              </div>
+
+              {addSecondHalf && (
+                <div className="space-y-3 rounded-md border border-border/50 p-3">
+                  <div className="space-y-2">
+                    <Label className="text-xs text-muted-foreground">
+                      {secondDuration === "half_pm" ? "Afternoon (PM)" : "Morning (AM)"} — Leave Type
+                    </Label>
+                    <Select
+                      value={secondLeaveType}
+                      onValueChange={(v) => setSecondLeaveType(v as LeaveTypeCode)}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {LEAVE_TYPE_LIST.filter((t) => availableSecondaryTypes.includes(t.code)).map((type) => (
+                          <SelectItem key={type.code} value={type.code}>
+                            <div className="flex items-center gap-2">
+                              <div
+                                className="h-2.5 w-2.5 rounded-full"
+                                style={{
+                                  backgroundColor: `hsl(var(${type.cssVar}))`,
+                                }}
+                              />
+                              <span>{type.label}</span>
+                              {!type.requiresApproval && (
+                                <Badge
+                                  variant="secondary"
+                                  className="text-[9px] ml-1"
+                                >
+                                  Auto
+                                </Badge>
+                              )}
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-xs text-muted-foreground">
+                      Reason{" "}
+                      {secondConfig.requiresReason && (
+                        <span className="text-destructive">*</span>
+                      )}
+                    </Label>
+                    <EmojiTextarea
+                      placeholder={
+                        secondConfig.requiresReason
+                          ? "Please provide a reason..."
+                          : "Optional reason..."
+                      }
+                      value={secondReason}
+                      onChange={(e) => setSecondReason(e.target.value)}
+                      rows={2}
+                    />
+                  </div>
+                </div>
+              )}
+            </>
+          )}
 
           {/* Info badges */}
           <div className="flex flex-wrap gap-2">
