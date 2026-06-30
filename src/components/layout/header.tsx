@@ -23,6 +23,7 @@ const PAGE_TITLES: Record<string, string> = {
   "/profile": "Profile",
   "/time-logger": "Time Logger",
   "/transportation-allowance": "Transportation Allowance",
+  "/payslip-stats": "Payslip Stats",
 };
 
 export function Header({ user }: { user: User }) {

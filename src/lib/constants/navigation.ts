@@ -98,6 +98,13 @@ export const NAV_ITEMS: NavItem[] = [
     roles: ["hr"],
     section: "management",
   },
+  {
+    label: "Payslip Stats",
+    href: "/payslip-stats",
+    icon: "Calculator",
+    roles: ["hr"],
+    section: "management",
+  },
   // General
   {
     label: "Suggestions",
