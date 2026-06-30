@@ -30,6 +30,11 @@ SLACK_ENCRYPTION_KEY=              # Encrypts stored OAuth tokens
 # Redmine integration
 REDMINE_URL=
 REDMINE_ENCRYPTION_KEY=            # Encrypts stored API keys
+
+# AI assistant (OpenRouter)
+OPENROUTER_API_KEY=                # Used by api/ai/chat
+
+NEXT_PUBLIC_APP_URL=               # Public base URL (Slack OAuth redirects)
 ```
 
 ## Architecture
@@ -56,9 +61,11 @@ src/
       settings/
         integrations/    # Slack OAuth connection
     api/
+      ai/               # AI assistant chat endpoint (edge runtime, OpenRouter)
       slack/             # Slack webhook endpoints (shortcut, OAuth install/callback)
   components/
     ui/                  # shadcn/ui primitives + EmojiTextarea
+    ai-chat/             # Floating AI assistant widget + chat UI
     layout/              # Sidebar, header
     leaves/              # Leave modal, shared leave components
     auth/                # Auth forms
@@ -69,6 +76,7 @@ src/
     use-user.ts          # Current user hook
     use-pending-count.ts # Pending approvals count (sidebar badge)
     use-notifications.ts # Unread notification count + list
+    use-register-page-context.ts # Registers per-page context for the AI assistant
   lib/
     constants/
       leave-types.ts     # 9 leave types with rules (VL, PL, ML, SPL, SL, NW, RGA, AB, WFH)
@@ -89,6 +97,11 @@ src/
       client.ts          # Redmine REST API client
       parser.ts          # Formats descriptions/comments for Redmine
       encryption.ts      # API key encryption
+    ai/
+      client.ts          # OpenRouter chat client (SSE streaming)
+      format-context.ts  # Formats page context for the AI prompt
+    news/
+      client.ts          # Dashboard "AI News" — Google News RSS, cached daily
     types/index.ts       # All TypeScript interfaces
     notifications.ts     # createNotification / createNotifications helpers
     emoji.ts             # emojify() — converts :shortcode: to native emoji
@@ -137,6 +150,11 @@ Navigation is role-gated via `src/lib/constants/navigation.ts`. Page-level acces
 - `src/lib/redmine/parser.ts` normalizes descriptions (strips Slack markdown, formats bullets) before posting
 - Per-user API keys are stored encrypted in the DB
 
+### AI Assistant & News
+- Floating chat widget (`src/components/ai-chat/`) calls the auth-gated edge route `api/ai/chat`, which streams from OpenRouter via `src/lib/ai/client.ts`.
+- Pages call `useRegisterPageContext(...)` (`src/hooks/use-register-page-context.ts`) so the assistant sees the current page's data; `src/lib/ai/format-context.ts` formats it into the prompt.
+- The dashboard "AI News" card is server-fetched via `getAINews()` in `src/lib/news/client.ts` (Google News RSS, `revalidate: 86400` daily cache). Tune the feed by editing the `QUERY_*` constants there.
+
 ## Code Patterns
 
 - **Path alias**: `@/*` maps to `./src/*`
@@ -155,3 +173,4 @@ Navigation is role-gated via `src/lib/constants/navigation.ts`. Page-level acces
 - **Middleware** refreshes auth sessions on every request — don't bypass it
 - The app is hardcoded to dark mode (`<html class="dark">`)
 - **Emoji input**: use `EmojiTextarea` from `src/components/ui/emoji-textarea.tsx` (wraps `Textarea` + picker button) wherever users enter freeform text. Use `emojify()` from `src/lib/emoji.ts` to render `:shortcode:` → native emoji on display.
+- **`npm run lint`** currently launches an interactive ESLint setup prompt (deprecated `next lint`, no v9 flat config) — it won't run clean non-interactively. Use `npx tsc --noEmit` for a quick type check.

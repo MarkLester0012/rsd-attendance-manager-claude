@@ -2,21 +2,19 @@
 
 import { useState, useMemo } from "react";
 import Link from "next/link";
-import { format, parseISO, differenceInCalendarDays } from "date-fns";
+import { format, parseISO, differenceInCalendarDays, formatDistanceToNow } from "date-fns";
 import {
-  Calendar,
   Users,
-  ClipboardList,
-  ArrowRight,
   Plane,
   Monitor,
   CheckSquare,
-  Lightbulb,
   Clock,
   Megaphone,
   ChevronDown,
   CalendarDays,
   PartyPopper,
+  Newspaper,
+  ExternalLink,
 } from "lucide-react";
 import {
   BarChart,
@@ -32,6 +30,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { LEAVE_TYPES, NON_DEDUCTIBLE_TYPES } from "@/lib/constants/leave-types";
 import type { User, LeaveEntry, Announcement, Holiday } from "@/lib/types";
+import type { NewsItem } from "@/lib/news/client";
 import { emojify } from "@/lib/emoji";
 import { useRegisterPageContext } from "@/hooks/use-register-page-context";
 
@@ -44,6 +43,7 @@ interface DashboardContentProps {
   inOfficeCount: number;
   pendingCount: number;
   nextLeave: LeaveEntry | null;
+  aiNews: NewsItem[];
 }
 
 export function DashboardContent({
@@ -55,6 +55,7 @@ export function DashboardContent({
   inOfficeCount,
   pendingCount,
   nextLeave,
+  aiNews,
 }: DashboardContentProps) {
   const totalUsed = userLeaves
     .filter((l) => !NON_DEDUCTIBLE_TYPES.includes(l.leave_type))
@@ -361,8 +362,50 @@ export function DashboardContent({
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
-        {/* Upcoming Holidays */}
+        {/* AI News */}
         <Card className="lg:col-span-2">
+          <CardHeader className="pb-3">
+            <div className="flex items-center gap-2">
+              <Newspaper className="h-4 w-4 text-muted-foreground" />
+              <CardTitle className="text-base font-semibold">
+                Latest News
+              </CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {aiNews.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-4 text-center">
+                No news available
+              </p>
+            ) : (
+              <div className="max-h-[320px] overflow-y-auto pr-1 space-y-2 scrollbar-thin">
+                {aiNews.map((item) => (
+                  <a
+                    key={item.url}
+                    href={item.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <div className="group flex items-center gap-3 rounded-lg border border-border/50 p-3 transition-all duration-200 hover:bg-accent/50 hover:border-border cursor-pointer">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-foreground line-clamp-2">
+                          {item.title}
+                        </p>
+                        <p className="text-[11px] text-muted-foreground mt-0.5">
+                          {item.source} · {formatDistanceToNow(new Date(item.publishedAt), { addSuffix: true })}
+                        </p>
+                      </div>
+                      <ExternalLink className="h-4 w-4 shrink-0 text-muted-foreground/50 group-hover:text-foreground transition-colors" />
+                    </div>
+                  </a>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Holidays This Month */}
+        <Card>
           <CardHeader className="pb-3">
             <div className="flex items-center gap-2">
               <CalendarDays className="h-4 w-4 text-muted-foreground" />
@@ -458,52 +501,6 @@ export function DashboardContent({
                 })}
               </div>
             )}
-          </CardContent>
-        </Card>
-
-        {/* Quick Actions */}
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base font-semibold">
-              Quick Actions
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {[
-              {
-                label: "My Calendar",
-                icon: Calendar,
-                href: "/calendar",
-                desc: "View & apply for leaves",
-              },
-              {
-                label: "Office Attendance",
-                icon: ClipboardList,
-                href: "/attendance",
-                desc: "See who's in today",
-              },
-              {
-                label: "Suggestions",
-                icon: Lightbulb,
-                href: "/suggestions",
-                desc: "Share your ideas",
-              },
-            ].map((action) => (
-              <Link key={action.href} href={action.href}>
-                <div className="group flex items-center gap-3 rounded-lg border border-border/50 p-3 transition-all duration-200 hover:bg-accent/50 hover:border-border cursor-pointer">
-                  <action.icon className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors" />
-                  <div className="flex-1">
-                    <p className="text-sm font-medium text-foreground">
-                      {action.label}
-                    </p>
-                    <p className="text-[11px] text-muted-foreground">
-                      {action.desc}
-                    </p>
-                  </div>
-                  <ArrowRight className="h-4 w-4 text-muted-foreground/50 group-hover:text-foreground transition-colors" />
-                </div>
-              </Link>
-            ))}
           </CardContent>
         </Card>
       </div>

@@ -85,6 +85,7 @@ The `/calendar` page renders a 7-column CSS grid, computing all cells manually w
 |---|---|
 | Redmine API | Time entry creation, issue detail lookup, activity list fetch |
 | Slack OAuth | Account linking; EOD message parsing for automatic time import |
+| [OpenRouter](https://openrouter.ai/) | In-app AI assistant — streaming chat grounded in page context |
 
 ---
 
@@ -215,13 +216,26 @@ Monthly transportation allowance based on each employee's commute mode and atten
 ### Attendance Log
 - Daily office attendance tracking per employee
 
+### AI Assistant
+- Floating chat widget (`src/components/ai-chat/`) available on every authenticated page
+- Streams responses from OpenRouter via the auth-gated edge route `api/ai/chat` (`src/lib/ai/client.ts`)
+- Context-aware: each page registers its on-screen data via `useRegisterPageContext` so the assistant's answers are grounded in the current view
+- Formatted with `src/lib/ai/format-context.ts` before being sent as the system prompt
+
+### AI News (Dashboard)
+- Dashboard card showing latest AI-model and programming-related news
+- Server-fetched from Google News RSS via `getAINews()` in `src/lib/news/client.ts`
+- Cached daily (`revalidate: 86400`); two focused queries (AI models + TechCrunch) merged, de-duped, and sorted by date
+- Each headline links to the original article (opens in new tab)
+- Feed topics are controlled via `QUERY_*` constants in `src/lib/news/client.ts`
+
 ---
 
 ## Roles & Access
 
 | Role | Pages |
 |---|---|
-| `member` | Dashboard, My Calendar, Attendance, My Leaves, Suggestions, Profile, Time Logger |
+| `member` | Dashboard, My Calendar, Attendance, My Leaves, Suggestions, Profile, Time Logger, Transportation Allowance, Settings |
 | `leader` | + Approvals, Reports (read), Team (read) |
 | `hr` | + Team management, Holidays, Projects, Announcements (full CRUD), Reports |
 
@@ -252,21 +266,30 @@ src/
       settings/
         integrations/slack/    # Slack OAuth connection management
     api/
+      ai/                      # AI assistant chat endpoint (edge runtime, OpenRouter)
       slack/                   # Slack OAuth callback and shortcut webhook
   components/
     ui/                        # shadcn/ui primitives
+    ai-chat/                   # Floating AI assistant widget + chat UI
     layout/                    # Sidebar, Header, NotificationPanel, DashboardShell
     leaves/                    # LeaveModal — shared leave apply/edit/cancel component
     time-logger/               # DateNav, MonthView, EntryTable, SettingsDialog, BulkApplyDialog, etc.
+    transportation-allowance/  # TA snapshot and request UI components
     auth/                      # Login form
   hooks/
     use-user.ts                # Current authenticated user hook
     use-pending-count.ts       # Live pending approvals count (Supabase Realtime)
     use-notifications.ts       # Live in-app notifications (Supabase Realtime)
+    use-register-page-context.ts # Registers per-page context for the AI assistant
   lib/
     constants/
       leave-types.ts           # 9 leave type definitions with rules and CSS color variables
       navigation.ts            # Role-based navigation items
+    ai/
+      client.ts                # OpenRouter chat client (SSE streaming)
+      format-context.ts        # Formats page context for the AI prompt
+    news/
+      client.ts                # Dashboard "AI News" — Google News RSS, cached daily
     notifications.ts           # createNotification / createNotifications helpers
     supabase/
       client.ts                # Browser Supabase client
@@ -293,9 +316,12 @@ Create a `.env.local` file:
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=
+OPENROUTER_API_KEY=
 ```
 
 > `SUPABASE_SERVICE_ROLE_KEY` is only used server-side for user registration via the Supabase Admin API. It is never exposed to the browser.
+>
+> Slack and Redmine integrations need additional env vars — see `CLAUDE.md` for the full list.
 
 ---
 
@@ -324,6 +350,6 @@ All tables have Row Level Security (RLS) enabled. Policies ensure users can only
 
 - **Theme**: Dark mode only (`<html class="dark">`)
 - **Accent color**: Red (`#EF1D26`)
-- **Font**: Plus Jakarta Sans (via `next/font`)
+- **Font**: Inter (via `next/font`)
 - **Style**: Glass/backdrop-blur cards, subtle borders (`border-border/50`), CSS variable-driven leave type colors
 - **Scrollbars**: Custom thin scrollbar (`scrollbar-thin` utility) used throughout — 6px width, muted color thumb, transparent track
