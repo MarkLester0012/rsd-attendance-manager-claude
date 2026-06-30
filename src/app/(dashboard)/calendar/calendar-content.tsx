@@ -92,9 +92,9 @@ export function CalendarContent({
   const prevMonth = () => setCurrentMonth(subMonths(currentMonth, 1));
   const nextMonth = () => setCurrentMonth(addMonths(currentMonth, 1));
 
-  const getLeaveForDate = (date: Date) => {
+  const getLeavesForDate = (date: Date) => {
     const dateStr = format(date, "yyyy-MM-dd");
-    return leaves.find((l) => l.leave_date === dateStr);
+    return leaves.filter((l) => l.leave_date === dateStr);
   };
 
   const getHolidayForDate = (date: Date) => {
@@ -111,8 +111,8 @@ export function CalendarContent({
     if (isMultiDayMode) {
       const dateStr = format(date, "yyyy-MM-dd");
       // Don't allow selecting days that already have a leave
-      const existingLeave = getLeaveForDate(date);
-      if (existingLeave) return;
+      const dayLeaves = getLeavesForDate(date);
+      if (dayLeaves.length > 0) return;
 
       setSelectedDates((prev) => {
         const next = new Set(prev);
@@ -126,15 +126,20 @@ export function CalendarContent({
       return;
     }
 
-    const existingLeave = getLeaveForDate(date);
-    if (existingLeave) {
-      setSelectedLeave(existingLeave);
+    const dayLeaves = getLeavesForDate(date);
+    if (dayLeaves.length === 1) {
+      // Single leave — open edit
+      setSelectedLeave(dayLeaves[0]);
       setSelectedDate(date);
-    } else {
+      setIsModalOpen(true);
+    } else if (dayLeaves.length === 0) {
+      // No leave — open create
       setSelectedLeave(null);
       setSelectedDate(date);
+      setIsModalOpen(true);
     }
-    setIsModalOpen(true);
+    // If 2 leaves (split day), clicking the cell area does nothing;
+    // each marker has its own onClick for editing
   };
 
   const handleMultiDaySubmit = () => {
@@ -337,18 +342,11 @@ export function CalendarContent({
                   const isCurrentMonth = isSameMonth(day, currentMonth);
                   const isToday = isSameDay(day, new Date());
                   const weekend = isWeekend(day);
-                  const leave = getLeaveForDate(day);
+                  const dayLeaves = getLeavesForDate(day);
                   const holiday = getHolidayForDate(day);
-                  const leaveConfig = leave
-                    ? LEAVE_TYPES[leave.leave_type]
-                    : null;
                   const dateStr = format(day, "yyyy-MM-dd");
                   const isSelected =
                     isMultiDayMode && selectedDates.has(dateStr);
-                  const isHalfDay =
-                    leave &&
-                    (leave.duration === "half_am" ||
-                      leave.duration === "half_pm");
 
                   return (
                     <div
@@ -416,47 +414,56 @@ export function CalendarContent({
                         </Tooltip>
                       )}
 
-                      {/* Leave marker */}
-                      {leave && isCurrentMonth && (
-                        <div className="mt-1">
-                          <div className="flex items-center gap-1">
-                            <div
-                              className="h-2 w-2 rounded-full shrink-0"
-                              style={{
-                                backgroundColor: leaveConfig
-                                  ? `hsl(var(${leaveConfig.cssVar}))`
-                                  : undefined,
-                              }}
-                            />
-                            <span
-                              className="text-[10px] font-medium truncate"
-                              style={{
-                                color: leaveConfig
-                                  ? `hsl(var(${leaveConfig.cssVar}))`
-                                  : undefined,
-                              }}
-                            >
-                              {leave.leave_type}
-                            </span>
-                            {isHalfDay && (
-                              <span
-                                className="text-[9px] font-medium px-1 rounded"
-                                style={{
-                                  backgroundColor: leaveConfig
-                                    ? `hsl(var(${leaveConfig.cssVar}) / 0.15)`
-                                    : undefined,
-                                  color: leaveConfig
-                                    ? `hsl(var(${leaveConfig.cssVar}))`
-                                    : undefined,
+                      {/* Leave markers — up to 2 for split-day */}
+                      {dayLeaves.length > 0 && isCurrentMonth && (
+                        <div className="mt-1 space-y-0.5">
+                          {dayLeaves.map((leave) => {
+                            const lc = LEAVE_TYPES[leave.leave_type];
+                            const isHalf = leave.duration === "half_am" || leave.duration === "half_pm";
+                            return (
+                              <div
+                                key={leave.id}
+                                className="flex items-center gap-1 cursor-pointer hover:opacity-80"
+                                onClick={(e) => {
+                                  if (dayLeaves.length > 1) {
+                                    e.stopPropagation();
+                                    setSelectedLeave(leave);
+                                    setSelectedDate(day);
+                                    setIsModalOpen(true);
+                                  }
                                 }}
                               >
-                                {leave.duration === "half_am" ? "AM" : "PM"}
-                              </span>
-                            )}
-                            {leave.status === "pending" && (
-                              <Clock className="h-2.5 w-2.5 text-status-pending shrink-0" />
-                            )}
-                          </div>
+                                <div
+                                  className="h-2 w-2 rounded-full shrink-0"
+                                  style={{
+                                    backgroundColor: `hsl(var(${lc.cssVar}))`,
+                                  }}
+                                />
+                                <span
+                                  className="text-[10px] font-medium truncate"
+                                  style={{
+                                    color: `hsl(var(${lc.cssVar}))`,
+                                  }}
+                                >
+                                  {leave.leave_type}
+                                </span>
+                                {isHalf && (
+                                  <span
+                                    className="text-[9px] font-medium px-1 rounded"
+                                    style={{
+                                      backgroundColor: `hsl(var(${lc.cssVar}) / 0.15)`,
+                                      color: `hsl(var(${lc.cssVar}))`,
+                                    }}
+                                  >
+                                    {leave.duration === "half_am" ? "AM" : "PM"}
+                                  </span>
+                                )}
+                                {leave.status === "pending" && (
+                                  <Clock className="h-2.5 w-2.5 text-status-pending shrink-0" />
+                                )}
+                              </div>
+                            );
+                          })}
                         </div>
                       )}
                     </div>

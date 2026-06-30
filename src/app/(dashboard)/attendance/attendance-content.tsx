@@ -155,31 +155,62 @@ export function AttendanceContent({
   };
 
   const getStatusForUser = useCallback(
-    (userId: string) => {
-      const leave = leaves.find((l) => l.user_id === userId);
-      if (!leave)
-        return { status: "In Office", color: "bg-emerald-500", type: null };
-      const config = LEAVE_TYPES[leave.leave_type];
+    (userId: string): { status: string; color: string; type: string | null; cssVar?: string; leaves: LeaveEntry[] } => {
+      const userLeaves = leaves.filter((l) => l.user_id === userId);
+      if (userLeaves.length === 0)
+        return { status: "In Office", color: "bg-emerald-500", type: null, leaves: [] };
+      if (userLeaves.length === 1) {
+        const config = LEAVE_TYPES[userLeaves[0].leave_type];
+        const isHalf = userLeaves[0].duration === "half_am" || userLeaves[0].duration === "half_pm";
+        const halfLabel = isHalf ? (userLeaves[0].duration === "half_am" ? " (AM)" : " (PM)") : "";
+        return {
+          status: (config?.label || userLeaves[0].leave_type) + halfLabel,
+          color: "",
+          type: userLeaves[0].leave_type,
+          cssVar: config?.cssVar,
+          leaves: userLeaves,
+        };
+      }
+      // Split day — 2 half-day leaves
+      const labels = userLeaves.map((l) => {
+        const c = LEAVE_TYPES[l.leave_type];
+        const slot = l.duration === "half_am" ? "AM" : "PM";
+        return `${c?.label || l.leave_type} (${slot})`;
+      });
       return {
-        status: config?.label || leave.leave_type,
+        status: labels.join(" · "),
         color: "",
-        type: leave.leave_type,
-        cssVar: config?.cssVar,
+        type: userLeaves[0].leave_type,
+        cssVar: LEAVE_TYPES[userLeaves[0].leave_type]?.cssVar,
+        leaves: userLeaves,
       };
     },
     [leaves]
   );
 
   const getStatusForUserOnDate = useCallback(
-    (userId: string, dateStr: string) => {
+    (userId: string, dateStr: string): { status: string; type: string | null; cssVar: string | null; leaves: LeaveEntry[] } => {
       const dayLeaves = weekLeaves[dateStr] || [];
-      const leave = dayLeaves.find((l) => l.user_id === userId);
-      if (!leave) return { status: "In Office", type: null, cssVar: null };
-      const config = LEAVE_TYPES[leave.leave_type];
+      const userLeaves = dayLeaves.filter((l) => l.user_id === userId);
+      if (userLeaves.length === 0) return { status: "In Office", type: null, cssVar: null, leaves: [] };
+      if (userLeaves.length === 1) {
+        const config = LEAVE_TYPES[userLeaves[0].leave_type];
+        return {
+          status: config?.label || userLeaves[0].leave_type,
+          type: userLeaves[0].leave_type,
+          cssVar: config?.cssVar || null,
+          leaves: userLeaves,
+        };
+      }
+      // Split day
       return {
-        status: config?.label || leave.leave_type,
-        type: leave.leave_type,
-        cssVar: config?.cssVar || null,
+        status: userLeaves.map((l) => {
+          const c = LEAVE_TYPES[l.leave_type];
+          return `${c?.label || l.leave_type} (${l.duration === "half_am" ? "AM" : "PM"})`;
+        }).join(" · "),
+        type: userLeaves[0].leave_type,
+        cssVar: LEAVE_TYPES[userLeaves[0].leave_type]?.cssVar || null,
+        leaves: userLeaves,
       };
     },
     [weekLeaves]
@@ -195,11 +226,22 @@ export function AttendanceContent({
   }, [users]);
 
   // Unfiltered totals for summary counters (day view only)
-  // NW and RGA are not real leaves — exclude from on-leave count
-  const actualLeaves = leaves.filter((l) => !NON_DEDUCTIBLE_TYPES.includes(l.leave_type));
-  const wfhCount = leaves.filter((l) => l.leave_type === "WFH").length;
-  const onLeaveCount = actualLeaves.filter((l) => l.leave_type !== "WFH").length;
-  const inOfficeCount = users.length - actualLeaves.length;
+  // Dedupe by user_id so split-day users aren't double-counted
+  const usersWithWfh = new Set(leaves.filter((l) => l.leave_type === "WFH").map((l) => l.user_id));
+  const usersOnLeave = new Set(
+    leaves
+      .filter((l) => !NON_DEDUCTIBLE_TYPES.includes(l.leave_type) && l.leave_type !== "WFH")
+      .map((l) => l.user_id)
+  );
+  // A user with both a deductible leave and WFH counts as on-leave (not in-office)
+  const usersWithAnyLeave = new Set(
+    leaves
+      .filter((l) => !NON_DEDUCTIBLE_TYPES.includes(l.leave_type) || l.leave_type === "WFH")
+      .map((l) => l.user_id)
+  );
+  const wfhCount = usersWithWfh.size;
+  const onLeaveCount = usersOnLeave.size;
+  const inOfficeCount = users.length - usersWithAnyLeave.size;
 
   // Filtered users — in day view, status filter uses day leaves; in week view, no status filter
   const filtered = useMemo(() => {
@@ -220,14 +262,18 @@ export function AttendanceContent({
       // Status filter only applies in day view
       if (viewMode === "day" && statusFilter !== "all") {
         const userStatus = getStatusForUser(u.id);
-        const isNonLeaveType = userStatus.type ? NON_DEDUCTIBLE_TYPES.includes(userStatus.type) && userStatus.type !== "WFH" : false;
+        const userTypes = userStatus.leaves.map((l) => l.leave_type);
+        const hasWfh = userTypes.includes("WFH");
+        const hasDeductibleLeave = userTypes.some(
+          (t) => !NON_DEDUCTIBLE_TYPES.includes(t)
+        );
+        const isNonLeaveOnly = userTypes.length > 0 && userTypes.every(
+          (t) => NON_DEDUCTIBLE_TYPES.includes(t) && t !== "WFH"
+        );
         const matchesStatus =
-          (statusFilter === "in-office" && (!userStatus.type || isNonLeaveType)) ||
-          (statusFilter === "wfh" && userStatus.type === "WFH") ||
-          (statusFilter === "on-leave" &&
-            userStatus.type &&
-            userStatus.type !== "WFH" &&
-            !isNonLeaveType);
+          (statusFilter === "in-office" && (!userStatus.type || isNonLeaveOnly)) ||
+          (statusFilter === "wfh" && hasWfh) ||
+          (statusFilter === "on-leave" && hasDeductibleLeave);
         if (!matchesStatus) return false;
       }
 
@@ -268,24 +314,22 @@ export function AttendanceContent({
   };
 
   const getGroupCounts = (groupUsers: typeof users) => {
-    const groupActualLeaves = leaves.filter(
-      (l) => !NON_DEDUCTIBLE_TYPES.includes(l.leave_type) || l.leave_type === "WFH"
-    );
     const inOffice = groupUsers.filter(
-      (u) => !groupActualLeaves.find((l) => l.user_id === u.id)
+      (u) => !usersWithAnyLeave.has(u.id)
     ).length;
     const wfh = groupUsers.filter((u) =>
-      groupActualLeaves.find((l) => l.user_id === u.id && l.leave_type === "WFH")
+      usersWithWfh.has(u.id)
     ).length;
     const onLeave = groupUsers.filter((u) =>
-      groupActualLeaves.find((l) => l.user_id === u.id && l.leave_type !== "WFH")
+      usersOnLeave.has(u.id)
     ).length;
     return { inOffice, wfh, onLeave };
   };
 
   function renderUserCard(u: (typeof users)[0]) {
-    const { status, type, cssVar } = getStatusForUser(u.id);
+    const { status, type, cssVar, leaves: userLeaves } = getStatusForUser(u.id);
     const isInOffice = !type;
+    const isSplitDay = userLeaves.length > 1;
     return (
       <Card key={u.id} className="transition-all hover:shadow-md">
         <CardContent className="flex items-center gap-3 p-4">
@@ -296,54 +340,89 @@ export function AttendanceContent({
               {u.department?.name || "No Department"}
             </p>
           </div>
-          <Badge
-            className="shrink-0 text-[10px]"
-            style={
-              !isInOffice && cssVar
-                ? {
-                    backgroundColor: `hsl(var(${cssVar}) / 0.15)`,
-                    color: `hsl(var(${cssVar}))`,
-                    borderColor: "transparent",
-                  }
-                : isInOffice
+          {isSplitDay ? (
+            <div className="flex flex-col items-end gap-1 shrink-0">
+              {userLeaves.map((leave) => {
+                const lc = LEAVE_TYPES[leave.leave_type];
+                const slot = leave.duration === "half_am" ? "AM" : "PM";
+                return (
+                  <Badge
+                    key={leave.id}
+                    className="text-[10px]"
+                    style={
+                      lc?.cssVar
+                        ? {
+                            backgroundColor: `hsl(var(${lc.cssVar}) / 0.15)`,
+                            color: `hsl(var(${lc.cssVar}))`,
+                            borderColor: "transparent",
+                          }
+                        : undefined
+                    }
+                  >
+                    {lc?.label || leave.leave_type} ({slot})
+                  </Badge>
+                );
+              })}
+            </div>
+          ) : (
+            <Badge
+              className="shrink-0 text-[10px]"
+              style={
+                !isInOffice && cssVar
                   ? {
-                      backgroundColor: "hsl(var(--status-approved) / 0.15)",
-                      color: "hsl(var(--status-approved))",
+                      backgroundColor: `hsl(var(${cssVar}) / 0.15)`,
+                      color: `hsl(var(${cssVar}))`,
                       borderColor: "transparent",
                     }
-                  : undefined
-            }
-          >
-            {status}
-          </Badge>
+                  : isInOffice
+                    ? {
+                        backgroundColor: "hsl(var(--status-approved) / 0.15)",
+                        color: "hsl(var(--status-approved))",
+                        borderColor: "transparent",
+                      }
+                    : undefined
+              }
+            >
+              {status}
+            </Badge>
+          )}
         </CardContent>
       </Card>
     );
   }
 
   function renderWeekStatusCell(userId: string, dateStr: string) {
-    const { status, type, cssVar } = getStatusForUserOnDate(userId, dateStr);
+    const { type, leaves: userLeaves } = getStatusForUserOnDate(userId, dateStr);
     if (!type) {
       return (
         <span className="inline-block h-2.5 w-2.5 rounded-full bg-emerald-500" title="In Office" />
       );
     }
     return (
-      <Badge
-        className="text-[9px] px-1.5 py-0"
-        style={
-          cssVar
-            ? {
-                backgroundColor: `hsl(var(${cssVar}) / 0.15)`,
-                color: `hsl(var(${cssVar}))`,
-                borderColor: "transparent",
+      <div className="flex flex-col items-center gap-0.5">
+        {userLeaves.map((leave) => {
+          const lc = LEAVE_TYPES[leave.leave_type];
+          const isHalf = leave.duration === "half_am" || leave.duration === "half_pm";
+          return (
+            <Badge
+              key={leave.id}
+              className="text-[9px] px-1.5 py-0"
+              style={
+                lc?.cssVar
+                  ? {
+                      backgroundColor: `hsl(var(${lc.cssVar}) / 0.15)`,
+                      color: `hsl(var(${lc.cssVar}))`,
+                      borderColor: "transparent",
+                    }
+                  : undefined
               }
-            : undefined
-        }
-        title={status}
-      >
-        {type}
-      </Badge>
+              title={`${lc?.label || leave.leave_type}${isHalf ? (leave.duration === "half_am" ? " (AM)" : " (PM)") : ""}`}
+            >
+              {leave.leave_type}{isHalf ? (leave.duration === "half_am" ? " AM" : " PM") : ""}
+            </Badge>
+          );
+        })}
+      </div>
     );
   }
 
