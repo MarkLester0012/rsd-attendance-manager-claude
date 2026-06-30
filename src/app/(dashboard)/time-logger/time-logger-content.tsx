@@ -98,7 +98,7 @@ export function TimeLoggerContent({
     original_date: string | null;
     is_local: boolean;
   } | null>(null);
-  const [leave, setLeave] = useState<LeaveEntry | null>(null);
+  const [leaves, setLeaves] = useState<LeaveEntry[]>([]);
   const [saving, setSaving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [loadingEntries, setLoadingEntries] = useState(false);
@@ -123,7 +123,7 @@ export function TimeLoggerContent({
     drafts: DraftEntry[];
     redmine: typeof existingRedmineEntries;
     holiday: typeof holiday;
-    leave: LeaveEntry | null;
+    leaves: LeaveEntry[];
   };
   const cacheRef = useRef(new Map<string, DateCacheValue>());
 
@@ -163,14 +163,14 @@ export function TimeLoggerContent({
         setEntries(cached.drafts);
         setExistingRedmineEntries(cached.redmine);
         setHoliday(cached.holiday);
-        setLeave(cached.leave);
+        setLeaves(cached.leaves);
         setLoadingEntries(false);
       } else {
         // Cache miss: clear so we never show previous date's values while loading
         setEntries([]);
         setExistingRedmineEntries([]);
         setHoliday(null);
-        setLeave(null);
+        setLeaves([]);
         setLoadingEntries(true);
       }
 
@@ -205,19 +205,19 @@ export function TimeLoggerContent({
       const drafts = (draftResult.entries || []).map(toEntryFromDB);
       const redmine = redmineEntries || [];
       const nextHoliday = holidayResult.holiday;
-      const nextLeave = leaveResult.leave;
+      const nextLeaves = leaveResult.leaves;
 
       cacheRef.current.set(dateStr, {
         drafts,
         redmine,
         holiday: nextHoliday,
-        leave: nextLeave,
+        leaves: nextLeaves,
       });
 
       setEntries(drafts);
       setExistingRedmineEntries(redmine);
       setHoliday(nextHoliday);
-      setLeave(nextLeave);
+      setLeaves(nextLeaves);
       setLoadingEntries(false);
     },
     [hasConfig]
@@ -679,7 +679,7 @@ useRegisterPageContext("Time Logger", {
     daySummary: { totalHours, draftHours, existingHours, submittedCount, failedCount },
     dayDetails: {
       holiday: holiday ? { name: holiday.name, is_local: holiday.is_local } : null,
-      leave: leave ? { type: LEAVE_TYPES[leave.leave_type].label, status: leave.status } : null,
+      leaves: leaves.map((l) => ({ type: LEAVE_TYPES[l.leave_type].label, duration: l.duration, status: l.status })),
       entries: [
         ...existingRedmineEntries.map(e => ({ source: "redmine", issue: e.issue_id, project: e.project_name, hours: e.hours, activity: e.activity_name, comment: e.comments })),
         ...entries.map(e => ({ source: e.status, issue: e.issue_id, project: e.project_name, hours: e.hours, activity: e.activity_name, comment: e.comment }))
@@ -810,8 +810,8 @@ useRegisterPageContext("Time Logger", {
               )}
 
               {/* Leave banner */}
-              {leave && (
-                <div className="flex items-center gap-3 rounded-lg border border-blue-500/30 bg-blue-500/5 px-4 py-3">
+              {leaves.map((leave) => (
+                <div key={leave.id} className="flex items-center gap-3 rounded-lg border border-blue-500/30 bg-blue-500/5 px-4 py-3">
                   <CalendarOff className="h-5 w-5 text-blue-400 shrink-0" />
                   <div className="text-sm">
                     <span className="font-medium text-blue-300">
@@ -827,7 +827,7 @@ useRegisterPageContext("Time Logger", {
                     )}
                   </div>
                 </div>
-              )}
+              ))}
 
               {/* Hours summary */}
               <HoursSummary

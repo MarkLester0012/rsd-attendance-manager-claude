@@ -120,8 +120,12 @@ export function MonthView({
   }, [holidays]);
 
   const leaveByDate = useMemo(() => {
-    const map = new Map<string, LeaveEntry>();
-    for (const l of leaves) map.set(l.leave_date, l);
+    const map = new Map<string, LeaveEntry[]>();
+    for (const l of leaves) {
+      const existing = map.get(l.leave_date);
+      if (existing) existing.push(l);
+      else map.set(l.leave_date, [l]);
+    }
     return map;
   }, [leaves]);
 
@@ -140,7 +144,7 @@ export function MonthView({
     format(currentMonth, "yyyy-MM") === format(new Date(), "yyyy-MM");
 
   const drawerEntries = drawerDate ? (entriesByDate.get(drawerDate) ?? []) : [];
-  const drawerLeave = drawerDate ? (leaveByDate.get(drawerDate) ?? null) : null;
+  const drawerLeaves = drawerDate ? (leaveByDate.get(drawerDate) ?? []) : [];
 
   return (
     <TooltipProvider>
@@ -271,7 +275,7 @@ export function MonthView({
                 const hasDraft = !hasFailed && dayEntries.some((e) => e.source === "draft");
 
                 const holiday = holidayByDate.get(dateStr);
-                const leave = leaveByDate.get(dateStr);
+                const leaves = leaveByDate.get(dateStr) ?? [];
                 const inCurrentMonth = isSameMonth(day, currentMonth);
                 const isToday = isSameDay(day, new Date());
                 const weekend = isWeekend(day);
@@ -285,7 +289,7 @@ export function MonthView({
                   holiday && "bg-red-500/5",
                   inCurrentMonth && totalHours >= 8 && "bg-green-500/10",
                   inCurrentMonth && totalHours > 0 && totalHours < 8 && "bg-yellow-500/[0.08]",
-                  leave && inCurrentMonth && "bg-blue-500/10",
+                  leaves.length > 0 && inCurrentMonth && "bg-blue-500/10",
                   !inCurrentMonth && "opacity-40",
                   inCurrentMonth && "cursor-pointer hover:bg-accent/20",
                   isSelected && "ring-2 ring-inset ring-primary/60",
@@ -411,27 +415,31 @@ export function MonthView({
                     )}
 
                     {/* Leave indicator */}
-                    {leave && inCurrentMonth && (
+                    {leaves.length > 0 && inCurrentMonth && (
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <span className={cn(
                             "text-[9px] truncate leading-none",
                             !holiday && "mt-auto",
-                            leave.status === "pending" ? "text-blue-400/60" : "text-blue-400"
+                            leaves.every((l) => l.status === "pending") ? "text-blue-400/60" : "text-blue-400"
                           )}>
-                            {LEAVE_TYPES[leave.leave_type].label}
+                            {leaves.map((l) => LEAVE_TYPES[l.leave_type].label).join(" / ")}
                           </span>
                         </TooltipTrigger>
-                        <TooltipContent side="top" className="text-xs">
-                          <p>{LEAVE_TYPES[leave.leave_type].label}</p>
-                          {leave.duration !== "whole" && (
-                            <p className="text-muted-foreground">
-                              {leave.duration === "half_am" ? "AM half-day" : "PM half-day"}
-                            </p>
-                          )}
-                          {leave.status === "pending" && (
-                            <p className="text-muted-foreground">Pending approval</p>
-                          )}
+                        <TooltipContent side="top" className="text-xs space-y-1">
+                          {leaves.map((l) => (
+                            <div key={l.id}>
+                              <p>{LEAVE_TYPES[l.leave_type].label}</p>
+                              {l.duration !== "whole" && (
+                                <p className="text-muted-foreground">
+                                  {l.duration === "half_am" ? "AM half-day" : "PM half-day"}
+                                </p>
+                              )}
+                              {l.status === "pending" && (
+                                <p className="text-muted-foreground">Pending approval</p>
+                              )}
+                            </div>
+                          ))}
                         </TooltipContent>
                       </Tooltip>
                     )}
@@ -455,8 +463,8 @@ export function MonthView({
           </SheetHeader>
 
           <div className="flex-1 overflow-y-auto py-4 space-y-3">
-            {drawerLeave && (
-              <div className="flex items-center gap-2 rounded-lg border border-blue-500/30 bg-blue-500/5 px-3 py-2">
+            {drawerLeaves.map((drawerLeave) => (
+              <div key={drawerLeave.id} className="flex items-center gap-2 rounded-lg border border-blue-500/30 bg-blue-500/5 px-3 py-2">
                 <div className="flex-1 min-w-0">
                   <p className={cn(
                     "text-sm font-medium",
@@ -474,7 +482,7 @@ export function MonthView({
                   )}
                 </div>
               </div>
-            )}
+            ))}
             {drawerEntries.length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-8">
                 No entries logged for this day.

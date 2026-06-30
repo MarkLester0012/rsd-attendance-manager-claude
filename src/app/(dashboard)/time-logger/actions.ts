@@ -425,9 +425,9 @@ export async function fetchHolidaysInRange(
 
 export async function fetchLeaveForDate(
   date: string
-): Promise<{ leave: LeaveEntry | null; error?: string }> {
+): Promise<{ leaves: LeaveEntry[]; error?: string }> {
   const user = await getAuthenticatedUser();
-  if (!user) return { leave: null, error: "Not authenticated" };
+  if (!user) return { leaves: [], error: "Not authenticated" };
   const supabase = await createClient();
   const { data } = await supabase
     .from("leaves")
@@ -435,8 +435,8 @@ export async function fetchLeaveForDate(
     .eq("user_id", user.id)
     .eq("leave_date", date)
     .in("status", ["approved", "pending"])
-    .maybeSingle();
-  return { leave: data };
+    .order("duration", { ascending: true });
+  return { leaves: data || [] };
 }
 
 export async function fetchLeavesInRange(
