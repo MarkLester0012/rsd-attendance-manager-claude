@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
-import { createNotification } from "@/lib/notifications";
+import { reviewLeave } from "./actions";
 import { LEAVE_TYPES } from "@/lib/constants/leave-types";
 import { cn } from "@/lib/utils";
 import { emojify } from "@/lib/emoji";
@@ -70,29 +70,8 @@ export function ApprovalsContent({
   async function handleAction(leaveId: string, status: "approved" | "rejected") {
     setLoadingId(leaveId);
     try {
-      const supabase = createClient();
-      const { error } = await supabase
-        .from("leaves")
-        .update({
-          status,
-          reviewed_by: user.id,
-          reviewed_at: new Date().toISOString(),
-        })
-        .eq("id", leaveId);
-
-      if (error) throw error;
-
-      const leave = leaves.find((l) => l.id === leaveId);
-      if (leave?.user_id) {
-        const leaveConfig = LEAVE_TYPES[leave.leave_type as keyof typeof LEAVE_TYPES];
-        await createNotification({
-          user_id: leave.user_id,
-          type: status === "approved" ? "leave_approved" : "leave_rejected",
-          title: status === "approved" ? "Your leave was approved" : "Your leave was rejected",
-          body: `${leaveConfig?.label ?? leave.leave_type} on ${format(new Date(leave.leave_date), "MMM d, yyyy")}`,
-          data: { leave_id: leaveId },
-        });
-      }
+      const result = await reviewLeave(leaveId, status);
+      if (!result.success) throw new Error(result.error);
 
       toast.success(`Leave ${status}`);
 

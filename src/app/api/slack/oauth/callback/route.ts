@@ -63,11 +63,8 @@ export async function GET(req: NextRequest) {
   const { error: updateError } = await supabase
     .from("users")
     .update({
-      slack_user_id:             result.authed_user.id,
-      slack_team_id:             result.team.id,
-      slack_bot_token_encrypted: encrypted,
-      slack_bot_token_iv:        iv,
-      slack_bot_token_tag:       tag,
+      slack_user_id: result.authed_user.id,
+      slack_team_id: result.team.id,
     })
     .eq("id", statePayload.userId);
 
@@ -76,6 +73,14 @@ export async function GET(req: NextRequest) {
     // is already linked to a different app user.
     const code = updateError.code === "23505" ? "already_linked" : "update_failed";
     return NextResponse.redirect(`${settingsUrl}?error=${code}`);
+  }
+
+  const { error: tokenError } = await supabase
+    .from("user_slack_tokens")
+    .upsert({ user_id: statePayload.userId, encrypted, iv, tag });
+
+  if (tokenError) {
+    return NextResponse.redirect(`${settingsUrl}?error=update_failed`);
   }
 
   return NextResponse.redirect(`${settingsUrl}?connected=1`);

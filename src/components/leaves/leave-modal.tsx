@@ -36,6 +36,7 @@ import {
 } from "@/lib/constants/leave-types";
 import type { User, LeaveEntry, LeaveTypeCode, LeaveDuration } from "@/lib/types";
 import { createNotifications } from "@/lib/notifications";
+import { submitLeaves } from "./actions";
 
 async function getLeaveReviewers(userId: string): Promise<{ id: string }[]> {
   const supabase = createClient();
@@ -151,10 +152,10 @@ export function LeaveModal({
     }
 
     setIsSubmitting(true);
-    const supabase = createClient();
 
     try {
-      // For multi-day mode, submit for all selected dates
+      // For multi-day mode, submit for all selected dates.
+      // All validation (overlap, WFH caps, balance) runs server-side in the action.
       const targetDates = isMultiDay ? dates! : [date!];
       const dateStrs = targetDates.map((d) => format(d, "yyyy-MM-dd"));
 

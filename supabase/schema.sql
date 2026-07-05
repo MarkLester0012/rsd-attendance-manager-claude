@@ -190,13 +190,27 @@ create policy "users_delete" on public.users for delete to authenticated
 
 -- Leaves: users can manage own, leaders/HR can view all, leaders/HR can update status
 create policy "leaves_select" on public.leaves for select to authenticated using (true);
+-- Owners may only create/edit their own leaves as 'pending', except for
+-- auto-approved types. The type list must stay in sync with requiresApproval
+-- in src/lib/constants/leave-types.ts. Approving/rejecting approval-required
+-- types is reserved for leaders/HR (leaves_update_review below).
 create policy "leaves_insert" on public.leaves for insert to authenticated
-  with check (user_id = (select id from public.users where auth_id = auth.uid()));
-create policy "leaves_update" on public.leaves for update to authenticated
+  with check (
+    user_id = (select id from public.users where auth_id = auth.uid())
+    and (status = 'pending' or leave_type in ('SL', 'NW', 'RGA', 'AB', 'WFH'))
+  );
+create policy "leaves_update_own" on public.leaves for update to authenticated
   using (
     user_id = (select id from public.users where auth_id = auth.uid())
-    or exists (select 1 from public.users where auth_id = auth.uid() and role in ('leader', 'hr'))
+    and (status = 'pending' or leave_type in ('SL', 'NW', 'RGA', 'AB', 'WFH'))
+  )
+  with check (
+    user_id = (select id from public.users where auth_id = auth.uid())
+    and (status = 'pending' or leave_type in ('SL', 'NW', 'RGA', 'AB', 'WFH'))
   );
+create policy "leaves_update_review" on public.leaves for update to authenticated
+  using (exists (select 1 from public.users where auth_id = auth.uid() and role in ('leader', 'hr')))
+  with check (exists (select 1 from public.users where auth_id = auth.uid() and role in ('leader', 'hr')));
 create policy "leaves_delete" on public.leaves for delete to authenticated
   using (
     user_id = (select id from public.users where auth_id = auth.uid())
@@ -420,13 +434,28 @@ create trigger time_log_entries_updated_at before update on public.time_log_entr
 
 alter table public.users
   add column if not exists slack_user_id             text unique,
-  add column if not exists slack_team_id             text,
-  add column if not exists slack_bot_token_encrypted text,
-  add column if not exists slack_bot_token_iv        text,
-  add column if not exists slack_bot_token_tag       text;
+  add column if not exists slack_team_id             text;
 
 create index if not exists idx_users_slack_user_id
   on public.users(slack_user_id) where slack_user_id is not null;
+
+-- Encrypted Slack bot tokens live in a separate table with RLS enabled and no
+-- policies for the authenticated role: only the service-role client (used by
+-- the Slack API routes) can read or write them. Keeping them on public.users
+-- would expose the ciphertext to every authenticated user via users_select.
+create table if not exists public.user_slack_tokens (
+  user_id    uuid        primary key references public.users(id) on delete cascade,
+  encrypted  text        not null,
+  iv         text        not null,
+  tag        text        not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table public.user_slack_tokens enable row level security;
+
+create trigger user_slack_tokens_updated_at before update on public.user_slack_tokens
+  for each row execute function public.handle_updated_at();
 
 -- ============================================
 -- NOTIFICATIONS
@@ -452,8 +481,11 @@ alter table public.notifications enable row level security;
 create policy "notifications_select" on public.notifications for select to authenticated
   using (user_id = (select id from public.users where auth_id = auth.uid()));
 
+-- Direct inserts are limited to self-notifications; notifying other users must
+-- go through the create_notifications() security-definer function below, which
+-- enforces per-type sender-role checks.
 create policy "notifications_insert" on public.notifications for insert to authenticated
-  with check (auth.uid() is not null);
+  with check (user_id = (select id from public.users where auth_id = auth.uid()));
 
 create policy "notifications_update" on public.notifications for update to authenticated
   using (user_id = (select id from public.users where auth_id = auth.uid()));
@@ -462,6 +494,52 @@ create policy "notifications_delete" on public.notifications for delete to authe
   using (user_id = (select id from public.users where auth_id = auth.uid()));
 
 alter publication supabase_realtime add table public.notifications;
+
+-- Creates notifications on behalf of the calling user, with per-type checks on
+-- the sender's role so clients cannot forge approval/HR notifications for
+-- other users. The caller's user id is stamped into data.sender_id for audit.
+create or replace function public.create_notifications(payload jsonb)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  sender public.users%rowtype;
+  item jsonb;
+  item_type text;
+begin
+  select * into sender from public.users where auth_id = auth.uid();
+  if sender.id is null then
+    raise exception 'not authenticated';
+  end if;
+
+  for item in select * from jsonb_array_elements(payload) loop
+    item_type := item->>'type';
+
+    if item_type in ('leave_approved', 'leave_rejected', 'project_added', 'project_removed')
+       and sender.role not in ('leader', 'hr') then
+      raise exception 'only leaders or HR can send % notifications', item_type;
+    end if;
+    if item_type in ('announcement_new', 'allowance_request_reviewed', 'allowance_submission_reviewed')
+       and sender.role <> 'hr' then
+      raise exception 'only HR can send % notifications', item_type;
+    end if;
+
+    insert into public.notifications (user_id, type, title, body, data)
+    values (
+      (item->>'user_id')::uuid,
+      item_type,
+      item->>'title',
+      item->>'body',
+      coalesce(item->'data', '{}'::jsonb) || jsonb_build_object('sender_id', sender.id)
+    );
+  end loop;
+end;
+$$;
+
+revoke all on function public.create_notifications(jsonb) from public;
+grant execute on function public.create_notifications(jsonb) to authenticated;
 
 -- ============================================
 -- TRANSPORTATION ALLOWANCE

@@ -25,15 +25,21 @@ function jsonResponse(body: object, status = 200): Response {
 
 async function lookupUser(slackUserId: string, slackTeamId: string) {
   const supabase = createAdminClient();
-  const { data } = await supabase
+  const { data: user } = await supabase
     .from("users")
-    .select(
-      "id, slack_bot_token_encrypted, slack_bot_token_iv, slack_bot_token_tag"
-    )
+    .select("id")
     .eq("slack_user_id", slackUserId)
     .eq("slack_team_id", slackTeamId)
     .single();
-  return data;
+  if (!user) return null;
+
+  const { data: token } = await supabase
+    .from("user_slack_tokens")
+    .select("encrypted, iv, tag")
+    .eq("user_id", user.id)
+    .single();
+
+  return { id: user.id, token };
 }
 
 /** Fetch how many hours the user has already logged to Redmine for a given date.
@@ -98,7 +104,7 @@ async function handleMessageAction(payload: {
     return new Response(null, { status: 200 });
   }
 
-  if (!dbUser.slack_bot_token_encrypted) {
+  if (!dbUser.token) {
     await postResponseUrl(response_url, {
       text: `Please reconnect your Slack account at <${APP_URL}/settings/integrations/slack|Settings → Integrations → Slack> to enable the new modal flow.`,
     });
@@ -106,9 +112,9 @@ async function handleMessageAction(payload: {
   }
 
   const botToken = decryptToken(
-    dbUser.slack_bot_token_encrypted,
-    dbUser.slack_bot_token_iv,
-    dbUser.slack_bot_token_tag
+    dbUser.token.encrypted,
+    dbUser.token.iv,
+    dbUser.token.tag
   );
 
   const parsed = parseSlackEOD(messageText);
@@ -188,20 +194,15 @@ async function handleDateChange(payload: {
 
   after(async () => {
     const supabase = createAdminClient();
-    const { data: dbUser } = await supabase
-      .from("users")
-      .select("slack_bot_token_encrypted, slack_bot_token_iv, slack_bot_token_tag")
-      .eq("id", metadata.userId)
+    const { data: token } = await supabase
+      .from("user_slack_tokens")
+      .select("encrypted, iv, tag")
+      .eq("user_id", metadata.userId)
       .single();
 
-    const botToken =
-      dbUser?.slack_bot_token_encrypted
-        ? decryptToken(
-            dbUser.slack_bot_token_encrypted,
-            dbUser.slack_bot_token_iv,
-            dbUser.slack_bot_token_tag
-          )
-        : null;
+    const botToken = token
+      ? decryptToken(token.encrypted, token.iv, token.tag)
+      : null;
 
     if (!botToken) return;
 

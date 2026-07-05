@@ -19,10 +19,10 @@ export interface User {
   id: string;
   auth_id: string;
   name: string;
-  username: string;
+  username: string | null;
   email: string;
   role: UserRole;
-  department_id: string;
+  department_id: string | null;
   leave_balance: number;
   slack_user_id?: string | null;
   slack_team_id?: string | null;
