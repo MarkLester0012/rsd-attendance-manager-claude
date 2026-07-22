@@ -20,7 +20,7 @@ import {
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
-import { Textarea } from "@/components/ui/textarea";
+import { EmojiTextarea } from "@/components/ui/emoji-textarea";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import {
@@ -180,7 +180,7 @@ function SubmissionForm({ user, month, stats, statsLoading, defaultMode, default
                   <SelectItem key={m} value={m} disabled={walkDisqualified}>
                     <span className="flex items-center gap-2">
                       {MODE_ICONS_SMALL[m]} {MODE_LABELS[m]}
-                      {walkDisqualified && <span className="text-xs text-amber-400">(unavailable)</span>}
+                      {walkDisqualified && <span className="text-xs text-amber-600 dark:text-amber-400">(unavailable)</span>}
                     </span>
                   </SelectItem>
                 );
@@ -188,7 +188,7 @@ function SubmissionForm({ user, month, stats, statsLoading, defaultMode, default
             </SelectContent>
           </Select>
           {!result.walk_allowed && form.declared_mode === "walk" && result.walk_disqualification_reason && (
-            <p className="text-xs text-amber-400 flex items-center gap-1">
+            <p className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1">
               <AlertCircle className="h-3 w-3" />
               {result.walk_disqualification_reason}
             </p>
@@ -263,7 +263,7 @@ function SubmissionForm({ user, month, stats, statsLoading, defaultMode, default
           ))}
           <div className="flex items-center justify-between pt-3 mt-1 border-t border-border">
             <span className="text-sm font-semibold text-foreground">Total</span>
-            <span className="text-xl font-bold text-emerald-400">{formatPHP(result.total)}</span>
+            <span className="text-xl font-bold text-emerald-600 dark:text-emerald-400">{formatPHP(result.total)}</span>
           </div>
         </div>
 
@@ -306,7 +306,7 @@ function BreakdownCard({ snapshot }: { snapshot: AllowanceSnapshot }) {
       ))}
       <div className="flex items-center justify-between py-2 px-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
         <span className="font-semibold text-foreground">Total Allowance</span>
-        <span className="text-xl font-bold text-emerald-400">{formatPHP(result.total)}</span>
+        <span className="text-xl font-bold text-emerald-600 dark:text-emerald-400">{formatPHP(result.total)}</span>
       </div>
     </div>
   );
@@ -440,7 +440,7 @@ function ChangeRequestModal({
                       <SelectItem key={m} value={m} disabled={disq}>
                         <span className="flex items-center gap-2">
                           {MODE_ICONS_SMALL[m]} {MODE_LABELS[m]}
-                          {disq && <span className="text-xs text-amber-400">(unavailable)</span>}
+                          {disq && <span className="text-xs text-amber-600 dark:text-amber-400">(unavailable)</span>}
                         </span>
                       </SelectItem>
                     );
@@ -448,7 +448,7 @@ function ChangeRequestModal({
                 </SelectContent>
               </Select>
               {walkDisqualified && (
-                <p className="text-xs text-amber-400">Walk not available at this distance or with a registered vehicle.</p>
+                <p className="text-xs text-amber-600 dark:text-amber-400">Walk not available at this distance or with a registered vehicle.</p>
               )}
             </div>
 
@@ -493,7 +493,7 @@ function ChangeRequestModal({
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-foreground">Requested</span>
-                <span className={cn("font-mono font-bold", newResult.total > currentResult.total ? "text-emerald-400" : newResult.total < currentResult.total ? "text-red-400" : "text-foreground")}>
+                <span className={cn("font-mono font-bold", newResult.total > currentResult.total ? "text-emerald-600 dark:text-emerald-400" : newResult.total < currentResult.total ? "text-red-600 dark:text-red-400" : "text-foreground")}>
                   {formatPHP(newResult.total)}
                 </span>
               </div>
@@ -501,7 +501,7 @@ function ChangeRequestModal({
 
             <div className="space-y-1">
               <Label className="text-xs text-muted-foreground">Reason for changes</Label>
-              <Textarea
+              <EmojiTextarea
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
                 className="bg-background border-border resize-none"
@@ -533,14 +533,14 @@ function PendingSubmissionCard({ submission }: { submission: AllowanceSubmission
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2 rounded-lg bg-blue-500/10 border border-blue-500/20 px-4 py-3">
-        <Send className="h-4 w-4 text-blue-400 shrink-0" />
+        <Send className="h-4 w-4 text-blue-600 dark:text-blue-400 shrink-0" />
         <div className="flex-1">
-          <p className="text-sm font-medium text-blue-300">Pending HR review</p>
+          <p className="text-sm font-medium text-blue-700 dark:text-blue-300">Pending HR review</p>
           <p className="text-xs text-muted-foreground mt-0.5">
             Submitted {format(new Date(submission.created_at), "MMM d, yyyy 'at' h:mm a")}
           </p>
         </div>
-        <Badge className="bg-blue-500/20 text-blue-400 border-blue-500/30 text-xs" variant="outline">
+        <Badge className="bg-blue-500/20 text-blue-600 dark:text-blue-400 border-blue-500/30 text-xs" variant="outline">
           Pending
         </Badge>
       </div>
@@ -606,7 +606,7 @@ function PendingSubmissionCard({ submission }: { submission: AllowanceSubmission
         ))}
         <div className="flex items-center justify-between pt-2 border-t border-border">
           <span className="text-sm font-semibold text-foreground">Total</span>
-          <span className="text-lg font-bold text-emerald-400">
+          <span className="text-lg font-bold text-emerald-600 dark:text-emerald-400">
             {formatPHP(calculateAllowance({
               distance_km: submission.distance_km,
               declared_mode: submission.declared_mode as TransportMode,
@@ -778,8 +778,7 @@ export function EmployeeView({
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="sm:flex-1">
-          <h1 className="text-2xl font-bold text-foreground">Transportation Allowance</h1>
-          <p className="text-muted-foreground text-sm mt-1">
+          <p className="text-muted-foreground text-sm">
             {formatMonth(selectedMonth)}
           </p>
         </div>
@@ -798,8 +797,8 @@ export function EmployeeView({
       {/* Warning banner */}
       {showWarning && (
         <div className="flex items-start gap-3 rounded-lg bg-amber-500/10 border border-amber-500/20 px-4 py-3">
-          <AlertCircle className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
-          <p className="text-sm text-amber-300">
+          <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+          <p className="text-sm text-amber-700 dark:text-amber-300">
             <span className="font-medium">Reminder:</span> Your transportation allowance for {formatMonth(selectedMonth)} has not been submitted.
             {daysUntilEnd === 0 ? " Today is the last day of the month." : ` Only ${daysUntilEnd} day${daysUntilEnd === 1 ? "" : "s"} left.`}
           </p>
@@ -824,12 +823,12 @@ export function EmployeeView({
                 </Badge>
               )}
               {submissionState === "pending" && (
-                <Badge className="gap-1 text-xs bg-blue-500/20 text-blue-400 border-blue-500/30" variant="outline">
+                <Badge className="gap-1 text-xs bg-blue-500/20 text-blue-600 dark:text-blue-400 border-blue-500/30" variant="outline">
                   <Send className="h-3 w-3" /> Submitted
                 </Badge>
               )}
               {submissionState === "rejected" && currentSubmission && (
-                <Badge className="gap-1 text-xs bg-red-500/20 text-red-400 border-red-500/30" variant="outline">
+                <Badge className="gap-1 text-xs bg-red-500/20 text-red-600 dark:text-red-400 border-red-500/30" variant="outline">
                   <XCircle className="h-3 w-3" /> Rejected
                 </Badge>
               )}
@@ -869,9 +868,9 @@ export function EmployeeView({
                 <div className="pt-2">
                   {pendingRequest ? (
                     <div className="flex items-start gap-3 rounded-lg bg-amber-500/10 border border-amber-500/20 p-3 text-sm">
-                      <AlertCircle className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
+                      <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
                       <div>
-                        <p className="text-amber-300 font-medium">Pending change request</p>
+                        <p className="text-amber-700 dark:text-amber-300 font-medium">Pending change request</p>
                         <p className="text-muted-foreground text-xs mt-0.5">
                           {pendingRequest.requested_mode && pendingRequest.requested_mode !== snapshot?.declared_mode
                             ? `${MODE_LABELS[pendingRequest.requested_mode as TransportMode]} · `
@@ -905,9 +904,9 @@ export function EmployeeView({
           {submissionState === "rejected" && currentSubmission && (
             <>
               <div className="flex items-start gap-3 rounded-lg bg-red-500/10 border border-red-500/20 p-3 text-sm">
-                <XCircle className="h-4 w-4 text-red-400 shrink-0 mt-0.5" />
+                <XCircle className="h-4 w-4 text-red-600 dark:text-red-400 shrink-0 mt-0.5" />
                 <div>
-                  <p className="text-red-300 font-medium">Request rejected</p>
+                  <p className="text-red-700 dark:text-red-300 font-medium">Request rejected</p>
                   {currentSubmission.hr_note && (
                     <p className="text-muted-foreground text-xs mt-0.5">HR note: {currentSubmission.hr_note}</p>
                   )}
@@ -959,7 +958,7 @@ export function EmployeeView({
                 <div className="flex items-center gap-2">
                   {MODE_ICONS[s.declared_mode as TransportMode]}
                   <span className="text-foreground">{formatMonth(s.month)}</span>
-                  <CheckCircle2 className="h-3 w-3 text-green-400" />
+                  <CheckCircle2 className="h-3 w-3 text-green-600 dark:text-green-400" />
                 </div>
                 <span className="text-xs text-muted-foreground">{s.distance_km} km</span>
               </div>
@@ -996,9 +995,9 @@ export function EmployeeView({
                 <Badge
                   className={cn(
                     "text-xs shrink-0 ml-2",
-                    r.status === "approved" && "bg-green-500/20 text-green-400 border-green-500/30",
-                    r.status === "rejected" && "bg-red-500/20 text-red-400 border-red-500/30",
-                    r.status === "pending" && "bg-amber-500/20 text-amber-400 border-amber-500/30"
+                    r.status === "approved" && "bg-green-500/20 text-green-600 dark:text-green-400 border-green-500/30",
+                    r.status === "rejected" && "bg-red-500/20 text-red-600 dark:text-red-400 border-red-500/30",
+                    r.status === "pending" && "bg-amber-500/20 text-amber-600 dark:text-amber-400 border-amber-500/30"
                   )}
                   variant="outline"
                 >

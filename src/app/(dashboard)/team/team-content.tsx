@@ -37,6 +37,7 @@ import { registerUser, deleteUser } from "./actions";
 import type { User, Department } from "@/lib/types";
 import { UserAvatar } from "@/components/ui/user-avatar";
 import { UserCard } from "@/components/shared/user-card";
+import { useRegisterPageContext } from "@/hooks/use-register-page-context";
 
 interface TeamContentProps {
   currentUser: User;
@@ -220,6 +221,22 @@ export function TeamContent({
       setIsDeleting(false);
     }
   }
+
+  useRegisterPageContext("Team", {
+    totalMembers: users.length,
+    departmentCounts: Object.fromEntries(deptCounts),
+    activeFilters: {
+      search,
+      department: deptFilter,
+      project: projectFilter,
+      role: roleFilter,
+    },
+    members: filtered.slice(0, 30).map((u) => ({
+      name: u.name,
+      role: u.role,
+      department: u.department?.name || "No Department",
+    })),
+  });
 
   return (
     <div className="space-y-6">

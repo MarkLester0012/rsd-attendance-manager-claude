@@ -31,29 +31,26 @@ export default async function SlackIntegrationPage() {
   const prerequisitesMet = hasRedmine && hasDefaultActivity;
 
   return (
-    <div className="p-6 max-w-2xl">
+    <div className="space-y-6 max-w-2xl">
       <Suspense>
         <SlackToast />
       </Suspense>
 
-      <div className="mb-6">
-        <h1 className="text-2xl font-semibold tracking-tight">Slack Integration</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Connect your Slack account to create Time Logger drafts directly from
-          EOD messages using the &ldquo;Log to Time-Logger&rdquo; message shortcut.
-        </p>
-      </div>
+      <p className="text-sm text-muted-foreground">
+        Connect your Slack account to create Time Logger drafts directly from
+        EOD messages using the &ldquo;Log to Time-Logger&rdquo; message shortcut.
+      </p>
 
       {/* Prerequisites checklist */}
-      <div className="mb-6 rounded-xl border border-white/10 bg-white/5 p-5 space-y-3">
+      <div className="rounded-xl border border-border/60 bg-muted/30 p-5 space-y-3">
         <h2 className="text-sm font-semibold">Before you connect</h2>
         <ul className="space-y-2 text-sm">
           <li className="flex items-start gap-2.5">
             <span
               className={`mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${
                 hasRedmine
-                  ? "bg-green-500/20 text-green-400"
-                  : "bg-amber-500/20 text-amber-400"
+                  ? "bg-green-500/20 text-green-600 dark:text-green-400"
+                  : "bg-amber-500/20 text-amber-600 dark:text-amber-400"
               }`}
             >
               {hasRedmine ? "✓" : "!"}
@@ -73,8 +70,8 @@ export default async function SlackIntegrationPage() {
             <span
               className={`mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${
                 hasDefaultActivity
-                  ? "bg-green-500/20 text-green-400"
-                  : "bg-amber-500/20 text-amber-400"
+                  ? "bg-green-500/20 text-green-600 dark:text-green-400"
+                  : "bg-amber-500/20 text-amber-600 dark:text-amber-400"
               }`}
             >
               {hasDefaultActivity ? "✓" : "!"}
@@ -88,7 +85,7 @@ export default async function SlackIntegrationPage() {
         </ul>
       </div>
 
-      <div className="rounded-xl border border-white/10 bg-white/5 p-6 space-y-4">
+      <div className="rounded-xl border border-border/60 bg-muted/30 p-6 space-y-4">
         <div className="flex items-center gap-3">
           <div
             className={`h-2.5 w-2.5 rounded-full ${
@@ -123,7 +120,7 @@ export default async function SlackIntegrationPage() {
               You only need to do this once.
             </p>
             {!prerequisitesMet && (
-              <p className="text-xs text-amber-400">
+              <p className="text-xs text-amber-600 dark:text-amber-400">
                 Finish the prerequisites above first — otherwise the integration
                 won&apos;t be able to create drafts.
               </p>
@@ -143,7 +140,7 @@ export default async function SlackIntegrationPage() {
         )}
       </div>
 
-      <div className="mt-6 rounded-xl border border-white/10 bg-white/5 p-5 space-y-3">
+      <div className="rounded-xl border border-border/60 bg-muted/30 p-5 space-y-3">
         <h2 className="text-sm font-semibold">How to use</h2>
         <ol className="text-sm text-muted-foreground list-decimal list-inside space-y-1.5">
           <li>Post your EOD update in Slack as usual.</li>

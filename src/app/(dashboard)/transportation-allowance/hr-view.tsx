@@ -22,7 +22,7 @@ import {
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
-import { Textarea } from "@/components/ui/textarea";
+import { EmojiTextarea } from "@/components/ui/emoji-textarea";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { NumericInput } from "@/components/ui/numeric-input";
@@ -100,7 +100,7 @@ function RejectModal({ open, onClose, onReject }: { open: boolean; onClose: () =
         <DialogHeader><DialogTitle>Reject Request</DialogTitle></DialogHeader>
         <div className="py-2 space-y-3">
           <Label>Note (optional)</Label>
-          <Textarea value={note} onChange={(e) => setNote(e.target.value)}
+          <EmojiTextarea value={note} onChange={(e) => setNote(e.target.value)}
             className="bg-background border-border resize-none" rows={3} placeholder="Reason for rejection…" />
         </div>
         <DialogFooter>
@@ -224,12 +224,12 @@ function EmployeeEditModal({
               <span className="text-foreground">{employee.name}</span>
               <span className="ml-2 text-muted-foreground/70 font-normal text-sm">— {formatMonth(month)}</span>
             </div>
-            {isLocked && <Lock className="h-4 w-4 text-amber-400 ml-auto mr-6" />}
+            {isLocked && <Lock className="h-4 w-4 text-amber-600 dark:text-amber-400 ml-auto mr-6" />}
           </DialogTitle>
         </DialogHeader>
 
         {isLocked && (
-          <div className="flex items-center gap-2 text-xs text-amber-400 bg-amber-400/10 rounded px-3 py-2">
+          <div className="flex items-center gap-2 text-xs text-amber-600 dark:text-amber-400 bg-amber-500/10 rounded px-3 py-2">
             <Lock className="h-3 w-3 shrink-0" />
             This snapshot is locked. Unlock to make changes.
           </div>
@@ -249,7 +249,7 @@ function EmployeeEditModal({
                       <SelectItem key={m} value={m} disabled={walkDisqualified}>
                         <span className="flex items-center gap-2">
                           {MODE_ICONS[m]} {MODE_LABELS[m]}
-                          {walkDisqualified && <span className="text-xs text-amber-400">(unavailable)</span>}
+                          {walkDisqualified && <span className="text-xs text-amber-600 dark:text-amber-400">(unavailable)</span>}
                         </span>
                       </SelectItem>
                     );
@@ -257,7 +257,7 @@ function EmployeeEditModal({
                 </SelectContent>
               </Select>
               {!result.walk_allowed && form.declared_mode === "walk" && result.walk_disqualification_reason && (
-                <p className="text-xs text-amber-400 flex items-center gap-1">
+                <p className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1">
                   <AlertCircle className="h-3 w-3" />{result.walk_disqualification_reason}
                 </p>
               )}
@@ -359,7 +359,7 @@ function EmployeeEditModal({
               ))}
               <div className="flex items-center justify-between pt-3 mt-1 border-t border-border">
                 <span className="text-sm font-semibold text-foreground">Total</span>
-                <span className="text-xl font-bold text-emerald-400">{formatPHP(result.total)}</span>
+                <span className="text-xl font-bold text-emerald-600 dark:text-emerald-400">{formatPHP(result.total)}</span>
               </div>
             </div>
             {employeeStats && <StatsPanel stats={employeeStats} title="Employee Stats" compact />}
@@ -368,13 +368,13 @@ function EmployeeEditModal({
 
         <DialogFooter className="gap-2 pt-2">
           {snapshot && (
-            <Button variant="ghost" size="sm" className="gap-2 text-red-400 hover:text-red-300 hover:bg-red-500/10" onClick={handleDelete} disabled={deleting}>
+            <Button variant="ghost" size="sm" className="gap-2 text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 hover:bg-red-500/10" onClick={handleDelete} disabled={deleting}>
               {deleting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />} Delete
             </Button>
           )}
           {snapshot && (
             <Button variant="outline" size="sm"
-              className={cn("gap-2 border-border", isLocked ? "text-amber-400 hover:text-amber-300 hover:bg-amber-500/10" : "text-muted-foreground hover:text-foreground hover:bg-muted/60")}
+              className={cn("gap-2 border-border", isLocked ? "text-amber-600 hover:text-amber-700 dark:text-amber-400 dark:hover:text-amber-300 hover:bg-amber-500/10" : "text-muted-foreground hover:text-foreground hover:bg-muted/60")}
               onClick={handleLockToggle} disabled={locking}>
               {locking ? <Loader2 className="h-3 w-3 animate-spin" /> : isLocked ? <LockOpen className="h-3 w-3" /> : <Lock className="h-3 w-3" />}
               {isLocked ? "Unlock" : "Lock"}
@@ -427,9 +427,9 @@ function EmployeeCard({
       headerActions={
         <>
           {hasPendingSubmission && (
-            <Send className="h-3.5 w-3.5 text-blue-400" aria-label="Pending submission" />
+            <Send className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" aria-label="Pending submission" />
           )}
-          {snapshot?.locked && <Lock className="h-3.5 w-3.5 text-amber-400/60" />}
+          {snapshot?.locked && <Lock className="h-3.5 w-3.5 text-amber-600/70 dark:text-amber-400/60" />}
         </>
       }
     >
@@ -439,12 +439,12 @@ function EmployeeCard({
             {MODE_ICONS[snapshot.declared_mode as TransportMode]}
             {MODE_LABELS[snapshot.declared_mode as TransportMode]}
           </Badge>
-          <span className="text-sm font-semibold text-emerald-400 tabular-nums">
+          <span className="text-sm font-semibold text-emerald-600 dark:text-emerald-400 tabular-nums">
             {formatPHP(result!.total)}
           </span>
         </div>
       ) : hasPendingSubmission ? (
-        <p className="text-xs text-blue-400/70 italic">Employee submitted — awaiting approval</p>
+        <p className="text-xs text-blue-600/70 dark:text-blue-400/70 italic">Employee submitted — awaiting approval</p>
       ) : (
         <p className="text-xs text-muted-foreground/40 italic">No snapshot — click to set</p>
       )}
@@ -611,7 +611,7 @@ function ChangeRequestDetailModal({
                   </div>
                   <div className="flex justify-between">
                     <span className="text-foreground">Requested total</span>
-                    <span className={cn("font-mono font-bold", requestedTotal > currentTotal ? "text-emerald-400" : requestedTotal < currentTotal ? "text-red-400" : "text-foreground")}>
+                    <span className={cn("font-mono font-bold", requestedTotal > currentTotal ? "text-emerald-600 dark:text-emerald-400" : requestedTotal < currentTotal ? "text-red-600 dark:text-red-400" : "text-foreground")}>
                       {formatPHP(requestedTotal)}
                     </span>
                   </div>
@@ -635,7 +635,7 @@ function ChangeRequestDetailModal({
 
           <DialogFooter>
             <Button variant="ghost" onClick={onClose}>Close</Button>
-            <Button variant="ghost" className="text-red-400 hover:text-red-300 hover:bg-red-500/10"
+            <Button variant="ghost" className="text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 hover:bg-red-500/10"
               onClick={() => setRejectOpen(true)}>
               <X className="h-4 w-4 mr-1" /> Reject
             </Button>
@@ -820,7 +820,7 @@ function SubmissionDetailModal({
                 ))}
                 <div className="flex items-center justify-between pt-2 border-t border-border">
                   <span className="text-sm font-semibold text-foreground">Total</span>
-                  <span className="text-lg font-bold text-emerald-400">{formatPHP(estimated.total)}</span>
+                  <span className="text-lg font-bold text-emerald-600 dark:text-emerald-400">{formatPHP(estimated.total)}</span>
                 </div>
               </div>
 
@@ -836,7 +836,7 @@ function SubmissionDetailModal({
 
           <DialogFooter>
             <Button variant="ghost" onClick={onClose}>Close</Button>
-            <Button variant="ghost" className="text-red-400 hover:text-red-300 hover:bg-red-500/10"
+            <Button variant="ghost" className="text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 hover:bg-red-500/10"
               onClick={() => setRejectOpen(true)}>
               <X className="h-4 w-4 mr-1" /> Reject
             </Button>
@@ -895,7 +895,7 @@ function SubmissionRow({
           </div>
           <div className="flex items-center gap-2 shrink-0">
             <div className="text-right">
-              <p className="text-sm font-bold text-emerald-400">{formatPHP(estimated.total)}</p>
+              <p className="text-sm font-bold text-emerald-600 dark:text-emerald-400">{formatPHP(estimated.total)}</p>
               <p className="text-[10px] text-muted-foreground/50">estimated</p>
             </div>
             <ChevronRight className="h-4 w-4 text-muted-foreground/40" />
@@ -1170,7 +1170,7 @@ export function HRView({
             </SelectContent>
           </Select>
           <Button variant="outline" size="sm"
-            className={cn("gap-2 border-border", allLocked ? "text-amber-400 hover:text-amber-300 hover:bg-amber-500/10" : "text-muted-foreground hover:text-foreground hover:bg-muted/60")}
+            className={cn("gap-2 border-border", allLocked ? "text-amber-600 hover:text-amber-700 dark:text-amber-400 dark:hover:text-amber-300 hover:bg-amber-500/10" : "text-muted-foreground hover:text-foreground hover:bg-muted/60")}
             onClick={() => handleLockAll(!allLocked)} disabled={lockingAll || snapshots.length === 0}>
             {lockingAll ? <Loader2 className="h-4 w-4 animate-spin" /> : allLocked ? <LockOpen className="h-4 w-4" /> : <Lock className="h-4 w-4" />}
             {allLocked ? "Unlock Month" : "Lock Month"}
@@ -1195,7 +1195,7 @@ export function HRView({
         <Card>
           <CardContent className="pt-4 pb-4">
             <p className="text-xs text-muted-foreground">Total budget for {formatMonth(month)}</p>
-            <p className="text-2xl font-bold text-emerald-400 mt-1">{formatPHP(totalBudget)}</p>
+            <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 mt-1">{formatPHP(totalBudget)}</p>
           </CardContent>
         </Card>
         <Card
@@ -1208,7 +1208,7 @@ export function HRView({
           <CardContent className="pt-4 pb-4">
             <p className="text-xs text-muted-foreground">Pending requests</p>
             <div className="flex items-end gap-3 mt-1">
-              <p className={cn("text-2xl font-bold", (submissionRequests.length + changeRequests.length) > 0 ? "text-blue-400" : "text-foreground")}>
+              <p className={cn("text-2xl font-bold", (submissionRequests.length + changeRequests.length) > 0 ? "text-blue-600 dark:text-blue-400" : "text-foreground")}>
                 {submissionRequests.length + changeRequests.length}
               </p>
               {(submissionRequests.length > 0 || changeRequests.length > 0) && (
@@ -1233,7 +1233,7 @@ export function HRView({
             <ClipboardList className="h-3.5 w-3.5" />
             Requests
             {(submissionRequests.length + changeRequests.length) > 0 && (
-              <span className="ml-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-blue-500/20 px-1 text-[10px] font-semibold text-blue-400">
+              <span className="ml-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-blue-500/20 px-1 text-[10px] font-semibold text-blue-600 dark:text-blue-400">
                 {submissionRequests.length + changeRequests.length}
               </span>
             )}
@@ -1315,7 +1315,7 @@ export function HRView({
             <>
               {submissionRequests.length > 0 && (
                 <div className="space-y-2">
-                  <p className="text-xs font-semibold uppercase tracking-wider text-blue-400/80 flex items-center gap-1.5">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-blue-600/70 dark:text-blue-400/80 flex items-center gap-1.5">
                     <Send className="h-3 w-3" /> Submissions ({submissionRequests.length})
                   </p>
                   <div className="space-y-2">
@@ -1332,7 +1332,7 @@ export function HRView({
               )}
               {changeRequests.length > 0 && (
                 <div className="space-y-2">
-                  <p className="text-xs font-semibold uppercase tracking-wider text-amber-400/80 flex items-center gap-1.5">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-amber-600/70 dark:text-amber-400/80 flex items-center gap-1.5">
                     <ClipboardList className="h-3 w-3" /> Change Requests ({changeRequests.length})
                   </p>
                   <div className="space-y-2">

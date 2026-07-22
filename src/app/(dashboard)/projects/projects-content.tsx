@@ -16,7 +16,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
+import { EmojiTextarea } from "@/components/ui/emoji-textarea";
 import { Label } from "@/components/ui/label";
 import {
   Dialog,
@@ -29,6 +29,7 @@ import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { createNotification } from "@/lib/notifications";
 import { getInitials } from "@/lib/utils";
+import { useRegisterPageContext } from "@/hooks/use-register-page-context";
 import type { User } from "@/lib/types";
 
 const COLOR_PALETTE = [
@@ -242,6 +243,17 @@ export function ProjectsContent({
     setFormLeaders([currentUser.id]);
     setIsCreateOpen(true);
   }
+
+  useRegisterPageContext("Projects", {
+    totalProjects: projects.length,
+    showingMyProjectsOnly: showMyProjects,
+    projects: filteredProjects.slice(0, 30).map((p: any) => ({
+      name: p.name,
+      code: p.redmine_code,
+      leaders: p.project_members?.filter((pm: any) => pm.user?.role === "leader").length || 0,
+      members: p.project_members?.filter((pm: any) => pm.user?.role === "member").length || 0,
+    })),
+  });
 
   return (
     <div className="space-y-6 max-w-3xl">
@@ -460,7 +472,7 @@ export function ProjectsContent({
             </div>
             <div className="space-y-2">
               <Label>Description</Label>
-              <Textarea
+              <EmojiTextarea
                 value={formDesc}
                 onChange={(e) => setFormDesc(e.target.value)}
                 placeholder="Optional description"
@@ -558,7 +570,7 @@ export function ProjectsContent({
             </div>
             <div className="space-y-2">
               <Label>Description</Label>
-              <Textarea
+              <EmojiTextarea
                 value={formDesc}
                 onChange={(e) => setFormDesc(e.target.value)}
                 placeholder="Optional description"

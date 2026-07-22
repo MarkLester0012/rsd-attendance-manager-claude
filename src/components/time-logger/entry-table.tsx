@@ -143,7 +143,7 @@ export function EntryTable({
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger>
-                <CheckCircle2 className="h-4 w-4 text-green-400" />
+                <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
               </TooltipTrigger>
               <TooltipContent>
                 Submitted (Redmine #{entry.redmine_time_entry_id})
@@ -163,7 +163,7 @@ export function EntryTable({
           </TooltipProvider>
         );
       case "submitting":
-        return <Loader2 className="h-4 w-4 animate-spin text-blue-400" />;
+        return <Loader2 className="h-4 w-4 animate-spin text-blue-600 dark:text-blue-400" />;
       default:
         return null;
     }
@@ -223,7 +223,7 @@ export function EntryTable({
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <CheckCircle2 className="h-4 w-4 text-green-400" />
+                  <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
                 </TooltipTrigger>
                 <TooltipContent>Synced to Redmine</TooltipContent>
               </Tooltip>
@@ -321,7 +321,7 @@ export function EntryTable({
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-7 w-7 text-yellow-400 hover:text-yellow-300"
+                      className="h-7 w-7 text-yellow-600 hover:text-yellow-700 dark:text-yellow-400 dark:hover:text-yellow-300"
                       onClick={() => updateEntry(index, { status: "draft", error_message: null })}
                     >
                       <RotateCcw className="h-3.5 w-3.5" />

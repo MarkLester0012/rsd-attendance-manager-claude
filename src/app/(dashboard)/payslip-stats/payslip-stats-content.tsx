@@ -286,7 +286,6 @@ export function PayslipStatsContent({
     <div className="space-y-6">
       {/* Page header */}
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Payslip Stats</h1>
         <p className="text-muted-foreground text-sm mt-1">
           Per-employee leave and attendance summary for payslip calculation.
         </p>
@@ -513,7 +512,7 @@ export function PayslipStatsContent({
                   <p className="text-xs font-semibold uppercase tracking-wider mb-2 text-amber-500">
                     Holidays ({periodHolidays.length})
                   </p>
-                  <div className="rounded-md border border-border overflow-hidden">
+                  <div className="rounded-md border border-border overflow-x-auto">
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="bg-muted/30 border-b border-border">
@@ -554,7 +553,7 @@ export function PayslipStatsContent({
                           {lt.label} ({entries.reduce((s, e) => s + (e.duration_value ?? 1), 0)}{" "}
                           day{entries.reduce((s, e) => s + (e.duration_value ?? 1), 0) !== 1 ? "s" : ""})
                         </p>
-                        <div className="rounded-md border border-border overflow-hidden">
+                        <div className="rounded-md border border-border overflow-x-auto">
                           <table className="w-full text-sm">
                             <thead>
                               <tr className="bg-muted/30 border-b border-border">

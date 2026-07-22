@@ -45,20 +45,20 @@ const ICON_MAP: Record<
   NotificationType,
   { icon: React.ComponentType<{ className?: string }>; color: string }
 > = {
-  leave_submitted: { icon: FileText, color: "text-amber-400" },
-  leave_approved: { icon: CheckCircle2, color: "text-green-400" },
-  leave_rejected: { icon: XCircle, color: "text-red-400" },
-  leave_cancelled: { icon: CalendarX, color: "text-orange-400" },
-  project_added: { icon: FolderKanban, color: "text-violet-400" },
+  leave_submitted: { icon: FileText, color: "text-amber-600 dark:text-amber-400" },
+  leave_approved: { icon: CheckCircle2, color: "text-green-600 dark:text-green-400" },
+  leave_rejected: { icon: XCircle, color: "text-red-600 dark:text-red-400" },
+  leave_cancelled: { icon: CalendarX, color: "text-orange-600 dark:text-orange-400" },
+  project_added: { icon: FolderKanban, color: "text-violet-600 dark:text-violet-400" },
   project_removed: { icon: FolderMinus, color: "text-muted-foreground" },
-  suggestion_comment: { icon: MessageCircle, color: "text-blue-400" },
-  suggestion_reply: { icon: CornerDownRight, color: "text-blue-400" },
-  suggestion_upvote: { icon: ThumbsUp, color: "text-blue-400" },
-  announcement_new: { icon: Megaphone, color: "text-yellow-400" },
-  allowance_change_request: { icon: Bus, color: "text-cyan-400" },
-  allowance_request_reviewed: { icon: Bus, color: "text-cyan-400" },
-  allowance_submitted: { icon: Bus, color: "text-cyan-400" },
-  allowance_submission_reviewed: { icon: Bus, color: "text-cyan-400" },
+  suggestion_comment: { icon: MessageCircle, color: "text-blue-600 dark:text-blue-400" },
+  suggestion_reply: { icon: CornerDownRight, color: "text-blue-600 dark:text-blue-400" },
+  suggestion_upvote: { icon: ThumbsUp, color: "text-blue-600 dark:text-blue-400" },
+  announcement_new: { icon: Megaphone, color: "text-yellow-600 dark:text-yellow-400" },
+  allowance_change_request: { icon: Bus, color: "text-cyan-600 dark:text-cyan-400" },
+  allowance_request_reviewed: { icon: Bus, color: "text-cyan-600 dark:text-cyan-400" },
+  allowance_submitted: { icon: Bus, color: "text-cyan-600 dark:text-cyan-400" },
+  allowance_submission_reviewed: { icon: Bus, color: "text-cyan-600 dark:text-cyan-400" },
 };
 
 const NOTIFICATION_ROUTES: Record<NotificationType, string> = {
@@ -177,7 +177,7 @@ export function NotificationPanel({ userId, userRole }: NotificationPanelProps) 
                 key={h.id}
                 className="flex items-start gap-3 px-4 py-3 border-b border-border/30 bg-yellow-500/5"
               >
-                <PartyPopper className="h-4 w-4 mt-0.5 shrink-0 text-yellow-400" />
+                <PartyPopper className="h-4 w-4 mt-0.5 shrink-0 text-yellow-600 dark:text-yellow-400" />
                 <div className="flex-1 min-w-0">
                   <p className="text-xs font-medium text-foreground">{h.name}</p>
                   <p className="text-[11px] text-muted-foreground">

@@ -19,6 +19,7 @@ import { LEAVE_TYPES } from "@/lib/constants/leave-types";
 import { cn } from "@/lib/utils";
 import { emojify } from "@/lib/emoji";
 import { UserAvatar } from "@/components/ui/user-avatar";
+import { useRegisterPageContext } from "@/hooks/use-register-page-context";
 import type { User } from "@/lib/types";
 
 interface ApprovalsContentProps {
@@ -165,7 +166,7 @@ export function ApprovalsContent({
                 <Button
                   size="icon"
                   variant="outline"
-                  className="h-8 w-8 border-emerald-500/30 text-emerald-500 hover:bg-emerald-500/10 hover:text-emerald-400"
+                  className="h-8 w-8 border-emerald-500/30 text-emerald-500 hover:bg-emerald-500/10 hover:text-emerald-600 dark:hover:text-emerald-400"
                   onClick={() => handleAction(leave.id, "approved")}
                   disabled={isLoading}
                 >
@@ -178,7 +179,7 @@ export function ApprovalsContent({
                 <Button
                   size="icon"
                   variant="outline"
-                  className="h-8 w-8 border-red-500/30 text-red-500 hover:bg-red-500/10 hover:text-red-400"
+                  className="h-8 w-8 border-red-500/30 text-red-500 hover:bg-red-500/10 hover:text-red-600 dark:hover:text-red-400"
                   onClick={() => handleAction(leave.id, "rejected")}
                   disabled={isLoading}
                 >
@@ -191,6 +192,28 @@ export function ApprovalsContent({
       </Card>
     );
   }
+
+  useRegisterPageContext("Approvals", {
+    counts: {
+      pending: pending.length,
+      approved: approved.length,
+      rejected: rejected.length,
+    },
+    pendingRequests: pending.slice(0, 30).map((l: any) => ({
+      requester: l.user?.name,
+      type: l.leave_type,
+      date: l.leave_date,
+      duration: l.duration_value === 1 ? "Full day" : "Half day",
+      status: l.status,
+    })),
+    processedRequests: [...approved, ...rejected].slice(0, 30).map((l: any) => ({
+      requester: l.user?.name,
+      type: l.leave_type,
+      date: l.leave_date,
+      duration: l.duration_value === 1 ? "Full day" : "Half day",
+      status: l.status,
+    })),
+  });
 
   return (
     <div className="space-y-6">

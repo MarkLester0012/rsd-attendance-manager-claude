@@ -307,7 +307,7 @@ function SidebarContent({ user, livePendingCount: pendingCount }: SidebarInterna
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-7 w-7 shrink-0 text-sidebar-foreground/50 hover:text-red-400"
+                  className="h-7 w-7 shrink-0 text-sidebar-foreground/50 hover:text-red-600 dark:hover:text-red-400"
                   onClick={handleSignOut}
                 >
                   <LogOut className="h-4 w-4" />

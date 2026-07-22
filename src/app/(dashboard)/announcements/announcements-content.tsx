@@ -19,6 +19,7 @@ import {
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { createNotifications } from "@/lib/notifications";
+import { useRegisterPageContext } from "@/hooks/use-register-page-context";
 import type { User } from "@/lib/types";
 
 interface AnnouncementsContentProps {
@@ -127,6 +128,15 @@ export function AnnouncementsContent({
       .order("created_at", { ascending: false });
     if (data) setAnnouncements(data);
   }
+
+  useRegisterPageContext("Announcements", {
+    totalAnnouncements: announcements.length,
+    recentAnnouncements: announcements.slice(0, 30).map((a: any) => ({
+      title: a.title,
+      createdAt: a.created_at,
+      snippet: (a.content || "").slice(0, 100),
+    })),
+  });
 
   return (
     <div className="space-y-6 max-w-3xl">

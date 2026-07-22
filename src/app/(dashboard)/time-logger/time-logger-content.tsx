@@ -794,9 +794,9 @@ useRegisterPageContext("Time Logger", {
               {/* Holiday banner */}
               {holiday && (
                 <div className="flex items-center gap-3 rounded-lg border border-yellow-500/30 bg-yellow-500/5 px-4 py-3">
-                  <PartyPopper className="h-5 w-5 text-yellow-400 shrink-0" />
+                  <PartyPopper className="h-5 w-5 text-yellow-600 dark:text-yellow-400 shrink-0" />
                   <div className="text-sm">
-                    <span className="font-medium text-yellow-300">{holiday.name}</span>
+                    <span className="font-medium text-yellow-700 dark:text-yellow-300">{holiday.name}</span>
                     {holiday.original_date && holiday.original_date !== holiday.observed_date && (
                       <span className="text-muted-foreground ml-2">
                         (moved from {format(new Date(holiday.original_date + "T00:00:00"), "MMM d, yyyy")})
@@ -812,12 +812,12 @@ useRegisterPageContext("Time Logger", {
               {/* Leave banner */}
               {leaves.map((leave) => (
                 <div key={leave.id} className="flex items-center gap-3 rounded-lg border border-blue-500/30 bg-blue-500/5 px-4 py-3">
-                  <CalendarOff className="h-5 w-5 text-blue-400 shrink-0" />
+                  <CalendarOff className="h-5 w-5 text-blue-600 dark:text-blue-400 shrink-0" />
                   <div className="text-sm">
-                    <span className="font-medium text-blue-300">
+                    <span className="font-medium text-blue-700 dark:text-blue-300">
                       {LEAVE_TYPES[leave.leave_type].label}
                       {leave.duration !== "whole" && (
-                        <span className="ml-1 font-normal text-blue-400/70">
+                        <span className="ml-1 font-normal text-blue-600/70 dark:text-blue-400/70">
                           ({leave.duration === "half_am" ? "AM half-day" : "PM half-day"})
                         </span>
                       )}

@@ -33,14 +33,14 @@
     --sidebar-accent: 357 60% 95%;
     --sidebar-accent-foreground: 357 75% 35%;
 
-    /* Leave type colors */
-    --leave-wfh: 213 94% 56%;
+    /* Leave type colors — darkened enough to stay readable as small text on white cards */
+    --leave-wfh: 213 94% 46%;
     --leave-vl: 142 71% 45%;
-    --leave-sl: 27 96% 61%;
+    --leave-sl: 27 90% 48%;
     --leave-pl: 271 76% 53%;
-    --leave-ml: 330 81% 60%;
+    --leave-ml: 330 81% 50%;
     --leave-nw: 240 5% 50%;
-    --leave-ab: 0 84% 60%;
+    --leave-ab: 0 74% 50%;
     --leave-rga: 174 72% 40%;
     --leave-spl: 45 93% 47%;
 

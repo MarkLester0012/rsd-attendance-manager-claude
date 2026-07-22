@@ -27,9 +27,9 @@ export function HoursSummary({
             className={cn(
               "text-lg font-bold tabular-nums",
               totalHours >= targetHours
-                ? "text-green-400"
+                ? "text-green-600 dark:text-green-400"
                 : totalHours > 0
-                ? "text-yellow-400"
+                ? "text-yellow-600 dark:text-yellow-400"
                 : "text-muted-foreground"
             )}
           >
@@ -58,7 +58,7 @@ export function HoursSummary({
         <div className="flex items-center gap-3 sm:gap-4 text-xs text-muted-foreground">
           <span>{entryCount} entries</span>
           {submittedCount > 0 && (
-            <span className="text-green-400">{submittedCount} submitted</span>
+            <span className="text-green-600 dark:text-green-400">{submittedCount} submitted</span>
           )}
           {failedCount > 0 && (
             <span className="text-destructive">{failedCount} failed</span>

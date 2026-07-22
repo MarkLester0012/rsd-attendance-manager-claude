@@ -11,10 +11,9 @@ interface ThemeState {
 }
 
 export const useThemeStore = create<ThemeState>((set) => ({
-  theme:
-    typeof window !== "undefined"
-      ? (localStorage.getItem("theme") as Theme) || "dark"
-      : "dark",
+  // Always start as "dark" so client hydration matches the server-rendered
+  // markup; ThemeProvider syncs the persisted theme after mount.
+  theme: "dark",
   setTheme: (theme) => {
     if (typeof window !== "undefined") {
       localStorage.setItem("theme", theme);

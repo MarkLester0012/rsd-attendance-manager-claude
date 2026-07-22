@@ -200,7 +200,7 @@ export function SettingsDialog({
                 </SelectContent>
               </Select>
             ) : (
-              <div className="rounded-md border border-dashed border-white/10 px-3 py-2 text-xs text-muted-foreground">
+              <div className="rounded-md border border-dashed border-border/60 px-3 py-2 text-xs text-muted-foreground">
                 Save your Redmine URL + API key, then click <strong>Test Connection</strong> to load activities.
               </div>
             )}
@@ -213,7 +213,7 @@ export function SettingsDialog({
             <div
               className={`rounded-lg border p-3 text-sm ${
                 testResult.success
-                  ? "border-green-500/30 bg-green-500/10 text-green-400"
+                  ? "border-green-500/30 bg-green-500/10 text-green-600 dark:text-green-400"
                   : "border-destructive/30 bg-destructive/10 text-destructive"
               }`}
             >
@@ -236,7 +236,7 @@ export function SettingsDialog({
           </div>
         </form>
 
-        <div className="border-t border-white/10 pt-4">
+        <div className="border-t border-border/60 pt-4">
           <a
             href="/settings/integrations/slack"
             className="text-sm text-muted-foreground hover:text-foreground transition-colors"

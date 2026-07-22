@@ -27,6 +27,7 @@ import {
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
+import { useRegisterPageContext } from "@/hooks/use-register-page-context";
 import type { Holiday } from "@/lib/types";
 
 interface HolidaysContentProps {
@@ -133,6 +134,18 @@ export function HolidaysContent({ initialHolidays }: HolidaysContentProps) {
     if (data) setHolidays(data);
   }
 
+  useRegisterPageContext("Holidays", {
+    totalHolidays: holidays.length,
+    upcomingCount: upcoming.length,
+    localCount,
+    searchQuery: search,
+    holidays: filtered.slice(0, 30).map((h) => ({
+      name: h.name,
+      observedDate: h.observed_date,
+      isLocal: h.is_local,
+    })),
+  });
+
   return (
     <div className="space-y-6">
       {/* Stats */}
@@ -191,54 +204,62 @@ export function HolidaysContent({ initialHolidays }: HolidaysContentProps) {
 
       {/* Holiday List */}
       <div className="space-y-2">
-        {filtered.map((h) => {
-          const past = h.observed_date < today;
-          return (
-            <Card key={h.id} className={cn(past && "opacity-50")}>
-              <CardContent className="flex items-center gap-4 p-4">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium">{h.name}</span>
-                    {h.is_local && (
-                      <Badge variant="secondary" className="text-[10px]">
-                        Local
-                      </Badge>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
-                    <span>
-                      {format(parseISO(h.observed_date), "MMM d, yyyy")}
-                    </span>
-                    {h.original_date && (
+        {filtered.length === 0 ? (
+          <p className="text-sm text-muted-foreground text-center py-12">
+            {holidays.length === 0
+              ? "No holidays yet"
+              : "No holidays match your search"}
+          </p>
+        ) : (
+          filtered.map((h) => {
+            const past = h.observed_date < today;
+            return (
+              <Card key={h.id} className={cn(past && "opacity-50")}>
+                <CardContent className="flex items-center gap-4 p-4">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium">{h.name}</span>
+                      {h.is_local && (
+                        <Badge variant="secondary" className="text-[10px]">
+                          Local
+                        </Badge>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
                       <span>
-                        Originally:{" "}
-                        {format(parseISO(h.original_date), "MMM d, yyyy")}
+                        {format(parseISO(h.observed_date), "MMM d, yyyy")}
                       </span>
-                    )}
+                      {h.original_date && (
+                        <span>
+                          Originally:{" "}
+                          {format(parseISO(h.original_date), "MMM d, yyyy")}
+                        </span>
+                      )}
+                    </div>
                   </div>
-                </div>
-                <div className="flex gap-1">
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    className="h-8 w-8"
-                    onClick={() => openEdit(h)}
-                  >
-                    <Pencil className="h-3.5 w-3.5" />
-                  </Button>
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    className="h-8 w-8 text-destructive hover:text-destructive"
-                    onClick={() => handleDelete(h.id)}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          );
-        })}
+                  <div className="flex gap-1">
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-8 w-8"
+                      onClick={() => openEdit(h)}
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-8 w-8 text-destructive hover:text-destructive"
+                      onClick={() => handleDelete(h.id)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })
+        )}
       </div>
 
       {/* Add/Edit Dialog */}
