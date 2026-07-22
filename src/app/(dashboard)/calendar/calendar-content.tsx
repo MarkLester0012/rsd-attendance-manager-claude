@@ -36,6 +36,11 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { LEAVE_TYPES, NON_DEDUCTIBLE_TYPES, WFH_DAILY_GLOBAL_CAP } from "@/lib/constants/leave-types";
 import { cn } from "@/lib/utils";
 import type { User, LeaveEntry, Holiday } from "@/lib/types";
@@ -46,8 +51,10 @@ interface WfhEntry {
   user?: { name: string } | null;
 }
 import { LeaveModal } from "@/components/leaves/leave-modal";
+import { DayDetailSheet } from "./day-detail-sheet";
 import { createClient } from "@/lib/supabase/client";
 import { useRegisterPageContext } from "@/hooks/use-register-page-context";
+import { useIsMobile } from "@/hooks/use-is-mobile";
 
 interface CalendarContentProps {
   user: User;
@@ -71,6 +78,10 @@ export function CalendarContent({
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [allHolidays, setAllHolidays] = useState(holidays);
   const [wfhAll, setWfhAll] = useState<WfhEntry[]>(initialWfhAll);
+
+  // Mobile day-detail sheet
+  const isMobile = useIsMobile();
+  const [sheetDate, setSheetDate] = useState<Date | null>(null);
 
   // Multi-day selection mode
   const [isMultiDayMode, setIsMultiDayMode] = useState(false);
@@ -106,9 +117,9 @@ export function CalendarContent({
     if (!isSameMonth(date, currentMonth)) return;
 
     const holiday = getHolidayForDate(date);
-    if (isWeekend(date) || holiday) return;
 
     if (isMultiDayMode) {
+      if (isWeekend(date) || holiday) return;
       const dateStr = format(date, "yyyy-MM-dd");
       // Don't allow selecting days that already have a leave
       const dayLeaves = getLeavesForDate(date);
@@ -125,6 +136,14 @@ export function CalendarContent({
       });
       return;
     }
+
+    // Mobile: any current-month day opens the day-detail sheet
+    if (isMobile) {
+      setSheetDate(date);
+      return;
+    }
+
+    if (isWeekend(date) || holiday) return;
 
     const dayLeaves = getLeavesForDate(date);
     if (dayLeaves.length === 1) {
@@ -273,12 +292,12 @@ export function CalendarContent({
 
   return (
     <TooltipProvider>
-      <div className="flex flex-col lg:flex-row gap-6">
+      <div className="flex flex-col lg:flex-row gap-4 lg:gap-6">
         {/* Calendar Grid */}
         <div className="flex-1">
           <Card>
             <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <CardTitle className="text-lg font-semibold">
                   {format(currentMonth, "MMMM yyyy")}
                 </CardTitle>
@@ -323,7 +342,7 @@ export function CalendarContent({
                 </p>
               )}
             </CardHeader>
-            <CardContent>
+            <CardContent className="px-2 sm:px-6">
               {/* Day headers */}
               <div className="grid grid-cols-7 mb-1">
                 {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
@@ -353,7 +372,7 @@ export function CalendarContent({
                       key={i}
                       onClick={() => handleDayClick(day)}
                       className={cn(
-                        "min-h-[80px] p-1.5 bg-background transition-colors",
+                        "min-h-[56px] p-1 sm:min-h-[80px] sm:p-1.5 bg-background transition-colors",
                         isCurrentMonth
                           ? "cursor-pointer hover:bg-accent/30"
                           : "opacity-30 cursor-default",
@@ -366,9 +385,9 @@ export function CalendarContent({
                       <div className="flex items-start justify-between">
                         <span
                           className={cn(
-                            "text-xs font-medium",
+                            "text-[10px] sm:text-xs font-medium",
                             isToday &&
-                            "bg-primary text-primary-foreground rounded-full w-6 h-6 flex items-center justify-center",
+                            "bg-primary text-primary-foreground rounded-full w-5 h-5 sm:w-6 sm:h-6 flex items-center justify-center",
                             weekend && "text-muted-foreground/50"
                           )}
                         >
@@ -383,40 +402,78 @@ export function CalendarContent({
                         )}
                       </div>
 
-                      {/* Holiday marker */}
+                      {/* Holiday marker — compact emoji on mobile, click-for-details Popover on desktop */}
                       {holiday && isCurrentMonth && (
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <div className="mt-1">
-                              <div className="flex items-center gap-1">
-                                <span className="text-[10px]">🎉</span>
-                                <span className="text-[10px] text-red-400 truncate">
-                                  {holiday.name}
+                        <>
+                          <span className="sm:hidden mt-0.5 block text-[10px]">
+                            🎉
+                          </span>
+                          <Popover>
+                            <PopoverTrigger asChild>
+                              <button
+                                type="button"
+                                onClick={(e) => e.stopPropagation()}
+                                className="hidden sm:block mt-1 w-full text-left cursor-pointer hover:opacity-80"
+                              >
+                                <span className="flex items-center gap-1">
+                                  <span className="text-[10px]">🎉</span>
+                                  <span className="text-[10px] text-red-600 dark:text-red-400 truncate">
+                                    {holiday.name}
+                                  </span>
                                 </span>
+                                {holiday.original_date && holiday.original_date !== holiday.observed_date && (
+                                  <span className="block text-[9px] text-muted-foreground/70 mt-0.5 pl-[18px] truncate">
+                                    Originally: {format(parseISO(holiday.original_date), "MMM d, yyyy")}
+                                  </span>
+                                )}
+                              </button>
+                            </PopoverTrigger>
+                            <PopoverContent
+                              align="start"
+                              className="w-64 space-y-1.5"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <div className="flex items-center gap-2">
+                                <span>🎉</span>
+                                <p className="text-sm font-medium">{holiday.name}</p>
                               </div>
-                              {holiday.original_date && holiday.original_date !== holiday.observed_date && (
-                                <div className="text-[9px] text-muted-foreground/70 mt-0.5 pl-[18px] truncate">
-                                  Originally: {format(parseISO(holiday.original_date), "MMM d, yyyy")}
-                                </div>
-                              )}
-                            </div>
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            <div>
-                              <p>{holiday.name}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {format(parseISO(holiday.observed_date), "EEEE, MMMM d, yyyy")}
+                              </p>
                               {holiday.original_date && holiday.original_date !== holiday.observed_date && (
                                 <p className="text-xs text-muted-foreground">
-                                  Originally: {format(parseISO(holiday.original_date), "MMM d, yyyy")}
+                                  Moved from {format(parseISO(holiday.original_date), "MMMM d, yyyy")}
                                 </p>
                               )}
-                            </div>
-                          </TooltipContent>
-                        </Tooltip>
+                              <Badge variant="outline" className="text-[10px]">
+                                {holiday.is_local ? "Local holiday" : "National holiday"}
+                              </Badge>
+                            </PopoverContent>
+                          </Popover>
+                        </>
+                      )}
+
+                      {/* Leave markers — compact dots on mobile */}
+                      {dayLeaves.length > 0 && isCurrentMonth && (
+                        <div className="sm:hidden mt-1 flex flex-wrap items-center gap-1">
+                          {dayLeaves.map((leave) => (
+                            <div
+                              key={leave.id}
+                              className="h-2 w-2 rounded-full"
+                              style={{
+                                backgroundColor: `hsl(var(${LEAVE_TYPES[leave.leave_type].cssVar}))`,
+                              }}
+                            />
+                          ))}
+                          {dayLeaves.some((l) => l.status === "pending") && (
+                            <Clock className="h-2.5 w-2.5 text-status-pending shrink-0" />
+                          )}
+                        </div>
                       )}
 
                       {/* Leave markers — up to 2 for split-day */}
                       {dayLeaves.length > 0 && isCurrentMonth && (
-                        <div className="mt-1 space-y-0.5">
+                        <div className="hidden sm:block mt-1 space-y-0.5">
                           {dayLeaves.map((leave) => {
                             const lc = LEAVE_TYPES[leave.leave_type];
                             const isHalf = leave.duration === "half_am" || leave.duration === "half_pm";
@@ -473,7 +530,7 @@ export function CalendarContent({
 
               {/* Multi-day floating action bar */}
               {isMultiDayMode && selectedDates.size > 0 && (
-                <div className="mt-4 flex items-center justify-between rounded-lg border border-primary/30 bg-primary/5 p-3">
+                <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-primary/30 bg-primary/5 p-3">
                   <div className="flex items-center gap-2">
                     <CalendarPlus className="h-4 w-4 text-primary" />
                     <span className="text-sm font-medium">
@@ -671,17 +728,49 @@ export function CalendarContent({
           <Card className="bg-blue-500/5 border-blue-500/20">
             <CardContent className="p-4">
               <div className="flex gap-2">
-                <Info className="h-4 w-4 text-blue-400 shrink-0 mt-0.5" />
+                <Info className="h-4 w-4 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
                 <p className="text-xs text-muted-foreground">
                   Click any weekday to apply for leave. Click an existing leave
-                  marker to edit it. Use{" "}
+                  marker to edit it, or a holiday to see its details. Use{" "}
                   <span className="font-medium text-foreground">Multi-Day</span>{" "}
-                  mode to select multiple days at once.
+                  mode to select multiple days at once. On mobile, tap a day to
+                  see everything scheduled on it.
                 </p>
               </div>
             </CardContent>
           </Card>
         </div>
+
+        {/* Mobile day-detail sheet */}
+        <DayDetailSheet
+          open={sheetDate !== null}
+          onOpenChange={(open) => {
+            if (!open) setSheetDate(null);
+          }}
+          date={sheetDate}
+          holiday={sheetDate ? getHolidayForDate(sheetDate) : undefined}
+          leaves={sheetDate ? getLeavesForDate(sheetDate) : []}
+          wfh={sheetDate ? wfhByDate.get(format(sheetDate, "yyyy-MM-dd")) : undefined}
+          canFileLeave={
+            !!sheetDate &&
+            isSameMonth(sheetDate, currentMonth) &&
+            !isWeekend(sheetDate) &&
+            !getHolidayForDate(sheetDate) &&
+            getLeavesForDate(sheetDate).length < 2
+          }
+          onEditLeave={(leave) => {
+            setSelectedLeave(leave);
+            setSelectedDate(sheetDate);
+            setSheetDate(null);
+            setIsModalOpen(true);
+          }}
+          onFileLeave={() => {
+            setSelectedLeave(null);
+            setSelectedDate(sheetDate);
+            setSheetDate(null);
+            setIsModalOpen(true);
+          }}
+        />
 
         {/* Leave Modal */}
         <LeaveModal

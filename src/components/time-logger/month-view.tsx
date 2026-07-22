@@ -39,6 +39,7 @@ import {
 import { cn, redmineIssueUrl } from "@/lib/utils";
 import type { Holiday, LeaveEntry } from "@/lib/types";
 import { LEAVE_TYPES } from "@/lib/constants/leave-types";
+import { useIsMobile } from "@/hooks/use-is-mobile";
 
 export interface MonthViewEntry {
   log_date: string;
@@ -82,6 +83,7 @@ export function MonthView({
   redmineUrl,
   projectColorMap = {},
 }: MonthViewProps) {
+  const isMobile = useIsMobile();
   const [drawerDate, setDrawerDate] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerYear, setPickerYear] = useState(currentMonth.getFullYear());
@@ -151,7 +153,7 @@ export function MonthView({
       <Card className="border-border/50">
         {/* Month navigation header */}
         <CardHeader className="pb-3">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-1">
               <Button
                 variant="ghost"
@@ -283,7 +285,7 @@ export function MonthView({
                 const isLastCol = (idx + 1) % 7 === 0;
 
                 const cellClass = cn(
-                  "min-h-[80px] p-1.5 border-b border-border/30 transition-colors relative flex flex-col gap-0.5",
+                  "min-h-[56px] p-1 sm:min-h-[80px] sm:p-1.5 border-b border-border/30 transition-colors relative flex flex-col gap-0.5",
                   !isLastCol && "border-r border-border/30",
                   weekend && "bg-muted/30",
                   holiday && "bg-red-500/5",
@@ -315,7 +317,7 @@ export function MonthView({
                       <div className="flex items-center gap-1">
                         <span
                           className={cn(
-                            "text-xs font-medium h-5 w-5 shrink-0 flex items-center justify-center rounded-full",
+                            "text-[10px] sm:text-xs font-medium h-5 w-5 shrink-0 flex items-center justify-center rounded-full",
                             isToday && "bg-primary text-primary-foreground"
                           )}
                         >
@@ -323,11 +325,11 @@ export function MonthView({
                         </span>
                         {inCurrentMonth && totalHours > 0 && (
                           <>
-                            <span className="text-[10px] text-muted-foreground/50 leading-none mr-1">-</span>
+                            <span className="hidden sm:inline text-[10px] text-muted-foreground/50 leading-none mr-1">-</span>
                             <span
                               className={cn(
                                 "text-[10px] font-semibold tabular-nums leading-none",
-                                totalHours >= 8 ? "text-green-400" : "text-yellow-400"
+                                totalHours >= 8 ? "text-green-600 dark:text-green-400" : "text-yellow-600 dark:text-yellow-400"
                               )}
                             >
                               {formatHours(totalHours)}
@@ -347,7 +349,7 @@ export function MonthView({
 
                     {/* Issue chips */}
                     {inCurrentMonth && visibleIssues.length > 0 && (
-                      <div className="flex flex-wrap gap-0.5">
+                      <div className="hidden sm:flex flex-wrap gap-0.5">
                         {visibleIssues.map((id) => {
                           const url = redmineIssueUrl(redmineUrl, id);
                           const chipColor = issueColorMap.get(id);
@@ -387,11 +389,37 @@ export function MonthView({
                       </div>
                     )}
 
+                    {/* Issue dots — mobile */}
+                    {inCurrentMonth && visibleIssues.length > 0 && (
+                      <div className="flex sm:hidden flex-wrap items-center gap-0.5">
+                        {visibleIssues.map((id) => {
+                          const dotColor = issueColorMap.get(id);
+                          return (
+                            <div
+                              key={id}
+                              className={cn(
+                                "h-2 w-2 rounded-full",
+                                !dotColor && "bg-muted-foreground/40"
+                              )}
+                              style={dotColor ? { backgroundColor: dotColor } : undefined}
+                            />
+                          );
+                        })}
+                        {overflowCount > 0 && (
+                          <span className="text-[9px] text-muted-foreground leading-none">
+                            +{overflowCount}
+                          </span>
+                        )}
+                      </div>
+                    )}
+
                     {/* Holiday name */}
                     {holiday && (
+                      <>
+                      <span className="sm:hidden text-[10px] leading-none mt-auto">🎉</span>
                       <Tooltip>
                         <TooltipTrigger asChild>
-                          <span className="text-[9px] text-red-400 truncate leading-none mt-auto">
+                          <span className="hidden sm:inline text-[9px] text-red-600 dark:text-red-400 truncate leading-none mt-auto">
                             {holiday.name}
                           </span>
                         </TooltipTrigger>
@@ -412,16 +440,30 @@ export function MonthView({
                           )}
                         </TooltipContent>
                       </Tooltip>
+                      </>
                     )}
 
                     {/* Leave indicator */}
                     {leaves.length > 0 && inCurrentMonth && (
+                      <>
+                      <div className={cn(
+                        "sm:hidden flex flex-wrap items-center gap-1",
+                        !holiday && "mt-auto"
+                      )}>
+                        {leaves.map((l) => (
+                          <div
+                            key={l.id}
+                            className="h-2 w-2 rounded-full"
+                            style={{ backgroundColor: `hsl(var(${LEAVE_TYPES[l.leave_type].cssVar}))` }}
+                          />
+                        ))}
+                      </div>
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <span className={cn(
-                            "text-[9px] truncate leading-none",
+                            "hidden sm:inline text-[9px] truncate leading-none",
                             !holiday && "mt-auto",
-                            leaves.every((l) => l.status === "pending") ? "text-blue-400/60" : "text-blue-400"
+                            leaves.every((l) => l.status === "pending") ? "text-blue-600/70 dark:text-blue-400/60" : "text-blue-600 dark:text-blue-400"
                           )}>
                             {leaves.map((l) => LEAVE_TYPES[l.leave_type].label).join(" / ")}
                           </span>
@@ -442,6 +484,7 @@ export function MonthView({
                           ))}
                         </TooltipContent>
                       </Tooltip>
+                      </>
                     )}
                   </div>
                 );
@@ -453,7 +496,14 @@ export function MonthView({
 
       {/* Day detail drawer */}
       <Sheet open={!!drawerDate} onOpenChange={(open) => !open && setDrawerDate(null)}>
-        <SheetContent side="right" className="w-full sm:max-w-md flex flex-col">
+        <SheetContent
+          side={isMobile ? "bottom" : "right"}
+          className={cn(
+            isMobile
+              ? "rounded-t-2xl max-h-[80vh] flex flex-col"
+              : "w-full sm:max-w-md flex flex-col"
+          )}
+        >
           <SheetHeader>
             <SheetTitle>
               {drawerDate
@@ -468,7 +518,7 @@ export function MonthView({
                 <div className="flex-1 min-w-0">
                   <p className={cn(
                     "text-sm font-medium",
-                    drawerLeave.status === "pending" ? "text-blue-400/70" : "text-blue-300"
+                    drawerLeave.status === "pending" ? "text-blue-600/70 dark:text-blue-400/70" : "text-blue-700 dark:text-blue-300"
                   )}>
                     {LEAVE_TYPES[drawerLeave.leave_type].label}
                     {drawerLeave.duration !== "whole" && (
@@ -571,7 +621,7 @@ export function MonthView({
 function StatusBadge({ source }: { source: MonthViewEntry["source"] }) {
   if (source === "redmine") {
     return (
-      <Badge variant="outline" className="text-[10px] h-4 px-1.5 text-green-400 border-green-400/30">
+      <Badge variant="outline" className="text-[10px] h-4 px-1.5 text-green-600 dark:text-green-400 border-green-600/30 dark:border-green-400/30">
         submitted
       </Badge>
     );
@@ -584,7 +634,7 @@ function StatusBadge({ source }: { source: MonthViewEntry["source"] }) {
     );
   }
   return (
-    <Badge variant="outline" className="text-[10px] h-4 px-1.5 text-yellow-400 border-yellow-400/30">
+    <Badge variant="outline" className="text-[10px] h-4 px-1.5 text-yellow-600 dark:text-yellow-400 border-yellow-600/30 dark:border-yellow-400/30">
       draft
     </Badge>
   );
