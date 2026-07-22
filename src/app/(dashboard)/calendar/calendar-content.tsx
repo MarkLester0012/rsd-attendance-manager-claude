@@ -41,7 +41,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { LEAVE_TYPES, NON_DEDUCTIBLE_TYPES, WFH_DAILY_GLOBAL_CAP } from "@/lib/constants/leave-types";
+import { LEAVE_TYPES, NON_DEDUCTIBLE_TYPES, WFH_DAILY_GLOBAL_CAP, WFH_MONTHLY_CAP } from "@/lib/constants/leave-types";
 import { cn } from "@/lib/utils";
 import type { User, LeaveEntry, Holiday } from "@/lib/types";
 
@@ -61,6 +61,7 @@ interface CalendarContentProps {
   initialLeaves: LeaveEntry[];
   holidays: Holiday[];
   initialWfhAll: WfhEntry[];
+  initialDeductibleUsed: number;
 }
 
 export function CalendarContent({
@@ -68,6 +69,7 @@ export function CalendarContent({
   initialLeaves,
   holidays,
   initialWfhAll,
+  initialDeductibleUsed,
 }: CalendarContentProps) {
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [leaves, setLeaves] = useState(initialLeaves);
@@ -78,6 +80,7 @@ export function CalendarContent({
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [allHolidays, setAllHolidays] = useState(holidays);
   const [wfhAll, setWfhAll] = useState<WfhEntry[]>(initialWfhAll);
+  const [deductibleDaysUsed, setDeductibleDaysUsed] = useState(initialDeductibleUsed);
 
   // Mobile day-detail sheet
   const isMobile = useIsMobile();
@@ -180,7 +183,7 @@ export function CalendarContent({
     const start = format(startOfMonth(currentMonth), "yyyy-MM-dd");
     const end = format(endOfMonth(currentMonth), "yyyy-MM-dd");
 
-    const [leavesRes, holidaysRes, wfhAllRes] = await Promise.all([
+    const [leavesRes, holidaysRes, wfhAllRes, deductibleRes] = await Promise.all([
       supabase
         .from("leaves")
         .select("*")
@@ -201,11 +204,22 @@ export function CalendarContent({
         .gte("leave_date", start)
         .lte("leave_date", end)
         .order("leave_date", { ascending: true }),
+      supabase
+        .from("leaves")
+        .select("leave_type, duration_value")
+        .eq("user_id", user.id)
+        .in("status", ["approved", "pending"]),
     ]);
 
     if (leavesRes.data) setLeaves(leavesRes.data);
     if (holidaysRes.data) setAllHolidays(holidaysRes.data);
     if (wfhAllRes.data) setWfhAll(wfhAllRes.data as unknown as WfhEntry[]);
+    if (deductibleRes.data) {
+      const used = deductibleRes.data
+        .filter((l) => !NON_DEDUCTIBLE_TYPES.includes(l.leave_type))
+        .reduce((sum, l) => sum + l.duration_value, 0);
+      setDeductibleDaysUsed(used);
+    }
   }, [currentMonth, user.id]);
 
   useEffect(() => {
@@ -235,6 +249,10 @@ export function CalendarContent({
   const wfhDays = leaves
     .filter((l) => l.leave_type === "WFH" && l.status === "approved")
     .reduce((sum, l) => sum + l.duration_value, 0);
+
+  // Balance card figures
+  const leavesLeft = user.leave_balance - deductibleDaysUsed;
+  const wfhLeft = WFH_MONTHLY_CAP - wfhDays;
 
   // Group WFH entries by date for the tracker
   const wfhByDate = useMemo(() => {
@@ -554,10 +572,72 @@ export function CalendarContent({
               )}
             </CardContent>
           </Card>
+
+          {/* Legend strip */}
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mt-4 px-1">
+            {Object.values(LEAVE_TYPES).map((type) => (
+              <div key={type.code} className="flex items-center gap-1.5">
+                <div
+                  className="h-3 w-3 rounded-full shrink-0"
+                  style={{
+                    backgroundColor: `hsl(var(${type.cssVar}))`,
+                  }}
+                />
+                <span className="text-xs text-muted-foreground">
+                  {type.code} - {type.label}
+                </span>
+              </div>
+            ))}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Info className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
+              </TooltipTrigger>
+              <TooltipContent side="top" className="max-w-[250px]">
+                <p className="text-xs">
+                  Click any weekday to apply for leave. Click an existing leave
+                  marker to edit it, or a holiday to see its details. Use{" "}
+                  <span className="font-medium">Multi-Day</span> mode to select
+                  multiple days at once. On mobile, tap a day to see everything
+                  scheduled on it.
+                </p>
+              </TooltipContent>
+            </Tooltip>
+          </div>
         </div>
 
         {/* Right Sidebar */}
         <div className="w-full lg:w-72 space-y-4">
+          {/* Balance */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-semibold">Balance</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Leaves left</span>
+                <span className="font-medium">
+                  {leavesLeft % 1 === 0 ? leavesLeft : leavesLeft.toFixed(1)}
+                  <span className="text-muted-foreground font-normal">
+                    {" "}
+                    / {user.leave_balance}
+                  </span>
+                </span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">
+                  WFH left — {format(currentMonth, "MMMM")}
+                </span>
+                <span className="font-medium text-leave-wfh">
+                  {wfhLeft % 1 === 0 ? wfhLeft : wfhLeft.toFixed(1)}
+                  <span className="text-muted-foreground font-normal">
+                    {" "}
+                    / {WFH_MONTHLY_CAP}
+                  </span>
+                </span>
+              </div>
+            </CardContent>
+          </Card>
+
           {/* Monthly Summary */}
           <Card>
             <CardHeader className="pb-2">
@@ -698,44 +778,6 @@ export function CalendarContent({
                     </Tooltip>
                   );
                 })}
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Color Legend */}
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-semibold">Legend</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              {Object.values(LEAVE_TYPES).map((type) => (
-                <div key={type.code} className="flex items-center gap-2">
-                  <div
-                    className="h-3 w-3 rounded-full shrink-0"
-                    style={{
-                      backgroundColor: `hsl(var(${type.cssVar}))`,
-                    }}
-                  />
-                  <span className="text-xs text-muted-foreground">
-                    {type.code} - {type.label}
-                  </span>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-
-          {/* Tip */}
-          <Card className="bg-blue-500/5 border-blue-500/20">
-            <CardContent className="p-4">
-              <div className="flex gap-2">
-                <Info className="h-4 w-4 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
-                <p className="text-xs text-muted-foreground">
-                  Click any weekday to apply for leave. Click an existing leave
-                  marker to edit it, or a holiday to see its details. Use{" "}
-                  <span className="font-medium text-foreground">Multi-Day</span>{" "}
-                  mode to select multiple days at once. On mobile, tap a day to
-                  see everything scheduled on it.
-                </p>
               </div>
             </CardContent>
           </Card>

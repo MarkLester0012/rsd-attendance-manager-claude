@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { CalendarContent } from "./calendar-content";
+import { NON_DEDUCTIBLE_TYPES } from "@/lib/constants/leave-types";
 
 export default async function CalendarPage() {
   const supabase = await createClient();
@@ -47,12 +48,24 @@ export default async function CalendarPage() {
     .lte("leave_date", endOfMonth)
     .order("leave_date", { ascending: true });
 
+  // All-time deductible days used (pending + approved) for the "Leaves left" balance
+  const { data: allDeductibleLeaves } = await supabase
+    .from("leaves")
+    .select("leave_type, duration_value")
+    .eq("user_id", user!.id)
+    .in("status", ["approved", "pending"]);
+
+  const initialDeductibleUsed = (allDeductibleLeaves || [])
+    .filter((l) => !NON_DEDUCTIBLE_TYPES.includes(l.leave_type))
+    .reduce((sum, l) => sum + l.duration_value, 0);
+
   return (
     <CalendarContent
       user={user!}
       initialLeaves={leaves || []}
       holidays={holidays || []}
       initialWfhAll={(monthWfhAll || []) as any}
+      initialDeductibleUsed={initialDeductibleUsed}
     />
   );
 }
