@@ -40,6 +40,7 @@ import { cn, redmineIssueUrl } from "@/lib/utils";
 import type { Holiday, LeaveEntry } from "@/lib/types";
 import { LEAVE_TYPES } from "@/lib/constants/leave-types";
 import { useIsMobile } from "@/hooks/use-is-mobile";
+import { hoursByProject } from "@/lib/utils/time-log-stats";
 
 export interface MonthViewEntry {
   log_date: string;
@@ -69,6 +70,15 @@ const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "
 
 function formatHours(h: number): string {
   return h % 1 === 0 ? `${h}h` : `${h.toFixed(1)}h`;
+}
+
+// Orders entries by project (then ticket) so cell chips and the drawer list
+// group tickets from the same project together.
+function byProjectThenIssue(a: MonthViewEntry, b: MonthViewEntry): number {
+  const projA = a.project_name ?? "";
+  const projB = b.project_name ?? "";
+  if (projA !== projB) return projA.localeCompare(projB);
+  return (a.issue_id ?? 0) - (b.issue_id ?? 0);
 }
 
 export function MonthView({
@@ -145,8 +155,11 @@ export function MonthView({
   const isCurrentMonthNow =
     format(currentMonth, "yyyy-MM") === format(new Date(), "yyyy-MM");
 
-  const drawerEntries = drawerDate ? (entriesByDate.get(drawerDate) ?? []) : [];
+  const drawerEntries = drawerDate
+    ? [...(entriesByDate.get(drawerDate) ?? [])].sort(byProjectThenIssue)
+    : [];
   const drawerLeaves = drawerDate ? (leaveByDate.get(drawerDate) ?? []) : [];
+  const drawerProjectHours = hoursByProject(drawerEntries, projectColorMap);
 
   return (
     <TooltipProvider>
@@ -264,7 +277,7 @@ export function MonthView({
 
                 const seenIssues = new Set<number>();
                 const uniqueIssueIds: number[] = [];
-                for (const e of dayEntries) {
+                for (const e of [...dayEntries].sort(byProjectThenIssue)) {
                   if (e.issue_id && !seenIssues.has(e.issue_id)) {
                     seenIssues.add(e.issue_id);
                     uniqueIssueIds.push(e.issue_id);
@@ -512,7 +525,7 @@ export function MonthView({
             </SheetTitle>
           </SheetHeader>
 
-          <div className="flex-1 overflow-y-auto py-4 space-y-3">
+          <div className="flex-1 overflow-y-auto py-4 space-y-3 scrollbar-thin">
             {drawerLeaves.map((drawerLeave) => (
               <div key={drawerLeave.id} className="flex items-center gap-2 rounded-lg border border-blue-500/30 bg-blue-500/5 px-3 py-2">
                 <div className="flex-1 min-w-0">
@@ -533,6 +546,33 @@ export function MonthView({
                 </div>
               </div>
             ))}
+            {drawerEntries.length > 0 && (
+              <div className="rounded-lg border border-border/50 bg-card p-3 space-y-1.5">
+                <p className="text-xs font-medium text-muted-foreground">
+                  Hours per Project
+                </p>
+                {drawerProjectHours.map((p) => (
+                  <div
+                    key={p.name}
+                    className="flex items-center justify-between gap-2 text-xs"
+                  >
+                    <span className="flex min-w-0 items-center gap-1.5">
+                      <span
+                        className={cn(
+                          "h-2 w-2 shrink-0 rounded-full",
+                          !p.color && "bg-muted-foreground/40"
+                        )}
+                        style={p.color ? { backgroundColor: p.color } : undefined}
+                      />
+                      <span className="truncate">{p.name}</span>
+                    </span>
+                    <span className="shrink-0 font-semibold tabular-nums">
+                      {formatHours(p.hours)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
             {drawerEntries.length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-8">
                 No entries logged for this day.

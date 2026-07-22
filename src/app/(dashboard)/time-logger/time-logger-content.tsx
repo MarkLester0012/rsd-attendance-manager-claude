@@ -19,6 +19,7 @@ import { HoursSummary } from "@/components/time-logger/hours-summary";
 import { EntryTable, type DraftEntry } from "@/components/time-logger/entry-table";
 import { MonthView } from "@/components/time-logger/month-view";
 import type { MonthViewEntry } from "@/components/time-logger/month-view";
+import { MonthStats } from "@/components/time-logger/month-stats";
 import {
   fetchActivities,
   fetchIssueDetails,
@@ -102,7 +103,7 @@ export function TimeLoggerContent({
   const [saving, setSaving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [loadingEntries, setLoadingEntries] = useState(false);
-  const [viewMode, setViewMode] = useState<"day" | "month">("day");
+  const [viewMode, setViewMode] = useState<"day" | "month">("month");
   const [calendarMonth, setCalendarMonth] = useState<Date>(() => startOfMonth(new Date()));
   const [monthlyEntries, setMonthlyEntries] = useState<MonthViewEntry[]>([]);
   const [monthlyHolidays, setMonthlyHolidays] = useState<Holiday[]>([]);
@@ -856,18 +857,26 @@ useRegisterPageContext("Time Logger", {
               )}
             </>
           ) : (
-            <MonthView
-              entries={monthlyEntries}
-              holidays={monthlyHolidays}
-              leaves={monthlyLeaves}
-              currentMonth={calendarMonth}
-              selectedDate={format(date, "yyyy-MM-dd")}
-              onMonthChange={handleMonthChange}
-              onOpenDayView={handleOpenDayView}
-              loading={loadingMonth}
-              redmineUrl={redmineUrl}
-              projectColorMap={projectColorMap}
-            />
+            <>
+              <MonthView
+                entries={monthlyEntries}
+                holidays={monthlyHolidays}
+                leaves={monthlyLeaves}
+                currentMonth={calendarMonth}
+                selectedDate={format(date, "yyyy-MM-dd")}
+                onMonthChange={handleMonthChange}
+                onOpenDayView={handleOpenDayView}
+                loading={loadingMonth}
+                redmineUrl={redmineUrl}
+                projectColorMap={projectColorMap}
+              />
+              <MonthStats
+                entries={monthlyEntries}
+                currentMonth={calendarMonth}
+                projectColorMap={projectColorMap}
+                redmineUrl={redmineUrl}
+              />
+            </>
           )}
         </>
       )}
