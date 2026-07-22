@@ -24,6 +24,7 @@ const PAGE_TITLES: Record<string, string> = {
   "/time-logger": "Time Logger",
   "/transportation-allowance": "Transportation Allowance",
   "/payslip-stats": "Payslip Stats",
+  "/settings/integrations/slack": "Slack Integration",
 };
 
 export function Header({ user }: { user: User }) {

@@ -114,7 +114,29 @@
   }
 }
 
-/* Scrollbar styling */
+/* Scrollbar styling — applied globally so every scrollable area (including
+   page scroll) uses the same thin, muted-colored scrollbar by default. */
+@layer base {
+  html {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--muted)) transparent;
+  }
+
+  *::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    background-color: hsl(var(--muted));
+    border-radius: 3px;
+  }
+}
+
 @layer utilities {
   .scrollbar-thin {
     scrollbar-width: thin;
