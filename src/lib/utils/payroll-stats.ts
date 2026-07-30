@@ -26,7 +26,7 @@ export interface PayrollStats {
   present_days: number;
   /**
    * Days actually worked: present_days plus WFH and RGA (counted as worked,
-   * not deducted). Excludes VL/PL/ML/SPL/SL/AB/NW.
+   * not deducted). Excludes VL/PL/ML/SPL/SL/AB/NW/BL.
    */
   days_worked: number;
 }
@@ -40,6 +40,7 @@ const NON_WORKING_TYPES = new Set<LeaveTypeCode>([
   "SL",
   "AB",
   "NW",
+  "BL",
 ]);
 
 export interface PayrollLeaveEntry extends LeaveSummary {

@@ -33,6 +33,7 @@ import {
   NON_DEDUCTIBLE_TYPES,
   WFH_MONTHLY_CAP,
   WFH_DAILY_GLOBAL_CAP,
+  BIRTHDAY_LEAVE_YEARLY_CAP,
 } from "@/lib/constants/leave-types";
 import type { User, LeaveEntry, LeaveTypeCode, LeaveDuration } from "@/lib/types";
 import { createNotifications } from "@/lib/notifications";
@@ -251,6 +252,48 @@ export function LeaveModal({
           if ((dailyWfh || 0) >= WFH_DAILY_GLOBAL_CAP) {
             toast.error(
               `Daily WFH limit reached on ${dateStr} (${WFH_DAILY_GLOBAL_CAP} slots). Remove that day and try again.`
+            );
+            setIsSubmitting(false);
+            return;
+          }
+        }
+      }
+
+      // Birthday Leave — capped at BIRTHDAY_LEAVE_YEARLY_CAP days per calendar
+      // year, for all roles including HR (unlike the balance check below, HR's
+      // unlimited-balance exemption does not apply to a per-birthday cap).
+      const blEntries = entries.filter((e) => e.type === "BL");
+      if (blEntries.length > 0) {
+        const blDurationPerDate = blEntries.reduce((sum, e) => sum + e.durVal, 0);
+
+        const yearGroups = new Map<string, Date[]>();
+        for (const d of targetDates) {
+          const key = format(d, "yyyy");
+          if (!yearGroups.has(key)) yearGroups.set(key, []);
+          yearGroups.get(key)!.push(d);
+        }
+
+        for (const [year, yearDates] of yearGroups) {
+          let query = supabase
+            .from("leaves")
+            .select("id, duration_value")
+            .eq("user_id", user.id)
+            .eq("leave_type", "BL")
+            .in("status", ["approved", "pending"])
+            .gte("leave_date", `${year}-01-01`)
+            .lte("leave_date", `${year}-12-31`);
+          if (isEditMode && existingLeave) {
+            query = query.neq("id", existingLeave.id);
+          }
+          const { data: yearBl } = await query;
+
+          const currentYearBl =
+            yearBl?.reduce((sum, l) => sum + l.duration_value, 0) || 0;
+          const addingDays = yearDates.length * blDurationPerDate;
+
+          if (currentYearBl + addingDays > BIRTHDAY_LEAVE_YEARLY_CAP) {
+            toast.error(
+              `Birthday Leave is limited to ${BIRTHDAY_LEAVE_YEARLY_CAP} day per year. Already used/pending in ${year}: ${currentYearBl} day(s).`
             );
             setIsSubmitting(false);
             return;

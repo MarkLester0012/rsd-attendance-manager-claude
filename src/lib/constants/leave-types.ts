@@ -102,18 +102,30 @@ export const LEAVE_TYPES: Record<LeaveTypeCode, LeaveTypeConfig> = {
     colorClass: "leave-wfh",
     cssVar: "--leave-wfh",
   },
+  BL: {
+    code: "BL",
+    label: "Birthday Leave",
+    requiresApproval: true,
+    deductsBalance: false,
+    allowHalfDay: false,
+    requiresReason: false,
+    colorClass: "leave-bl",
+    cssVar: "--leave-bl",
+  },
 };
 
 export const LEAVE_TYPE_LIST = Object.values(LEAVE_TYPES);
 
 export const WFH_MONTHLY_CAP = 8.0;
 export const WFH_DAILY_GLOBAL_CAP = 12;
+export const BIRTHDAY_LEAVE_YEARLY_CAP = 1;
 
 export const APPROVAL_REQUIRED_TYPES: LeaveTypeCode[] = [
   "VL",
   "PL",
   "ML",
   "SPL",
+  "BL",
 ];
 export const AUTO_APPROVED_TYPES: LeaveTypeCode[] = [
   "SL",
@@ -129,3 +141,9 @@ export const HALF_DAY_TYPES: LeaveTypeCode[] = ["SL", "VL", "WFH"];
 
 // Leave types allowed in the secondary (other-half) slot of a split-day
 export const SECONDARY_LEAVE_TYPES: LeaveTypeCode[] = ["SL", "NW", "RGA", "AB", "WFH"];
+
+// Non-deducting types that still count as "present" (in-office-equivalent).
+// Used by the attendance page to distinguish NW/RGA (present) from actual
+// absences like BL (non-deducting but still an absence). WFH is handled
+// separately by each consumer since it has its own bucket.
+export const PRESENT_TYPES: LeaveTypeCode[] = ["NW", "RGA"];

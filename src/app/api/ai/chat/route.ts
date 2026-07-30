@@ -27,10 +27,10 @@ function jsonResponse(body: object, status = 200): Response {
 const COMPANY_HR_RULES = `
 COMPANY HR POLICIES & RULES:
 1. Leave Types that deduct balance: VL (Vacation Leave), PL (Paternity Leave), ML (Maternity Leave), SPL (Special Leave), SL (Sick Leave), AB (Absent).
-2. Leave Types that DO NOT deduct balance: NW (No Work), RGA (RGA Office), WFH (Work From Home).
-3. Approvals: All leaves require approval EXCEPT for "No Work" (NW) and "RGA Office" (RGA) which are auto-approved.
+2. Leave Types that DO NOT deduct balance: NW (No Work), RGA (RGA Office), WFH (Work From Home), BL (Birthday Leave).
+3. Approvals: All leaves require approval EXCEPT for "Sick Leave" (SL), "No Work" (NW), "RGA Office" (RGA), "Absent" (AB), and "Work From Home" (WFH), which are auto-approved. "Birthday Leave" (BL) does NOT deduct balance but still requires approval.
 4. Half-days: Supported for AM or PM.
-5. Limits: WFH has a strict monthly cap per user and a daily global cap across all users. HR users have unlimited leave balance.
+5. Limits: WFH has a strict monthly cap per user and a daily global cap across all users. Birthday Leave (BL) is capped at 1 day per calendar year, for all users including HR. HR users have unlimited leave balance.
 `;
 
 const TRANSPORTATION_ALLOWANCE_RULES = `

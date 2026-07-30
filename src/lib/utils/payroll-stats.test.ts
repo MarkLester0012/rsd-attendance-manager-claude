@@ -99,13 +99,25 @@ describe("buildPayrollStats — days worked (WFH/RGA count as worked)", () => {
     expect(stats.days_worked).toBe(9); // 10 - 1 (only VL is non-working)
   });
 
-  it("deducts all non-working types (VL, PL, ML, SPL, SL, AB, NW)", () => {
-    const types = ["VL", "PL", "ML", "SPL", "SL", "AB", "NW"];
+  it("deducts all non-working types (VL, PL, ML, SPL, SL, AB, NW, BL)", () => {
+    const types = ["VL", "PL", "ML", "SPL", "SL", "AB", "NW", "BL"];
     const leaves = types.map((t, i) =>
       leave("u1", t, `2026-06-0${i + 1}`)
     );
     const stats = buildPayrollStats("u1", START, END, [], leaves);
-    expect(stats.days_worked).toBe(3); // 10 - 7
+    expect(stats.days_worked).toBe(2); // 10 - 8
+  });
+
+  it("does not treat Birthday Leave as a worked day", () => {
+    const stats = buildPayrollStats(
+      "u1",
+      START,
+      END,
+      [],
+      [leave("u1", "BL", "2026-06-02")]
+    );
+    expect(stats.present_days).toBe(9); // 10 - 1 recorded
+    expect(stats.days_worked).toBe(9); // BL is non-working, unlike WFH/RGA
   });
 
   it("clamps present_days and days_worked at zero when leaves exceed business days", () => {

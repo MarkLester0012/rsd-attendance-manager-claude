@@ -9,7 +9,8 @@ export type LeaveTypeCode =
   | "NW"
   | "RGA"
   | "AB"
-  | "WFH";
+  | "WFH"
+  | "BL";
 
 export type LeaveStatus = "pending" | "approved" | "rejected";
 

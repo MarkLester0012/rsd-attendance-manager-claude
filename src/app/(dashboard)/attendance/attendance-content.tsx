@@ -35,7 +35,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { LEAVE_TYPES, NON_DEDUCTIBLE_TYPES } from "@/lib/constants/leave-types";
+import { LEAVE_TYPES, PRESENT_TYPES } from "@/lib/constants/leave-types";
 import { cn } from "@/lib/utils";
 import { UserAvatar } from "@/components/ui/user-avatar";
 import { createClient } from "@/lib/supabase/client";
@@ -230,13 +230,13 @@ export function AttendanceContent({
   const usersWithWfh = new Set(leaves.filter((l) => l.leave_type === "WFH").map((l) => l.user_id));
   const usersOnLeave = new Set(
     leaves
-      .filter((l) => !NON_DEDUCTIBLE_TYPES.includes(l.leave_type) && l.leave_type !== "WFH")
+      .filter((l) => !PRESENT_TYPES.includes(l.leave_type) && l.leave_type !== "WFH")
       .map((l) => l.user_id)
   );
   // A user with both a deductible leave and WFH counts as on-leave (not in-office)
   const usersWithAnyLeave = new Set(
     leaves
-      .filter((l) => !NON_DEDUCTIBLE_TYPES.includes(l.leave_type) || l.leave_type === "WFH")
+      .filter((l) => !PRESENT_TYPES.includes(l.leave_type))
       .map((l) => l.user_id)
   );
   const wfhCount = usersWithWfh.size;
@@ -264,16 +264,16 @@ export function AttendanceContent({
         const userStatus = getStatusForUser(u.id);
         const userTypes = userStatus.leaves.map((l) => l.leave_type);
         const hasWfh = userTypes.includes("WFH");
-        const hasDeductibleLeave = userTypes.some(
-          (t) => !NON_DEDUCTIBLE_TYPES.includes(t)
+        const hasAbsenceLeave = userTypes.some(
+          (t) => !PRESENT_TYPES.includes(t) && t !== "WFH"
         );
         const isNonLeaveOnly = userTypes.length > 0 && userTypes.every(
-          (t) => NON_DEDUCTIBLE_TYPES.includes(t) && t !== "WFH"
+          (t) => PRESENT_TYPES.includes(t)
         );
         const matchesStatus =
           (statusFilter === "in-office" && (!userStatus.type || isNonLeaveOnly)) ||
           (statusFilter === "wfh" && hasWfh) ||
-          (statusFilter === "on-leave" && hasDeductibleLeave);
+          (statusFilter === "on-leave" && hasAbsenceLeave);
         if (!matchesStatus) return false;
       }
 

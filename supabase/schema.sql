@@ -37,7 +37,7 @@ create table public.users (
 create table public.leaves (
   id uuid default uuid_generate_v4() primary key,
   user_id uuid not null references public.users(id) on delete cascade,
-  leave_type text not null check (leave_type in ('VL','PL','ML','SPL','SL','NW','RGA','AB','WFH')),
+  leave_type text not null check (leave_type in ('VL','PL','ML','SPL','SL','NW','RGA','AB','WFH','BL')),
   leave_date date not null,
   duration text not null default 'whole' check (duration in ('whole', 'half_am', 'half_pm')),
   duration_value numeric(2,1) not null default 1.0,
@@ -191,9 +191,12 @@ create policy "users_delete" on public.users for delete to authenticated
 -- Leaves: users can manage own, leaders/HR can view all, leaders/HR can update status
 create policy "leaves_select" on public.leaves for select to authenticated using (true);
 -- Owners may only create/edit their own leaves as 'pending', except for
--- auto-approved types. The type list must stay in sync with requiresApproval
--- in src/lib/constants/leave-types.ts. Approving/rejecting approval-required
--- types is reserved for leaders/HR (leaves_update_review below).
+-- auto-approved types. This list is the AUTO-APPROVED set (requiresApproval:
+-- false in src/lib/constants/leave-types.ts) — NOT the non-deducting set.
+-- Approval-required types (e.g. BL) must NOT be added here, or a member
+-- could self-approve by updating status directly. Approving/rejecting
+-- approval-required types is reserved for leaders/HR (leaves_update_review
+-- below).
 create policy "leaves_insert" on public.leaves for insert to authenticated
   with check (
     user_id = (select id from public.users where auth_id = auth.uid())
