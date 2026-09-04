@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Menu } from "lucide-react";
 import { format } from "date-fns";
 import { NotificationPanel } from "@/components/layout/notification-panel";
+import { RoomStatusBadge } from "@/components/layout/room-status-badge";
 import type { User } from "@/lib/types";
 
 const PAGE_TITLES: Record<string, string> = {
@@ -25,6 +26,7 @@ const PAGE_TITLES: Record<string, string> = {
   "/transportation-allowance": "Transportation Allowance",
   "/payslip-stats": "Payslip Stats",
   "/settings/integrations/slack": "Slack Integration",
+  "/meeting-room": "Meeting Room",
 };
 
 export function Header({ user }: { user: User }) {
@@ -53,7 +55,8 @@ export function Header({ user }: { user: User }) {
       </div>
 
       {/* Right section */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2.5">
+        <RoomStatusBadge />
         <NotificationPanel userId={user.id} userRole={user.role} />
       </div>
     </header>

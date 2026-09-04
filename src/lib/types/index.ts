@@ -224,7 +224,10 @@ export type NotificationType =
   | "allowance_change_request"
   | "allowance_request_reviewed"
   | "allowance_submitted"
-  | "allowance_submission_reviewed";
+  | "allowance_submission_reviewed"
+  | "meeting_scheduled"
+  | "meeting_starting"
+  | "meeting_cancelled";
 
 export interface Notification {
   id: string;
@@ -324,3 +327,41 @@ export interface AllowanceSubmissionRequest {
   updated_at: string;
   employee?: User;
 }
+
+// Meeting Room Manager types
+export type MeetingStatus = "scheduled" | "in_progress" | "completed" | "cancelled";
+export type MeetingAttendeeStatus = "in_office" | "virtual" | "on_leave";
+
+export interface MeetingAttendee {
+  id: string;
+  booking_id: string;
+  user_id: string;
+  created_at: string;
+  user?: User;
+  attendance_status?: MeetingAttendeeStatus;
+}
+
+export interface MeetingBooking {
+  id: string;
+  title: string;
+  description: string | null;
+  organizer_id: string;
+  meeting_date: string; // 'yyyy-MM-dd'
+  start_time: string;   // 'HH:mm'
+  end_time: string;     // 'HH:mm'
+  status: MeetingStatus;
+  notify_channel: boolean;
+  slack_channel: string | null;
+  slack_message_ts: string | null;
+  started_at: string | null;
+  ended_at: string | null;
+  created_at: string;
+  updated_at: string;
+  organizer?: User;
+  attendees?: MeetingAttendee[];
+}
+
+export interface MeetingWithAttendees extends MeetingBooking {
+  attendees: MeetingAttendee[];
+}
+

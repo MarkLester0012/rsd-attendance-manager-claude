@@ -1,7 +1,8 @@
 "use client";
 
 import { format, parseISO } from "date-fns";
-import { CalendarPlus, Clock, Users } from "lucide-react";
+import Link from "next/link";
+import { CalendarPlus, Clock, Users, DoorOpen } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -11,7 +12,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { LEAVE_TYPES, WFH_DAILY_GLOBAL_CAP } from "@/lib/constants/leave-types";
-import type { Holiday, LeaveEntry } from "@/lib/types";
+import type { Holiday, LeaveEntry, MeetingWithAttendees } from "@/lib/types";
 
 interface DayDetailSheetProps {
   open: boolean;
@@ -20,6 +21,7 @@ interface DayDetailSheetProps {
   holiday: Holiday | undefined;
   leaves: LeaveEntry[];
   wfh: { count: number; names: string[] } | undefined;
+  meetings?: MeetingWithAttendees[];
   canFileLeave: boolean;
   onEditLeave: (leave: LeaveEntry) => void;
   onFileLeave: () => void;
@@ -32,11 +34,14 @@ export function DayDetailSheet({
   holiday,
   leaves,
   wfh,
+  meetings,
   canFileLeave,
   onEditLeave,
   onFileLeave,
 }: DayDetailSheetProps) {
   if (!date) return null;
+
+  const dateStr = format(date, "yyyy-MM-dd");
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -71,6 +76,46 @@ export function DayDetailSheet({
                     {format(parseISO(holiday.original_date), "MMMM d, yyyy")}
                   </p>
                 )}
+            </div>
+          )}
+
+          {/* Meeting Room Bookings */}
+          {meetings && meetings.length > 0 && (
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  Meeting Room ({meetings.length})
+                </p>
+                <Link
+                  href={`/meeting-room?date=${dateStr}`}
+                  className="text-xs text-primary hover:underline font-medium"
+                >
+                  Manage
+                </Link>
+              </div>
+              {meetings.map((m) => (
+                <Link
+                  key={m.id}
+                  href={`/meeting-room?date=${m.meeting_date}`}
+                  className="flex w-full items-center justify-between rounded-lg border border-indigo-200/60 dark:border-indigo-800/60 bg-indigo-50/40 dark:bg-indigo-950/20 p-2.5 hover:bg-indigo-50/80 transition-colors"
+                >
+                  <div className="flex items-center gap-2">
+                    <DoorOpen className="h-4 w-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                    <div>
+                      <p className="text-sm font-medium text-foreground">{m.title}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {m.start_time} - {m.end_time} • {m.organizer?.name || "Organizer"}
+                      </p>
+                    </div>
+                  </div>
+                  <Badge
+                    variant="outline"
+                    className="text-[10px] capitalize text-indigo-700 dark:text-indigo-300 border-indigo-300 shrink-0"
+                  >
+                    {m.status.replace("_", " ")}
+                  </Badge>
+                </Link>
+              ))}
             </div>
           )}
 

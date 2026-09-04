@@ -59,6 +59,23 @@ export default async function CalendarPage() {
     .filter((l) => !NON_DEDUCTIBLE_TYPES.includes(l.leave_type))
     .reduce((sum, l) => sum + l.duration_value, 0);
 
+  // Get current month meeting bookings (with organizer and attendees)
+  const { data: monthMeetings } = await supabase
+    .from("meeting_room_bookings")
+    .select(`
+      *,
+      organizer:users!meeting_room_bookings_organizer_id_fkey(*),
+      attendees:meeting_attendees(
+        id,
+        booking_id,
+        user_id,
+        user:users(*)
+      )
+    `)
+    .gte("meeting_date", startOfMonth)
+    .lte("meeting_date", endOfMonth)
+    .in("status", ["scheduled", "in_progress", "completed"]);
+
   return (
     <CalendarContent
       user={user!}
@@ -66,6 +83,7 @@ export default async function CalendarPage() {
       holidays={holidays || []}
       initialWfhAll={(monthWfhAll || []) as any}
       initialDeductibleUsed={initialDeductibleUsed}
+      initialMeetings={(monthMeetings || []) as any}
     />
   );
 }

@@ -1,15 +1,23 @@
 {
   "_comment": "Replace {APP_URL} with your actual URL (e.g. https://your-ngrok-url.ngrok.io or your production domain) before using.",
   "display_information": {
-    "name": "RSD Time Logger",
-    "description": "Create Time Logger drafts from Slack EOD messages",
-    "background_color": "#000000"
+    "name": "RSD Bot",
+    "description": "Meeting Room announcements, attendance tracking, and Time Logger integrations",
+    "background_color": "#0f172a"
   },
   "features": {
     "bot_user": {
-      "display_name": "RSD Time Logger",
+      "display_name": "RSD Bot",
       "always_online": false
     },
+    "slash_commands": [
+      {
+        "command": "/meeting-room",
+        "url": "{APP_URL}/api/slack/shortcut",
+        "description": "Check meeting room availability and schedule",
+        "should_escape": false
+      }
+    ],
     "shortcuts": [
       {
         "name": "Log to Time-Logger",
@@ -21,18 +29,22 @@
   },
   "oauth_config": {
     "redirect_urls": [
-      "https://rsd-attendance-manager.vercel.app/api/slack/oauth/callback"
+      "{APP_URL}/api/slack/oauth/callback"
     ],
     "scopes": {
       "bot": [
-        "commands"
+        "chat:write",
+        "chat:write.public",
+        "im:write",
+        "commands",
+        "users:read"
       ]
     }
   },
   "settings": {
     "interactivity": {
       "is_enabled": true,
-      "request_url": "https://rsd-attendance-manager.vercel.app/api/slack/shortcut"
+      "request_url": "{APP_URL}/api/slack/shortcut"
     },
     "org_deploy_enabled": false,
     "socket_mode_enabled": false,

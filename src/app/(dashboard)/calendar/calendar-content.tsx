@@ -16,6 +16,7 @@ import {
   isWeekend,
   getDay,
 } from "date-fns";
+import Link from "next/link";
 import {
   ChevronLeft,
   ChevronRight,
@@ -26,6 +27,7 @@ import {
   CalendarPlus,
   Monitor,
   Users,
+  DoorOpen,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -43,7 +45,7 @@ import {
 } from "@/components/ui/popover";
 import { LEAVE_TYPES, NON_DEDUCTIBLE_TYPES, WFH_DAILY_GLOBAL_CAP, WFH_MONTHLY_CAP } from "@/lib/constants/leave-types";
 import { cn } from "@/lib/utils";
-import type { User, LeaveEntry, Holiday } from "@/lib/types";
+import type { User, LeaveEntry, Holiday, MeetingWithAttendees } from "@/lib/types";
 
 interface WfhEntry {
   leave_date: string;
@@ -62,6 +64,7 @@ interface CalendarContentProps {
   holidays: Holiday[];
   initialWfhAll: WfhEntry[];
   initialDeductibleUsed: number;
+  initialMeetings?: MeetingWithAttendees[];
 }
 
 export function CalendarContent({
@@ -70,9 +73,13 @@ export function CalendarContent({
   holidays,
   initialWfhAll,
   initialDeductibleUsed,
+  initialMeetings,
 }: CalendarContentProps) {
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [leaves, setLeaves] = useState(initialLeaves);
+  const [meetings, setMeetings] = useState<MeetingWithAttendees[]>(initialMeetings || []);
+  const [viewFilter, setViewFilter] = useState<"all" | "leaves" | "meetings">("all");
+  const [meetingScope, setMeetingScope] = useState<"my" | "all">("all");
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [selectedLeave, setSelectedLeave] = useState<LeaveEntry | null>(null);
 
@@ -107,8 +114,23 @@ export function CalendarContent({
   const nextMonth = () => setCurrentMonth(addMonths(currentMonth, 1));
 
   const getLeavesForDate = (date: Date) => {
+    if (viewFilter === "meetings") return [];
     const dateStr = format(date, "yyyy-MM-dd");
     return leaves.filter((l) => l.leave_date === dateStr);
+  };
+
+  const getMeetingsForDate = (date: Date) => {
+    if (viewFilter === "leaves") return [];
+    const dateStr = format(date, "yyyy-MM-dd");
+    return meetings.filter((m) => {
+      if (m.meeting_date !== dateStr) return false;
+      if (meetingScope === "my") {
+        const isOrganizer = m.organizer_id === user.id;
+        const isAttendee = m.attendees?.some((a) => a.user_id === user.id);
+        return isOrganizer || isAttendee;
+      }
+      return true;
+    });
   };
 
   const getHolidayForDate = (date: Date) => {
@@ -183,7 +205,7 @@ export function CalendarContent({
     const start = format(startOfMonth(currentMonth), "yyyy-MM-dd");
     const end = format(endOfMonth(currentMonth), "yyyy-MM-dd");
 
-    const [leavesRes, holidaysRes, wfhAllRes, deductibleRes] = await Promise.all([
+    const [leavesRes, holidaysRes, wfhAllRes, deductibleRes, meetingsRes] = await Promise.all([
       supabase
         .from("leaves")
         .select("*")
@@ -209,11 +231,27 @@ export function CalendarContent({
         .select("leave_type, duration_value")
         .eq("user_id", user.id)
         .in("status", ["approved", "pending"]),
+      supabase
+        .from("meeting_room_bookings")
+        .select(`
+          *,
+          organizer:users!meeting_room_bookings_organizer_id_fkey(*),
+          attendees:meeting_attendees(
+            id,
+            booking_id,
+            user_id,
+            user:users(*)
+          )
+        `)
+        .gte("meeting_date", start)
+        .lte("meeting_date", end)
+        .in("status", ["scheduled", "in_progress", "completed"]),
     ]);
 
     if (leavesRes.data) setLeaves(leavesRes.data);
     if (holidaysRes.data) setAllHolidays(holidaysRes.data);
     if (wfhAllRes.data) setWfhAll(wfhAllRes.data as unknown as WfhEntry[]);
+    if (meetingsRes.data) setMeetings(meetingsRes.data as any);
     if (deductibleRes.data) {
       const used = deductibleRes.data
         .filter((l) => !NON_DEDUCTIBLE_TYPES.includes(l.leave_type))
@@ -354,6 +392,80 @@ export function CalendarContent({
                   </div>
                 </div>
               </div>
+
+              {/* View Filters & Meeting Scope Toggle */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pt-2 border-t border-border/50">
+                <div className="flex items-center gap-1 bg-muted/60 p-1 rounded-lg border border-border/60 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => setViewFilter("all")}
+                    className={cn(
+                      "px-2.5 py-1 rounded-md font-medium transition-colors",
+                      viewFilter === "all"
+                        ? "bg-background text-foreground shadow-xs"
+                        : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    All
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setViewFilter("leaves")}
+                    className={cn(
+                      "px-2.5 py-1 rounded-md font-medium transition-colors",
+                      viewFilter === "leaves"
+                        ? "bg-background text-foreground shadow-xs"
+                        : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    Leaves Only
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setViewFilter("meetings")}
+                    className={cn(
+                      "px-2.5 py-1 rounded-md font-medium transition-colors",
+                      viewFilter === "meetings"
+                        ? "bg-background text-foreground shadow-xs"
+                        : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    Meetings Only
+                  </button>
+                </div>
+
+                {viewFilter !== "leaves" && (
+                  <div className="flex items-center gap-2 text-xs">
+                    <span className="text-muted-foreground font-medium">Scope:</span>
+                    <div className="flex items-center bg-muted/60 p-0.5 rounded-lg border border-border/60">
+                      <button
+                        type="button"
+                        onClick={() => setMeetingScope("all")}
+                        className={cn(
+                          "px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors",
+                          meetingScope === "all"
+                            ? "bg-background text-foreground shadow-xs"
+                            : "text-muted-foreground hover:text-foreground"
+                        )}
+                      >
+                        All Room Bookings
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setMeetingScope("my")}
+                        className={cn(
+                          "px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors",
+                          meetingScope === "my"
+                            ? "bg-background text-foreground shadow-xs"
+                            : "text-muted-foreground hover:text-foreground"
+                        )}
+                      >
+                        My Meetings
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
               {isMultiDayMode && (
                 <p className="text-xs text-muted-foreground mt-1">
                   Click on days to select them, then apply leave to all at once.
@@ -380,6 +492,7 @@ export function CalendarContent({
                   const isToday = isSameDay(day, new Date());
                   const weekend = isWeekend(day);
                   const dayLeaves = getLeavesForDate(day);
+                  const dayMeetings = getMeetingsForDate(day);
                   const holiday = getHolidayForDate(day);
                   const dateStr = format(day, "yyyy-MM-dd");
                   const isSelected =
@@ -539,6 +652,40 @@ export function CalendarContent({
                               </div>
                             );
                           })}
+                        </div>
+                      )}
+
+                      {/* Meeting Room Bookings — compact dots on mobile */}
+                      {dayMeetings.length > 0 && isCurrentMonth && (
+                        <div className="sm:hidden mt-0.5 flex flex-wrap items-center gap-1">
+                          {dayMeetings.map((m) => (
+                            <div
+                              key={m.id}
+                              className="h-2 w-2 rounded-full bg-indigo-500"
+                              title={`Meeting: ${m.title} (${m.start_time})`}
+                            />
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Meeting Room Bookings — desktop pills */}
+                      {dayMeetings.length > 0 && isCurrentMonth && (
+                        <div className="hidden sm:block mt-1 space-y-0.5">
+                          {dayMeetings.map((m) => (
+                            <Link
+                              key={m.id}
+                              href={`/meeting-room?date=${dateStr}`}
+                              onClick={(e) => e.stopPropagation()}
+                              className="flex items-center gap-1 px-1 py-0.5 rounded text-[10px] font-medium bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200/60 dark:border-indigo-800/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 transition-colors truncate"
+                              title={`Meeting: ${m.title} (${m.start_time} - ${m.end_time})`}
+                            >
+                              <DoorOpen className="h-2.5 w-2.5 shrink-0 text-indigo-500" />
+                              <span className="truncate">{m.title}</span>
+                              <span className="text-[9px] opacity-75 shrink-0 font-mono hidden md:inline ml-auto">
+                                {m.start_time}
+                              </span>
+                            </Link>
+                          ))}
                         </div>
                       )}
                     </div>
@@ -792,6 +939,7 @@ export function CalendarContent({
           date={sheetDate}
           holiday={sheetDate ? getHolidayForDate(sheetDate) : undefined}
           leaves={sheetDate ? getLeavesForDate(sheetDate) : []}
+          meetings={sheetDate ? getMeetingsForDate(sheetDate) : []}
           wfh={sheetDate ? wfhByDate.get(format(sheetDate, "yyyy-MM-dd")) : undefined}
           canFileLeave={
             !!sheetDate &&

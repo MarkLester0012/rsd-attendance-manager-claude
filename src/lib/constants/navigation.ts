@@ -54,6 +54,13 @@ export const NAV_ITEMS: NavItem[] = [
     roles: ["member", "leader", "hr"],
     section: "main",
   },
+  {
+    label: "Meeting Room",
+    href: "/meeting-room",
+    icon: "DoorOpen",
+    roles: ["member", "leader", "hr"],
+    section: "main",
+  },
   // Management
   {
     label: "Approvals",

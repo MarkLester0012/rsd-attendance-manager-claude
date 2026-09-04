@@ -8,6 +8,7 @@ import { decryptToken } from "@/lib/slack/encryption";
 import { createTimeEntry, getTimeEntries } from "@/lib/redmine/client";
 import { buildTimeLogModal, formatForRedmine } from "@/lib/slack/modal";
 import type { ModalMetadata } from "@/lib/slack/modal";
+import { buildScheduleBlockKit } from "@/lib/slack/meetings";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
@@ -318,6 +319,26 @@ async function handleViewSubmission(payload: {
   return jsonResponse({ response_action: "clear" });
 }
 
+async function handleMeetingRoomCommand(params: URLSearchParams): Promise<Response> {
+  const text = (params.get("text") || "").trim().toLowerCase();
+  const today = new Date().toISOString().slice(0, 10);
+  const targetDate = text.match(/^\d{4}-\d{2}-\d{2}$/) ? text : today;
+
+  const supabase = createAdminClient();
+  const { data: bookings } = await supabase
+    .from("meeting_room_bookings")
+    .select("*, organizer:users!meeting_room_bookings_organizer_id_fkey(name, slack_user_id)")
+    .eq("meeting_date", targetDate)
+    .in("status", ["scheduled", "in_progress"])
+    .order("start_time", { ascending: true });
+
+  const blocks = buildScheduleBlockKit(targetDate, (bookings as any) || [], APP_URL);
+  return jsonResponse({
+    response_type: "ephemeral",
+    blocks,
+  });
+}
+
 // ─── main POST handler ────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
@@ -334,6 +355,11 @@ export async function POST(req: NextRequest) {
   }
 
   const params = new URLSearchParams(raw);
+  const command = params.get("command");
+  if (command === "/meeting-room" || command === "/book-room") {
+    return handleMeetingRoomCommand(params);
+  }
+
   const payloadStr = params.get("payload");
   if (!payloadStr) {
     return new Response(null, { status: 200 });

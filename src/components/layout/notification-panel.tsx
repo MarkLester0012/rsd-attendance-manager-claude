@@ -17,6 +17,7 @@ import {
   Megaphone,
   PartyPopper,
   Bus,
+  DoorOpen,
 } from "lucide-react";
 import {
   Popover,
@@ -59,6 +60,9 @@ const ICON_MAP: Record<
   allowance_request_reviewed: { icon: Bus, color: "text-cyan-600 dark:text-cyan-400" },
   allowance_submitted: { icon: Bus, color: "text-cyan-600 dark:text-cyan-400" },
   allowance_submission_reviewed: { icon: Bus, color: "text-cyan-600 dark:text-cyan-400" },
+  meeting_scheduled: { icon: DoorOpen, color: "text-blue-600 dark:text-blue-400" },
+  meeting_starting: { icon: DoorOpen, color: "text-emerald-600 dark:text-emerald-400" },
+  meeting_cancelled: { icon: CalendarX, color: "text-red-600 dark:text-red-400" },
 };
 
 const NOTIFICATION_ROUTES: Record<NotificationType, string> = {
@@ -76,6 +80,9 @@ const NOTIFICATION_ROUTES: Record<NotificationType, string> = {
   allowance_request_reviewed: "/transportation-allowance",
   allowance_submitted: "/transportation-allowance?tab=requests",
   allowance_submission_reviewed: "/transportation-allowance",
+  meeting_scheduled: "/meeting-room",
+  meeting_starting: "/meeting-room",
+  meeting_cancelled: "/meeting-room",
 };
 
 function timeAgo(iso: string) {

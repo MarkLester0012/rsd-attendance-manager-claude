@@ -69,3 +69,89 @@ export async function updateModal(
   });
   return res.json();
 }
+
+/**
+ * Retrieves an active decrypted Slack Bot Token.
+ * First checks for SLACK_BOT_TOKEN in env, then falls back to user_slack_tokens in DB.
+ */
+export async function getWorkspaceBotToken(): Promise<string | null> {
+  if (process.env.SLACK_BOT_TOKEN) {
+    return process.env.SLACK_BOT_TOKEN;
+  }
+
+  try {
+    const { createAdminClient } = await import("@/lib/supabase/admin");
+    const { decryptToken } = await import("@/lib/slack/encryption");
+    const supabase = createAdminClient();
+
+    const { data: tokens } = await supabase
+      .from("user_slack_tokens")
+      .select("encrypted, iv, tag")
+      .limit(1);
+
+    if (!tokens || tokens.length === 0) return null;
+
+    return decryptToken(tokens[0].encrypted, tokens[0].iv, tokens[0].tag);
+  } catch (err) {
+    console.error("Failed to retrieve workspace bot token:", err);
+    return null;
+  }
+}
+
+/**
+ * Posts a message to a public or private Slack channel.
+ */
+export async function postChatMessage(
+  botToken: string,
+  channel: string,
+  text: string,
+  blocks?: object[]
+): Promise<{ ok: boolean; ts?: string; error?: string }> {
+  const body: Record<string, unknown> = {
+    channel,
+    text,
+  };
+  if (blocks && blocks.length > 0) {
+    body.blocks = blocks;
+  }
+
+  const res = await fetch("https://slack.com/api/chat.postMessage", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${botToken}`,
+    },
+    body: JSON.stringify(body),
+  });
+
+  return res.json();
+}
+
+/**
+ * Sends a Direct Message to a specific Slack user by opening a DM channel first.
+ */
+export async function postDirectMessage(
+  botToken: string,
+  slackUserId: string,
+  text: string,
+  blocks?: object[]
+): Promise<{ ok: boolean; ts?: string; error?: string }> {
+  // Step 1: Open DM conversation
+  const openRes = await fetch("https://slack.com/api/conversations.open", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${botToken}`,
+    },
+    body: JSON.stringify({ users: slackUserId }),
+  });
+
+  const openData = await openRes.json();
+  if (!openData.ok || !openData.channel?.id) {
+    return { ok: false, error: openData.error || "failed_to_open_dm" };
+  }
+
+  // Step 2: Post message to DM channel
+  return postChatMessage(botToken, openData.channel.id, text, blocks);
+}
+
