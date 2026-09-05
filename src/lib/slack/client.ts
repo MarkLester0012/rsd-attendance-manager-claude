@@ -1,3 +1,17 @@
+/**
+ * Safely parses a Slack API response as JSON. Slack can return non-JSON bodies
+ * (e.g. HTML) on 5xx errors or when rate-limited, which would otherwise throw
+ * an unhandled SyntaxError deep inside a server action.
+ */
+async function safeSlackJson(res: Response): Promise<{ ok: boolean; [key: string]: unknown }> {
+  try {
+    const data = await res.json();
+    return data;
+  } catch {
+    return { ok: false, error: `slack_non_json_response_${res.status}` };
+  }
+}
+
 export async function postResponseUrl(
   responseUrl: string,
   payload: { text: string; response_type?: "ephemeral" | "in_channel" }
@@ -71,31 +85,20 @@ export async function updateModal(
 }
 
 /**
- * Retrieves an active decrypted Slack Bot Token.
- * First checks for SLACK_BOT_TOKEN in env, then falls back to user_slack_tokens in DB.
+ * Retrieves the workspace bot token from SLACK_BOT_TOKEN. There is deliberately
+ * no fallback to a row in user_slack_tokens: that table holds per-user OAuth
+ * tokens linked via Settings > Integrations, and picking an arbitrary one to
+ * post as "the workspace bot" would post under a random employee's identity
+ * and break the moment that employee disconnects Slack.
  */
 export async function getWorkspaceBotToken(): Promise<string | null> {
   if (process.env.SLACK_BOT_TOKEN) {
     return process.env.SLACK_BOT_TOKEN;
   }
-
-  try {
-    const { createAdminClient } = await import("@/lib/supabase/admin");
-    const { decryptToken } = await import("@/lib/slack/encryption");
-    const supabase = createAdminClient();
-
-    const { data: tokens } = await supabase
-      .from("user_slack_tokens")
-      .select("encrypted, iv, tag")
-      .limit(1);
-
-    if (!tokens || tokens.length === 0) return null;
-
-    return decryptToken(tokens[0].encrypted, tokens[0].iv, tokens[0].tag);
-  } catch (err) {
-    console.error("Failed to retrieve workspace bot token:", err);
-    return null;
-  }
+  console.error(
+    "SLACK_BOT_TOKEN is not set — meeting room Slack notifications are disabled."
+  );
+  return null;
 }
 
 /**
@@ -124,11 +127,13 @@ export async function postChatMessage(
     body: JSON.stringify(body),
   });
 
-  return res.json();
+  return safeSlackJson(res) as Promise<{ ok: boolean; ts?: string; error?: string }>;
 }
 
 /**
- * Sends a Direct Message to a specific Slack user by opening a DM channel first.
+ * Sends a Direct Message to a specific Slack user. `chat.postMessage` accepts a
+ * user ID directly as `channel` — Slack opens (or reuses) the DM automatically,
+ * so no separate `conversations.open` round-trip is needed.
  */
 export async function postDirectMessage(
   botToken: string,
@@ -136,22 +141,6 @@ export async function postDirectMessage(
   text: string,
   blocks?: object[]
 ): Promise<{ ok: boolean; ts?: string; error?: string }> {
-  // Step 1: Open DM conversation
-  const openRes = await fetch("https://slack.com/api/conversations.open", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${botToken}`,
-    },
-    body: JSON.stringify({ users: slackUserId }),
-  });
-
-  const openData = await openRes.json();
-  if (!openData.ok || !openData.channel?.id) {
-    return { ok: false, error: openData.error || "failed_to_open_dm" };
-  }
-
-  // Step 2: Post message to DM channel
-  return postChatMessage(botToken, openData.channel.id, text, blocks);
+  return postChatMessage(botToken, slackUserId, text, blocks);
 }
 

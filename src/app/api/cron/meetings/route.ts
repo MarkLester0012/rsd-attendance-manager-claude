@@ -1,117 +1,192 @@
 import { NextResponse } from "next/server";
+import { timingSafeEqual } from "crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { timeToMinutes } from "@/lib/utils/meeting-conflicts";
+import { officeDateString, officeMinutesOfDay } from "@/lib/utils/office-time";
 import { getWorkspaceBotToken, postChatMessage, postDirectMessage } from "@/lib/slack/client";
 import { buildMeetingStartBlockKit, buildMeetingDM, type AttendeeWithStatus } from "@/lib/slack/meetings";
 import { resolveAttendeeStatus } from "@/lib/utils/meeting-conflicts";
-import type { User } from "@/lib/types";
+import type { MeetingBooking, User } from "@/lib/types";
 
 export const runtime = "nodejs";
 
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+// Server-only var — see APP_URL note in meeting-room/actions.ts.
+const APP_URL = process.env.APP_URL || "http://localhost:3000";
+if (!process.env.APP_URL && process.env.NODE_ENV === "production") {
+  console.error("APP_URL is not set — Slack meeting links will point at localhost.");
+}
 const DEFAULT_CHANNEL = process.env.SLACK_MEETING_ROOM_CHANNEL || "rsd-leader-team";
 
+function isAuthorized(req: Request): boolean {
+  const secret = process.env.CRON_SECRET;
+  if (!secret) return false; // fail closed — never fall back to "unauthenticated is fine"
+
+  const authHeader = req.headers.get("authorization") || "";
+  const expected = `Bearer ${secret}`;
+  const a = Buffer.from(authHeader);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(a, b);
+}
+
+type BookingRow = MeetingBooking & { organizer: User | null };
+
+/** Starts a single meeting: claims it, sends Slack traffic, records the result. */
+async function startMeeting(
+  supabase: ReturnType<typeof createAdminClient>,
+  booking: BookingRow,
+  attendeesWithStatus: AttendeeWithStatus[]
+): Promise<void> {
+  // Claim the booking before sending any Slack traffic. A guarded update means
+  // this can only ever succeed once, even if a manual "Start & Notify Slack"
+  // click races this same cron tick — the loser sends nothing.
+  const { data: claimed } = await supabase
+    .from("meeting_room_bookings")
+    .update({ status: "in_progress", started_at: new Date().toISOString() })
+    .eq("id", booking.id)
+    .eq("status", "scheduled")
+    .select("id")
+    .single();
+
+  if (!claimed) return; // someone else (manual start) already claimed it
+
+  const botToken = await getWorkspaceBotToken();
+  if (!botToken) return;
+
+  const organizerUser = booking.organizer;
+  if (!organizerUser) {
+    console.error(`Meeting ${booking.id} has no resolvable organizer; skipping Slack broadcast.`);
+    return;
+  }
+
+  const channelName = booking.slack_channel || DEFAULT_CHANNEL;
+
+  if (booking.notify_channel) {
+    const blocks = buildMeetingStartBlockKit(booking, organizerUser, attendeesWithStatus, APP_URL);
+    const postResult = await postChatMessage(
+      botToken,
+      channelName,
+      `🚪 Meeting Starting Now: "${booking.title}" (${booking.start_time} - ${booking.end_time})`,
+      blocks
+    );
+    if (postResult.ok && postResult.ts) {
+      await supabase
+        .from("meeting_room_bookings")
+        .update({ slack_message_ts: postResult.ts })
+        .eq("id", booking.id);
+    } else if (!postResult.ok) {
+      console.error(`Failed to post meeting-start message for booking ${booking.id}:`, postResult.error);
+    }
+  }
+
+  await Promise.allSettled(
+    attendeesWithStatus
+      .filter((item) => item.user.slack_user_id)
+      .map((item) => {
+        const dmPayload = buildMeetingDM(booking, item.status, APP_URL);
+        return postDirectMessage(botToken, item.user.slack_user_id as string, dmPayload.text, dmPayload.blocks);
+      })
+  );
+}
+
 export async function GET(req: Request) {
-  // Optional cron authorization header check
-  const authHeader = req.headers.get("authorization");
-  if (process.env.CRON_SECRET && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+  if (!isAuthorized(req)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const today = new Date().toISOString().slice(0, 10);
-  const now = new Date();
-  const currentMinutes = now.getHours() * 60 + now.getMinutes();
-
   const supabase = createAdminClient();
+  const today = officeDateString();
+  const currentMinutes = officeMinutesOfDay();
 
-  // Find meetings scheduled for today that should be starting now
-  const { data: bookings } = await supabase
+  // ─── Pass 1: auto-complete meetings whose end_time has passed ───────────
+  // Nothing else transitions in_progress -> completed, so without this a
+  // meeting stays "in progress" forever and pins the room-status badge to
+  // "Occupied" indefinitely.
+  const { data: staleInProgress } = await supabase
+    .from("meeting_room_bookings")
+    .select("id, end_time")
+    .eq("meeting_date", today)
+    .eq("status", "in_progress");
+
+  const toComplete = (staleInProgress || [])
+    .filter((b) => currentMinutes >= timeToMinutes(b.end_time))
+    .map((b) => b.id);
+
+  if (toComplete.length > 0) {
+    await supabase
+      .from("meeting_room_bookings")
+      .update({ status: "completed", ended_at: new Date().toISOString() })
+      .in("id", toComplete)
+      .eq("status", "in_progress");
+  }
+
+  // ─── Pass 2: start meetings whose start_time has arrived ────────────────
+  const { data: bookings, error: bookingsErr } = await supabase
     .from("meeting_room_bookings")
     .select("*, organizer:users!meeting_room_bookings_organizer_id_fkey(*)")
     .eq("meeting_date", today)
     .eq("status", "scheduled");
 
-  const startingMeetings = (bookings || []).filter((b) => {
+  if (bookingsErr) {
+    console.error("Failed to load bookings for auto-start:", bookingsErr.message);
+    return NextResponse.json({ ok: false, error: bookingsErr.message }, { status: 500 });
+  }
+
+  const startingMeetings = ((bookings as BookingRow[]) || []).filter((b) => {
     const startMin = timeToMinutes(b.start_time);
     const endMin = timeToMinutes(b.end_time);
-    // Trigger if we are at or past start_time, but haven't exceeded end_time
     return currentMinutes >= startMin && currentMinutes < endMin;
   });
 
-  const botToken = await getWorkspaceBotToken();
   const startedIds: string[] = [];
 
-  for (const booking of startingMeetings) {
-    try {
-      const { data: attendeesData } = await supabase
-        .from("meeting_attendees")
-        .select("*, user:users(*)")
-        .eq("booking_id", booking.id);
+  if (startingMeetings.length > 0) {
+    const bookingIds = startingMeetings.map((b) => b.id);
 
-      const attendees = (attendeesData || []).map((a: any) => a.user as User).filter(Boolean);
-      const attendeeIds = attendees.map((a) => a.id);
+    const { data: attendeesData } = await supabase
+      .from("meeting_attendees")
+      .select("booking_id, user:users(*)")
+      .in("booking_id", bookingIds);
 
-      // Fetch leaves for status resolution
-      const { data: leaves } = await supabase
-        .from("leaves")
-        .select("user_id, leave_type, leave_date, duration, status")
-        .in("user_id", attendeeIds)
-        .eq("leave_date", today)
-        .eq("status", "approved");
+    const attendeesByBooking = new Map<string, User[]>();
+    for (const row of (attendeesData || []) as unknown as { booking_id: string; user: User | null }[]) {
+      if (!row.user) continue;
+      const list = attendeesByBooking.get(row.booking_id) || [];
+      list.push(row.user);
+      attendeesByBooking.set(row.booking_id, list);
+    }
 
-      const attendeesWithStatus: AttendeeWithStatus[] = attendees.map((u) => ({
-        user: u,
-        status: resolveAttendeeStatus(u.id, today, (leaves as any) || []),
-      }));
+    const allAttendeeIds = Array.from(
+      new Set(Array.from(attendeesByBooking.values()).flat().map((u) => u.id))
+    );
 
-      let messageTs = booking.slack_message_ts;
+    const { data: leaves } = await supabase
+      .from("leaves")
+      .select("user_id, leave_type, leave_date, duration, status")
+      .in("user_id", allAttendeeIds.length > 0 ? allAttendeeIds : [""])
+      .eq("leave_date", today)
+      .eq("status", "approved");
 
-      if (botToken) {
-        const channelName = booking.slack_channel || DEFAULT_CHANNEL;
-        const organizerUser = booking.organizer;
+    for (const booking of startingMeetings) {
+      try {
+        const attendees = attendeesByBooking.get(booking.id) || [];
+        const attendeesWithStatus: AttendeeWithStatus[] = attendees.map((u) => ({
+          user: u,
+          status: resolveAttendeeStatus(u.id, today, (leaves as never) || [], booking.start_time),
+        }));
 
-        // Post channel broadcast
-        if (booking.notify_channel) {
-          const blocks = buildMeetingStartBlockKit(booking, organizerUser, attendeesWithStatus, APP_URL);
-          const postResult = await postChatMessage(
-            botToken,
-            channelName,
-            `🚪 Meeting Starting Now: "${booking.title}" (${booking.start_time} - ${booking.end_time})`,
-            blocks
-          );
-          if (postResult.ok && postResult.ts) {
-            messageTs = postResult.ts;
-          }
-        }
-
-        // Send DMs
-        for (const item of attendeesWithStatus) {
-          if (item.user.slack_user_id && item.status !== "on_leave") {
-            const dmPayload = buildMeetingDM(booking, item.status, APP_URL);
-            await postDirectMessage(botToken, item.user.slack_user_id, dmPayload.text, dmPayload.blocks);
-          }
-        }
+        await startMeeting(supabase, booking, attendeesWithStatus);
+        startedIds.push(booking.id);
+      } catch (e) {
+        console.error(`Error auto-starting meeting ${booking.id}:`, e);
       }
-
-      // Mark in_progress
-      await supabase
-        .from("meeting_room_bookings")
-        .update({
-          status: "in_progress",
-          started_at: new Date().toISOString(),
-          slack_message_ts: messageTs,
-        })
-        .eq("id", booking.id);
-
-      startedIds.push(booking.id);
-    } catch (e) {
-      console.error(`Error auto-starting meeting ${booking.id}:`, e);
     }
   }
 
   return NextResponse.json({
     ok: true,
-    checked: bookings?.length || 0,
+    completed: toComplete.length,
+    checked: startingMeetings.length,
     started: startedIds.length,
     startedIds,
   });

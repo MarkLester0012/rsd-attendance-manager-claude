@@ -26,6 +26,8 @@ SLACK_CLIENT_ID=
 SLACK_CLIENT_SECRET=
 SLACK_SIGNING_SECRET=              # Webhook signature verification
 SLACK_ENCRYPTION_KEY=              # Encrypts stored OAuth tokens
+SLACK_BOT_TOKEN=                   # Workspace bot token used to post meeting room Slack messages/DMs
+SLACK_MEETING_ROOM_CHANNEL=        # Channel for meeting room broadcasts (default: rsd-leader-team)
 
 # Redmine integration
 REDMINE_URL=
@@ -34,7 +36,15 @@ REDMINE_ENCRYPTION_KEY=            # Encrypts stored API keys
 # AI assistant (OpenRouter)
 OPENROUTER_API_KEY=                # Used by api/ai/chat
 
-NEXT_PUBLIC_APP_URL=               # Public base URL (Slack OAuth redirects)
+NEXT_PUBLIC_APP_URL=               # Public base URL (Slack OAuth redirects — client-visible)
+APP_URL=                           # Same base URL, server-only. Slack Block Kit builders (meeting
+                                    # room, cron) must read this instead of NEXT_PUBLIC_APP_URL:
+                                    # NEXT_PUBLIC_* vars are inlined at build time, so if unset at
+                                    # build time every Slack button/link is permanently baked in as
+                                    # localhost regardless of the runtime environment.
+CRON_SECRET=                       # Bearer token required by api/cron/meetings — mandatory in
+                                    # production; the route rejects unauthenticated requests when
+                                    # this is unset rather than allowing them through
 ```
 
 ## Architecture
@@ -58,6 +68,7 @@ src/
       profile/           # User profile
       time-logger/       # Daily time logging (Slack + manual entry)
       transportation-allowance/ # Transportation allowance management
+      payslip-stats/     # HR payslip stats — semi-monthly pay periods (26th–10th, 11th–25th)
       settings/
         integrations/    # Slack OAuth connection
     api/
@@ -79,7 +90,7 @@ src/
     use-register-page-context.ts # Registers per-page context for the AI assistant
   lib/
     constants/
-      leave-types.ts     # 9 leave types with rules (VL, PL, ML, SPL, SL, NW, RGA, AB, WFH)
+      leave-types.ts     # 10 leave types with rules (VL, PL, ML, SPL, SL, NW, RGA, AB, WFH, BL)
       navigation.ts      # Role-based nav items
     supabase/
       client.ts          # Browser client
@@ -88,7 +99,6 @@ src/
       admin.ts           # Service role client (user registration)
     slack/
       client.ts          # Slack API client
-      ingest.ts          # EOD message ingest → Redmine
       modal.ts           # Time-logger modal builder
       signature.ts       # Webhook signature verification
       state.ts           # Modal state persistence
@@ -130,19 +140,23 @@ Navigation is role-gated via `src/lib/constants/navigation.ts`. Page-level acces
 
 ## Leave System
 
-9 leave types defined in `src/lib/constants/leave-types.ts`:
+10 leave types defined in `src/lib/constants/leave-types.ts`:
 - **Balance-deducting**: VL, PL, ML, SPL, SL, AB
-- **Non-deducting**: NW (No Work), RGA (RGA Office), WFH (Work From Home)
+- **Non-deducting**: NW (No Work), RGA (RGA Office), WFH (Work From Home), BL (Birthday Leave)
 - HR users have unlimited leave balance
 - Leave overlap checking is enforced
 - Half-day support: `whole`, `half_am`, `half_pm`
+- Split-day pairing: a secondary half-day leave may only be SL, NW, RGA, AB, or WFH (`SECONDARY_LEAVE_TYPES` in leave-types.ts), and never the same type as the primary
+- WFH and BL are excluded from "leaves used" counts (payslip-stats, reports)
+- Birthday Leave (BL) does not deduct balance but still requires approval, is capped at 1 day per calendar year (enforced client-side in leave-modal.tsx, applies to all roles including HR), and is excluded from worked days for payroll/transportation-allowance calculations (`NON_WORKING_TYPES` in `src/lib/utils/payroll-stats.ts`)
+- Payroll uses semi-monthly pay periods: 26th–10th and 11th–25th (`src/lib/utils/pay-period.ts`); holidays falling on weekends are excluded from holiday counts
 
 ## Integrations
 
 ### Slack
 - Users connect their Slack workspace via OAuth at `settings/integrations/`
 - A Slack shortcut opens a time-logger modal (`api/slack/shortcut` → `src/lib/slack/modal.ts`)
-- EOD messages are ingested and posted as Redmine time entries (`src/lib/slack/ingest.ts`)
+- The modal parses EOD ticket entries, then posts them to Redmine or saves them as drafts (`api/slack/shortcut` block_actions → `src/lib/redmine/client.ts`)
 - Every incoming webhook is signature-verified (`src/lib/slack/signature.ts`) — requests without a valid `X-Slack-Signature` are rejected
 
 ### Redmine
@@ -154,6 +168,12 @@ Navigation is role-gated via `src/lib/constants/navigation.ts`. Page-level acces
 - Floating chat widget (`src/components/ai-chat/`) calls the auth-gated edge route `api/ai/chat`, which streams from OpenRouter via `src/lib/ai/client.ts`.
 - Pages call `useRegisterPageContext(...)` (`src/hooks/use-register-page-context.ts`) so the assistant sees the current page's data; `src/lib/ai/format-context.ts` formats it into the prompt.
 - The dashboard "AI News" card is server-fetched via `getAINews()` in `src/lib/news/client.ts` (Google News RSS, `revalidate: 86400` daily cache). Tune the feed by editing the `QUERY_*` constants there.
+
+### AI Chat Assistant
+- A floating widget (`src/components/ai-chat/`, mounted in `dashboard-shell.tsx`) lets users ask questions about data on their *current page only* — it does not run open-ended database queries
+- Backed by OpenRouter (`src/lib/ai/client.ts`) via a single global `OPENROUTER_API_KEY` (plain env var, not per-user/encrypted)
+- Pages publish a summarized snapshot of their on-screen data with `useRegisterPageContext(pageTitle, data)` (`src/hooks/use-register-page-context.ts`); the hook handles registering on mount/update and clearing on unmount so context never leaks across navigation. **Always summarize/cap what you pass** (e.g. `slice(0, 30)`, pick relevant fields) — never dump raw arrays. Currently wired into: dashboard, my-leaves, calendar, attendance, reports
+- Chat history is ephemeral — resets whenever the route changes (`api/ai/chat/route.ts` streams plain-text responses; no DB persistence)
 
 ## Code Patterns
 

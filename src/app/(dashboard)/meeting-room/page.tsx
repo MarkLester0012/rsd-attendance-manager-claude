@@ -1,7 +1,9 @@
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
-import { format } from "date-fns";
+import { isValid, parseISO } from "date-fns";
 import { MeetingRoomContent } from "./meeting-room-content";
+import { officeDateString } from "@/lib/utils/office-time";
+import type { LeaveRecord } from "@/lib/utils/meeting-conflicts";
 import type { MeetingWithAttendees, User } from "@/lib/types";
 
 export const metadata = {
@@ -9,14 +11,19 @@ export const metadata = {
   description: "Schedule and manage company meeting room occupancy and Slack announcements",
 };
 
+const DATE_PARAM_RE = /^\d{4}-\d{2}-\d{2}$/;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export default async function MeetingRoomPage({
   searchParams,
 }: {
-  searchParams: Promise<{ date?: string }>;
+  searchParams: Promise<{ date?: string; meeting?: string }>;
 }) {
-  const { date } = await searchParams;
-  const todayStr = format(new Date(), "yyyy-MM-dd");
-  const selectedDate = date || todayStr;
+  const { date, meeting } = await searchParams;
+  const todayStr = officeDateString();
+  const selectedDate =
+    date && DATE_PARAM_RE.test(date) && isValid(parseISO(date)) ? date : todayStr;
+  const highlightMeetingId = meeting && UUID_RE.test(meeting) ? meeting : null;
 
   const supabase = await createClient();
   const {
@@ -33,7 +40,9 @@ export default async function MeetingRoomPage({
 
   if (!user) redirect("/login");
 
-  // Fetch bookings on the selected date
+  // Fetch bookings on the selected date. The nested user select on attendees
+  // includes department so the attendee-detail popover doesn't need a
+  // separate query.
   const { data: bookingsData } = await supabase
     .from("meeting_room_bookings")
     .select(`
@@ -44,16 +53,18 @@ export default async function MeetingRoomPage({
         booking_id,
         user_id,
         created_at,
-        user:users(*)
+        user:users(*, department:departments(*))
       )
     `)
     .eq("meeting_date", selectedDate)
     .order("start_time", { ascending: true });
 
-  // Fetch active users for attendee selection
+  // Fetch active users for attendee selection — narrowed to only the columns
+  // the attendee picker and detail popover actually use, rather than shipping
+  // every column of every employee to the browser.
   const { data: allUsers } = await supabase
     .from("users")
-    .select("*")
+    .select("id, name, email, role, department_id, slack_user_id, department:departments(*)")
     .eq("is_active", true)
     .order("name", { ascending: true });
 
@@ -67,10 +78,14 @@ export default async function MeetingRoomPage({
   return (
     <MeetingRoomContent
       currentUser={user as User}
-      allUsers={(allUsers || []) as User[]}
-      initialBookings={(bookingsData || []) as any as MeetingWithAttendees[]}
-      leaves={(leaves || []) as any}
+      allUsers={(allUsers || []) as unknown as User[]}
+      // Supabase's generated types for this nested select (multiple joined
+      // relations several levels deep) don't line up with MeetingWithAttendees;
+      // the shape is verified by hand against the select() above.
+      initialBookings={(bookingsData || []) as unknown as MeetingWithAttendees[]}
+      leaves={(leaves || []) as unknown as LeaveRecord[]}
       currentDateStr={selectedDate}
+      highlightMeetingId={highlightMeetingId}
     />
   );
 }

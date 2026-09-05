@@ -1,18 +1,16 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { format, addDays, subDays, parseISO, isToday, isSameDay } from "date-fns";
+import { format, addDays, subDays, parseISO } from "date-fns";
 import {
   DoorOpen,
   Calendar,
   Clock,
-  Users,
   Plus,
   Play,
   CheckCircle2,
   XCircle,
-  AlertCircle,
   ChevronLeft,
   ChevronRight,
   MessageSquare,
@@ -22,6 +20,8 @@ import {
   Palmtree,
   Timer,
   MoreVertical,
+  Pencil,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -33,13 +33,25 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
+import { EmojiTextarea } from "@/components/ui/emoji-textarea";
 import { UserAvatar } from "@/components/ui/user-avatar";
 import { BookMeetingModal } from "./book-meeting-modal";
+import { EditMeetingModal } from "./edit-meeting-modal";
 import {
   startMeetingAndNotify,
   endMeetingEarly,
   extendMeeting,
   cancelBooking,
+  messageAttendees,
 } from "./actions";
 import {
   timeToMinutes,
@@ -48,9 +60,17 @@ import {
   resolveAttendeeStatus,
   type LeaveRecord,
 } from "@/lib/utils/meeting-conflicts";
-import type { MeetingWithAttendees, User, MeetingAttendeeStatus } from "@/lib/types";
+import { officeDateString, officeMinutesOfDay } from "@/lib/utils/office-time";
+import { LEAVE_TYPES } from "@/lib/constants/leave-types";
+import type {
+  MeetingWithAttendees,
+  User,
+  MeetingAttendeeStatus,
+  LeaveTypeCode,
+} from "@/lib/types";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { useRegisterPageContext } from "@/hooks/use-register-page-context";
 
 interface MeetingRoomContentProps {
   currentUser: User;
@@ -58,6 +78,21 @@ interface MeetingRoomContentProps {
   initialBookings: MeetingWithAttendees[];
   leaves: LeaveRecord[];
   currentDateStr: string;
+  highlightMeetingId: string | null;
+}
+
+// Matches the 07:00-20:00 range offered in the booking modal's time picker,
+// so a booking at either edge of the day is never silently clipped off the
+// timeline.
+const TIMELINE_START_HOUR = 7;
+const TIMELINE_END_HOUR = 20;
+const TIMELINE_TOTAL_MINUTES = (TIMELINE_END_HOUR - TIMELINE_START_HOUR) * 60;
+const TIMELINE_HOURS = TIMELINE_END_HOUR - TIMELINE_START_HOUR;
+
+function durationLabel(duration: string | undefined): string {
+  if (duration === "half_am") return "AM half-day";
+  if (duration === "half_pm") return "PM half-day";
+  return "Full day";
 }
 
 export function MeetingRoomContent({
@@ -66,36 +101,51 @@ export function MeetingRoomContent({
   initialBookings,
   leaves,
   currentDateStr,
+  highlightMeetingId,
 }: MeetingRoomContentProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
 
   const [bookings, setBookings] = useState<MeetingWithAttendees[]>(initialBookings);
   const [isBookModalOpen, setIsBookModalOpen] = useState(false);
+  const [editingBooking, setEditingBooking] = useState<MeetingWithAttendees | null>(null);
+  const [messagingBooking, setMessagingBooking] = useState<MeetingWithAttendees | null>(null);
+  const [messageText, setMessageText] = useState("");
+  const [sendingMessage, setSendingMessage] = useState(false);
   const [filterTab, setFilterTab] = useState<"all" | "in_progress" | "scheduled" | "completed">("all");
-  const [currentTimeMinutes, setCurrentTimeMinutes] = useState(() => {
-    const now = new Date();
-    return now.getHours() * 60 + now.getMinutes();
-  });
+  const [currentTimeMinutes, setCurrentTimeMinutes] = useState(() => officeMinutesOfDay());
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [highlightedId, setHighlightedId] = useState<string | null>(highlightMeetingId);
+
+  const cardRefs = useRef(new Map<string, HTMLDivElement>());
 
   // Sync state when props change
   useEffect(() => {
     setBookings(initialBookings);
   }, [initialBookings]);
 
+  // Scroll to and briefly highlight the meeting a notification linked to.
+  useEffect(() => {
+    if (!highlightMeetingId) return;
+    const el = cardRefs.current.get(highlightMeetingId);
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+    const t = setTimeout(() => setHighlightedId(null), 3000);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [highlightMeetingId]);
+
   // Keep clock updated every 30 seconds
   useEffect(() => {
     const timer = setInterval(() => {
-      const now = new Date();
-      setCurrentTimeMinutes(now.getHours() * 60 + now.getMinutes());
+      setCurrentTimeMinutes(officeMinutesOfDay());
     }, 30000);
     return () => clearInterval(timer);
   }, []);
 
   const isCurrentDayToday = useMemo(() => {
-    const todayStr = format(new Date(), "yyyy-MM-dd");
-    return currentDateStr === todayStr;
+    return currentDateStr === officeDateString();
   }, [currentDateStr]);
 
   const canManageMeetings = currentUser.role === "leader" || currentUser.role === "hr";
@@ -105,13 +155,14 @@ export function MeetingRoomContent({
     if (!isCurrentDayToday) {
       return { isOccupied: false, currentMeeting: null, nextMeeting: null };
     }
-    return getLiveRoomStatus(new Date(), bookings);
+    return getLiveRoomStatus(currentTimeMinutes, bookings);
   }, [bookings, currentTimeMinutes, isCurrentDayToday]);
 
   // Date Navigation handlers
   const handleDateChange = (newDateStr: string) => {
     const params = new URLSearchParams(searchParams?.toString());
     params.set("date", newDateStr);
+    params.delete("meeting");
     router.push(`/meeting-room?${params.toString()}`);
   };
 
@@ -126,7 +177,7 @@ export function MeetingRoomContent({
   };
 
   const handleToday = () => {
-    handleDateChange(format(new Date(), "yyyy-MM-dd"));
+    handleDateChange(officeDateString());
   };
 
   // Filter bookings
@@ -139,6 +190,19 @@ export function MeetingRoomContent({
       return true;
     });
   }, [bookings, filterTab]);
+
+  useRegisterPageContext("Meeting Room", {
+    date: currentDateStr,
+    roomStatus: liveStatus.isOccupied ? "occupied" : "available",
+    bookings: bookings.slice(0, 30).map((b) => ({
+      title: b.title,
+      start_time: b.start_time,
+      end_time: b.end_time,
+      status: b.status,
+      organizer: b.organizer?.name ?? null,
+      attendeeCount: b.attendees?.length ?? 0,
+    })),
+  });
 
   // Actions
   const handleStartMeeting = async (id: string, title: string) => {
@@ -193,7 +257,7 @@ export function MeetingRoomContent({
   };
 
   const handleCancel = async (id: string, title: string) => {
-    if (!confirm(`Are you sure you want to cancel "${title}"?`)) return;
+    if (!window.confirm(`Are you sure you want to cancel "${title}"?`)) return;
     setActionLoading(id);
     try {
       const res = await cancelBooking(id);
@@ -210,51 +274,62 @@ export function MeetingRoomContent({
     }
   };
 
-  // Helper for attendee status pill
+  const handleSendMessage = useCallback(async () => {
+    if (!messagingBooking) return;
+    const trimmed = messageText.trim();
+    if (!trimmed) return;
+    setSendingMessage(true);
+    try {
+      const res = await messageAttendees(messagingBooking.id, trimmed);
+      if (res.error) {
+        toast.error(res.error);
+      } else {
+        toast.success(
+          `Message sent to ${res.sentTo} attendee${res.sentTo === 1 ? "" : "s"}.`
+        );
+        setMessagingBooking(null);
+        setMessageText("");
+      }
+    } catch {
+      toast.error("Failed to send message");
+    } finally {
+      setSendingMessage(false);
+    }
+  }, [messagingBooking, messageText]);
+
+  // Helper for attendee status pill — colors match the "in_office/virtual/on_leave"
+  // badges used in the attendee picker inside book-meeting-modal.tsx.
   const renderAttendeeStatusPill = (status: MeetingAttendeeStatus) => {
     switch (status) {
       case "virtual":
         return (
-          <span className="inline-flex items-center gap-1 text-[11px] font-medium text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 px-2 py-0.5 rounded-full border border-indigo-200 dark:border-indigo-800">
+          <span className="inline-flex items-center gap-1 text-[11px] font-medium text-blue-500 bg-blue-500/10 px-2 py-0.5 rounded-full border border-blue-500/30">
             <Laptop className="h-3 w-3" /> WFH (Huddle)
           </span>
         );
       case "on_leave":
         return (
-          <span className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/60 px-2 py-0.5 rounded-full border border-amber-200 dark:border-amber-800">
+          <span className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-500 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/30">
             <Palmtree className="h-3 w-3" /> On Leave
           </span>
         );
       case "in_office":
       default:
         return (
-          <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-800">
+          <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/30">
             <Building2 className="h-3 w-3" /> In-Office
           </span>
         );
     }
   };
 
-  // Timeline track calculation (08:00 to 18:00 = 600 minutes)
-  const TIMELINE_START_HOUR = 8;
-  const TIMELINE_END_HOUR = 18;
-  const TIMELINE_TOTAL_MINUTES = (TIMELINE_END_HOUR - TIMELINE_START_HOUR) * 60;
-
   return (
     <div className="space-y-6">
       {/* Header bar */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <div className="flex items-center gap-2">
-            <DoorOpen className="h-6 w-6 text-primary" />
-            <h1 className="text-2xl font-bold tracking-tight text-foreground">
-              Meeting Room Manager
-            </h1>
-          </div>
-          <p className="text-sm text-muted-foreground mt-1">
-            Physical meeting room occupancy, calendar schedules, and automated #rsd-leader-team Slack announcements.
-          </p>
-        </div>
+        <p className="text-sm text-muted-foreground">
+          Physical meeting room occupancy, calendar schedules, and automated Slack announcements.
+        </p>
 
         <div className="flex items-center gap-2">
           {canManageMeetings ? (
@@ -272,10 +347,8 @@ export function MeetingRoomContent({
       {/* Live Room Status Hero Banner (Shown prominently) */}
       <Card
         className={cn(
-          "border-2 transition-all duration-300 shadow-sm overflow-hidden",
-          liveStatus.isOccupied
-            ? "border-amber-500/50 bg-gradient-to-br from-amber-50/60 via-background to-amber-100/30 dark:from-amber-950/20 dark:via-background dark:to-amber-900/20"
-            : "border-emerald-500/40 bg-gradient-to-br from-emerald-50/50 via-background to-emerald-100/20 dark:from-emerald-950/20 dark:via-background dark:to-emerald-900/20"
+          "border-2 transition-all duration-300 shadow-sm",
+          liveStatus.isOccupied ? "border-amber-500/50" : "border-emerald-500/40"
         )}
       >
         <CardContent className="p-5 sm:p-6">
@@ -283,12 +356,9 @@ export function MeetingRoomContent({
             <div className="space-y-2">
               <div className="flex items-center gap-2.5">
                 <span className="relative flex h-3.5 w-3.5">
-                  <span
-                    className={cn(
-                      "animate-ping absolute inline-flex h-full w-full rounded-full opacity-75",
-                      liveStatus.isOccupied ? "bg-amber-400" : "bg-emerald-400"
-                    )}
-                  />
+                  {liveStatus.isOccupied && (
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 bg-amber-400" />
+                  )}
                   <span
                     className={cn(
                       "relative inline-flex rounded-full h-3.5 w-3.5",
@@ -364,7 +434,7 @@ export function MeetingRoomContent({
                         variant="outline"
                         disabled={actionLoading === liveStatus.currentMeeting.id}
                         onClick={() => handleExtend(liveStatus.currentMeeting!.id, 15)}
-                        className="text-xs border-amber-300 dark:border-amber-700 hover:bg-amber-100/50"
+                        className="text-xs"
                       >
                         +15m Extend
                       </Button>
@@ -384,17 +454,13 @@ export function MeetingRoomContent({
                     className="inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:underline px-2 py-1"
                     title="Open Slack channel / huddle"
                   >
-                    <Radio className="h-3.5 w-3.5 text-indigo-500 animate-pulse" />
+                    <Radio className="h-3.5 w-3.5 text-blue-500 animate-pulse" />
                     Slack Huddle
                   </a>
                 </>
               ) : (
                 canManageMeetings && (
-                  <Button
-                    size="sm"
-                    onClick={() => setIsBookModalOpen(true)}
-                    className="bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5"
-                  >
+                  <Button size="sm" onClick={() => setIsBookModalOpen(true)} className="gap-1.5">
                     <Plus className="h-4 w-4" /> Book Now
                   </Button>
                 )
@@ -404,14 +470,17 @@ export function MeetingRoomContent({
         </CardContent>
       </Card>
 
-      {/* Hourly Visual Timeline Track (08:00 - 18:00) */}
+      {/* Hourly Visual Timeline Track */}
       <Card className="shadow-sm border-border">
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
             <div>
-              <CardTitle className="text-base font-semibold">Today&apos;s Room Timeline</CardTitle>
+              <CardTitle className="text-base font-semibold">
+                {isCurrentDayToday ? "Today's" : format(parseISO(currentDateStr), "MMM d")} Room Timeline
+              </CardTitle>
               <CardDescription>
-                Visual schedule overview from 08:00 to 18:00
+                Visual schedule overview from {String(TIMELINE_START_HOUR).padStart(2, "0")}:00 to{" "}
+                {String(TIMELINE_END_HOUR).padStart(2, "0")}:00
               </CardDescription>
             </div>
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -429,8 +498,8 @@ export function MeetingRoomContent({
             {/* Timeline base track */}
             <div className="relative h-10 w-full rounded-lg bg-muted/50 border border-border/60 overflow-hidden">
               {/* Hourly division lines */}
-              {Array.from({ length: TIMELINE_END_HOUR - TIMELINE_START_HOUR + 1 }).map((_, idx) => {
-                const percent = (idx / (TIMELINE_END_HOUR - TIMELINE_START_HOUR)) * 100;
+              {Array.from({ length: TIMELINE_HOURS + 1 }).map((_, idx) => {
+                const percent = (idx / TIMELINE_HOURS) * 100;
                 return (
                   <div
                     key={idx}
@@ -466,7 +535,7 @@ export function MeetingRoomContent({
                     <div
                       key={b.id}
                       className={cn(
-                        "absolute top-1 bottom-1 rounded px-2 flex items-center justify-between text-xs font-medium text-white truncate shadow-sm transition-all hover:brightness-110 cursor-pointer",
+                        "absolute top-1 bottom-1 rounded px-2 flex items-center justify-between text-xs font-medium text-white truncate shadow-sm transition-all",
                         isInProgress
                           ? "bg-amber-600 border border-amber-400"
                           : "bg-blue-600 border border-blue-400"
@@ -501,11 +570,28 @@ export function MeetingRoomContent({
                 )}
             </div>
 
-            {/* Time labels below bar */}
-            <div className="relative mt-2 flex justify-between text-[11px] text-muted-foreground font-mono">
-              {Array.from({ length: TIMELINE_END_HOUR - TIMELINE_START_HOUR + 1 }).map((_, idx) => {
+            {/* Time labels below bar — positioned with the same percent math as
+                the gridlines above so they line up exactly (a flex `justify-between`
+                row of unequal-width labels does not align with fixed percent
+                positions). */}
+            <div className="relative mt-2 h-4 text-[11px] text-muted-foreground font-mono">
+              {Array.from({ length: TIMELINE_HOURS + 1 }).map((_, idx) => {
                 const hour = TIMELINE_START_HOUR + idx;
-                return <span key={idx}>{String(hour).padStart(2, "0")}:00</span>;
+                const percent = (idx / TIMELINE_HOURS) * 100;
+                const isFirst = idx === 0;
+                const isLast = idx === TIMELINE_HOURS;
+                return (
+                  <span
+                    key={idx}
+                    className="absolute whitespace-nowrap"
+                    style={{
+                      left: `${percent}%`,
+                      transform: isFirst ? undefined : isLast ? "translateX(-100%)" : "translateX(-50%)",
+                    }}
+                  >
+                    {String(hour).padStart(2, "0")}:00
+                  </span>
+                );
               })}
             </div>
           </div>
@@ -548,7 +634,7 @@ export function MeetingRoomContent({
         {/* Filter Tabs */}
         <Tabs
           value={filterTab}
-          onValueChange={(val: any) => setFilterTab(val)}
+          onValueChange={(val) => setFilterTab(val as typeof filterTab)}
           className="w-auto"
         >
           <TabsList className="grid grid-cols-4 w-full sm:w-auto h-9">
@@ -599,15 +685,23 @@ export function MeetingRoomContent({
 
             // Resolve attendee statuses
             const attendeesWithStatus = (b.attendees || []).map((att) => {
-              const status = resolveAttendeeStatus(att.user_id, b.meeting_date, leaves);
-              return { ...att, resolvedStatus: status };
+              const status = resolveAttendeeStatus(att.user_id, b.meeting_date, leaves, b.start_time);
+              const leaveRecord = leaves.find(
+                (l) => l.user_id === att.user_id && l.leave_date === b.meeting_date && l.status === "approved"
+              );
+              return { ...att, resolvedStatus: status, leaveRecord };
             });
 
             return (
               <Card
                 key={b.id}
+                ref={(el) => {
+                  if (el) cardRefs.current.set(b.id, el);
+                  else cardRefs.current.delete(b.id);
+                }}
                 className={cn(
                   "transition-all duration-200 shadow-sm border",
+                  b.id === highlightedId && "ring-2 ring-primary ring-offset-2 ring-offset-background",
                   b.status === "in_progress"
                     ? "border-amber-400 dark:border-amber-700 bg-amber-50/30 dark:bg-amber-950/10"
                     : b.status === "cancelled"
@@ -701,20 +795,55 @@ export function MeetingRoomContent({
                         </span>
                         <div className="flex flex-wrap gap-1.5">
                           {attendeesWithStatus.map((att) => (
-                            <div
-                              key={att.id}
-                              className="inline-flex items-center gap-1.5 bg-muted/60 hover:bg-muted px-2 py-1 rounded-md text-xs border border-border/50"
-                            >
-                              <UserAvatar
-                                name={att.user?.name || "User"}
-                                size="xs"
-                                className="h-4 w-4 text-[9px]"
-                              />
-                              <span className="font-medium text-foreground">
-                                {att.user?.name || "Unknown"}
-                              </span>
-                              {renderAttendeeStatusPill(att.resolvedStatus)}
-                            </div>
+                            <Popover key={att.id}>
+                              <PopoverTrigger asChild>
+                                <button
+                                  type="button"
+                                  className="inline-flex items-center gap-1.5 bg-muted/60 hover:bg-muted px-2 py-1 rounded-md text-xs border border-border/50"
+                                >
+                                  <UserAvatar
+                                    name={att.user?.name || "User"}
+                                    size="xs"
+                                    className="h-4 w-4 text-[9px]"
+                                  />
+                                  <span className="font-medium text-foreground">
+                                    {att.user?.name || "Unknown"}
+                                  </span>
+                                  {renderAttendeeStatusPill(att.resolvedStatus)}
+                                </button>
+                              </PopoverTrigger>
+                              <PopoverContent align="start" className="w-64 text-sm">
+                                <div className="space-y-1.5">
+                                  <p className="font-medium text-foreground">{att.user?.name}</p>
+                                  <div className="text-xs text-muted-foreground space-y-1">
+                                    <p>
+                                      Role: <span className="text-foreground capitalize">{att.user?.role}</span>
+                                    </p>
+                                    {att.user?.department?.name && (
+                                      <p>
+                                        Department:{" "}
+                                        <span className="text-foreground">{att.user.department.name}</span>
+                                      </p>
+                                    )}
+                                    <p>
+                                      Slack:{" "}
+                                      {att.user?.slack_user_id ? (
+                                        <span className="text-emerald-600 dark:text-emerald-400">Linked</span>
+                                      ) : (
+                                        <span className="text-muted-foreground">Not linked</span>
+                                      )}
+                                    </p>
+                                    {att.leaveRecord && (
+                                      <p>
+                                        {LEAVE_TYPES[att.leaveRecord.leave_type as LeaveTypeCode]?.label ||
+                                          att.leaveRecord.leave_type}{" "}
+                                        — {durationLabel(att.leaveRecord.duration)}
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+                              </PopoverContent>
+                            </Popover>
                           ))}
                         </div>
                       </div>
@@ -724,27 +853,15 @@ export function MeetingRoomContent({
                     {canModify && b.status !== "cancelled" && b.status !== "completed" && (
                       <div className="flex md:flex-col items-end justify-end gap-2 shrink-0">
                         {b.status === "scheduled" && (
-                          <>
-                            <Button
-                              size="sm"
-                              onClick={() => handleStartMeeting(b.id, b.title)}
-                              disabled={actionLoading === b.id}
-                              className="bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5 text-xs shadow-sm"
-                            >
-                              <Play className="h-3.5 w-3.5 fill-current" />
-                              Start & Notify Slack
-                            </Button>
-
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => handleCancel(b.id, b.title)}
-                              disabled={actionLoading === b.id}
-                              className="text-xs text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/40"
-                            >
-                              Cancel Meeting
-                            </Button>
-                          </>
+                          <Button
+                            size="sm"
+                            onClick={() => handleStartMeeting(b.id, b.title)}
+                            disabled={actionLoading === b.id}
+                            className="gap-1.5 text-xs shadow-sm"
+                          >
+                            <Play className="h-3.5 w-3.5 fill-current" />
+                            Start & Notify Slack
+                          </Button>
                         )}
 
                         {b.status === "in_progress" && (
@@ -771,6 +888,46 @@ export function MeetingRoomContent({
                             </Button>
                           </>
                         )}
+
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-8 w-8"
+                              disabled={actionLoading === b.id}
+                              title="More actions"
+                            >
+                              <MoreVertical className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            {b.status === "scheduled" && (
+                              <DropdownMenuItem onClick={() => setEditingBooking(b)}>
+                                <Pencil className="h-3.5 w-3.5 mr-2" />
+                                Edit Meeting
+                              </DropdownMenuItem>
+                            )}
+                            <DropdownMenuItem
+                              onClick={() => {
+                                setMessageText("");
+                                setMessagingBooking(b);
+                              }}
+                            >
+                              <MessageSquare className="h-3.5 w-3.5 mr-2" />
+                              Message Attendees
+                            </DropdownMenuItem>
+                            {b.status === "scheduled" && (
+                              <DropdownMenuItem
+                                onClick={() => handleCancel(b.id, b.title)}
+                                className="text-destructive focus:text-destructive"
+                              >
+                                <XCircle className="h-3.5 w-3.5 mr-2" />
+                                Cancel Meeting
+                              </DropdownMenuItem>
+                            )}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </div>
                     )}
                   </div>
@@ -789,11 +946,65 @@ export function MeetingRoomContent({
           currentUser={currentUser}
           users={allUsers}
           leaves={leaves}
+          currentDateStr={currentDateStr}
           onSuccess={() => {
             router.refresh();
           }}
         />
       )}
+
+      {/* Edit Meeting Modal */}
+      {editingBooking && (
+        <EditMeetingModal
+          open={!!editingBooking}
+          onClose={() => setEditingBooking(null)}
+          booking={editingBooking}
+          users={allUsers}
+          leaves={leaves}
+          onSuccess={() => {
+            setEditingBooking(null);
+            router.refresh();
+          }}
+        />
+      )}
+
+      {/* Message Attendees Dialog */}
+      <Dialog
+        open={!!messagingBooking}
+        onOpenChange={(o) => {
+          if (!o) setMessagingBooking(null);
+        }}
+      >
+        <DialogContent className="max-w-[calc(100%-2rem)] sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <MessageSquare className="h-5 w-5 text-primary" />
+              Message Attendees
+            </DialogTitle>
+            <DialogDescription>
+              Sends a Slack DM and in-app notification to everyone in &quot;
+              {messagingBooking?.title}&quot; except you.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-2">
+            <EmojiTextarea
+              rows={4}
+              placeholder="e.g. Running 5 minutes late, please wait in the lobby."
+              value={messageText}
+              onChange={(e) => setMessageText(e.target.value)}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setMessagingBooking(null)} disabled={sendingMessage}>
+              Cancel
+            </Button>
+            <Button onClick={handleSendMessage} disabled={sendingMessage || !messageText.trim()}>
+              {sendingMessage && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Send
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

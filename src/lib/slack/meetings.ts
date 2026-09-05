@@ -6,6 +6,25 @@ export interface AttendeeWithStatus {
 }
 
 /**
+ * Escapes Slack mrkdwn special characters in user-supplied text (meeting titles,
+ * descriptions). Without this, a title like "<!channel>" or "<@U123>" is
+ * interpreted by Slack as a real mention/broadcast, not literal text.
+ * See: https://api.slack.com/reference/surfaces/formatting#escaping
+ */
+export function escapeSlackText(text: string): string {
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/** Truncates text to Slack's block text limits, appending an ellipsis when cut. */
+function truncate(text: string, maxLen: number): string {
+  if (text.length <= maxLen) return text;
+  return text.slice(0, maxLen - 1) + "…";
+}
+
+const SECTION_TEXT_MAX = 3000;
+const HEADER_TEXT_MAX = 150;
+
+/**
  * Builds the Slack Block Kit payload posted to the channel when a meeting starts.
  */
 export function buildMeetingStartBlockKit(
@@ -16,12 +35,17 @@ export function buildMeetingStartBlockKit(
 ): object[] {
   const channelName = meeting.slack_channel || "rsd-leader-team";
   const channelRef = channelName.startsWith("#") ? channelName : `#${channelName}`;
+  const title = truncate(escapeSlackText(meeting.title), HEADER_TEXT_MAX);
+  const description = meeting.description
+    ? truncate(escapeSlackText(meeting.description), SECTION_TEXT_MAX)
+    : null;
 
   const inOffice = attendees.filter((a) => a.status === "in_office");
   const virtual = attendees.filter((a) => a.status === "virtual");
   const onLeave = attendees.filter((a) => a.status === "on_leave");
 
-  const formatUserTag = (u: User) => (u.slack_user_id ? `<@${u.slack_user_id}>` : u.name);
+  const formatUserTag = (u: User) =>
+    u.slack_user_id ? `<@${u.slack_user_id}>` : escapeSlackText(u.name);
 
   const inOfficeText =
     inOffice.length > 0 ? inOffice.map((a) => formatUserTag(a.user)).join(", ") : "_None_";
@@ -47,18 +71,18 @@ export function buildMeetingStartBlockKit(
       type: "section",
       text: {
         type: "mrkdwn",
-        text: `*${meeting.title}*\n⏰ *Time:* ${meeting.start_time} – ${meeting.end_time} | 👤 *Organizer:* ${formatUserTag(organizer)}`,
+        text: `*${title}*\n⏰ *Time:* ${meeting.start_time} – ${meeting.end_time} | 👤 *Organizer:* ${formatUserTag(organizer)}`,
       },
     },
   ];
 
-  if (meeting.description) {
+  if (description) {
     blocks.push({
       type: "context",
       elements: [
         {
           type: "mrkdwn",
-          text: `📝 _${meeting.description}_`,
+          text: `📝 _${description}_`,
         },
       ],
     });
@@ -101,7 +125,8 @@ export function buildMeetingStartBlockKit(
     });
   }
 
-  // Action button linking to web app
+  // Action button linking to the specific meeting in the web app
+  const meetingUrl = `${appUrl}/meeting-room?date=${meeting.meeting_date}&meeting=${meeting.id}`;
   blocks.push({
     type: "actions",
     elements: [
@@ -112,7 +137,7 @@ export function buildMeetingStartBlockKit(
           text: "View in App",
           emoji: true,
         },
-        url: `${appUrl}/meeting-room`,
+        url: meetingUrl,
         style: "primary",
       },
     ],
@@ -131,6 +156,44 @@ export function buildMeetingDM(
 ): { text: string; blocks: object[] } {
   const channelName = meeting.slack_channel || "rsd-leader-team";
   const channelRef = channelName.startsWith("#") ? channelName : `#${channelName}`;
+  const title = truncate(escapeSlackText(meeting.title), HEADER_TEXT_MAX);
+  const meetingUrl = `${appUrl}/meeting-room?date=${meeting.meeting_date}&meeting=${meeting.id}`;
+
+  if (status === "on_leave") {
+    const text = `🏖️ FYI: "${meeting.title}" (${meeting.start_time} - ${meeting.end_time}) is starting now. You're marked on leave today, so no action is needed — this is just a courtesy heads-up in case plans changed.`;
+    const blocks: object[] = [
+      {
+        type: "header",
+        text: {
+          type: "plain_text",
+          text: "🏖️ Meeting Starting Now (FYI)",
+          emoji: true,
+        },
+      },
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `The meeting *"${title}"* is starting now (${meeting.start_time} – ${meeting.end_time}).\n\nYou're marked *on leave* today, so this is just a courtesy notice — no action needed unless your plans changed.`,
+        },
+      },
+      {
+        type: "actions",
+        elements: [
+          {
+            type: "button",
+            text: {
+              type: "plain_text",
+              text: "Open Meeting Room",
+              emoji: true,
+            },
+            url: meetingUrl,
+          },
+        ],
+      },
+    ];
+    return { text, blocks };
+  }
 
   if (status === "virtual") {
     const text = `💻 Meeting Starting: "${meeting.title}" (${meeting.start_time} - ${meeting.end_time}). Please join via Slack Huddle in ${channelRef}.`;
@@ -147,7 +210,7 @@ export function buildMeetingDM(
         type: "section",
         text: {
           type: "mrkdwn",
-          text: `The meeting *"${meeting.title}"* is starting now (${meeting.start_time} – ${meeting.end_time}).\n\n🏠 Since you are *Working From Home* today, please join via the *Slack Huddle* in *${channelRef}*.`,
+          text: `The meeting *"${title}"* is starting now (${meeting.start_time} – ${meeting.end_time}).\n\n🏠 Since you are *Working From Home* today, please join via the *Slack Huddle* in *${channelRef}*.`,
         },
       },
       {
@@ -160,7 +223,7 @@ export function buildMeetingDM(
               text: "Open Meeting Room",
               emoji: true,
             },
-            url: `${appUrl}/meeting-room`,
+            url: meetingUrl,
             style: "primary",
           },
         ],
@@ -184,7 +247,7 @@ export function buildMeetingDM(
       type: "section",
       text: {
         type: "mrkdwn",
-        text: `The meeting *"${meeting.title}"* is starting now (${meeting.start_time} – ${meeting.end_time}).\n\n🚶 Please proceed to the *Meeting Room*.`,
+        text: `The meeting *"${title}"* is starting now (${meeting.start_time} – ${meeting.end_time}).\n\n🚶 Please proceed to the *Meeting Room*.`,
       },
     },
     {
@@ -197,7 +260,7 @@ export function buildMeetingDM(
             text: "Open Meeting Room",
             emoji: true,
           },
-          url: `${appUrl}/meeting-room`,
+          url: meetingUrl,
           style: "primary",
         },
       ],
@@ -214,12 +277,22 @@ export function buildMeetingCancelledBlockKit(
   cancelledByName: string,
   appUrl: string
 ): object[] {
+  const title = truncate(escapeSlackText(meeting.title), HEADER_TEXT_MAX);
+  const cancelledBy = escapeSlackText(cancelledByName);
   return [
+    {
+      type: "header",
+      text: {
+        type: "plain_text",
+        text: "❌ Meeting Cancelled",
+        emoji: true,
+      },
+    },
     {
       type: "section",
       text: {
         type: "mrkdwn",
-        text: `❌ *Meeting Cancelled: "${meeting.title}"*\nScheduled for ${meeting.meeting_date} (${meeting.start_time} – ${meeting.end_time}) was cancelled by *${cancelledByName}*.\n\n🟢 The Meeting Room is now free for this time slot.`,
+        text: `*"${title}"*\nScheduled for ${meeting.meeting_date} (${meeting.start_time} – ${meeting.end_time}) was cancelled by *${cancelledBy}*.\n\n🟢 The Meeting Room is now free for this time slot.`,
       },
     },
     {
@@ -267,14 +340,15 @@ export function buildScheduleBlockKit(
       type: "section",
       text: {
         type: "mrkdwn",
-        text: "🟢 *The Meeting Room is completely free today!* No meetings are currently scheduled.",
+        text: "🟢 *The Meeting Room is completely free!* No meetings are currently scheduled for this date.",
       },
     });
   } else {
     const listItems = activeBookings.map((b) => {
       const statusIcon = b.status === "in_progress" ? "🔴 *[IN USE]*" : "⏳";
-      const orgName = b.organizer?.name || "Unknown";
-      return `${statusIcon} *${b.start_time} – ${b.end_time}*: *${b.title}* (by ${orgName})`;
+      const orgName = b.organizer?.name ? escapeSlackText(b.organizer.name) : "Unknown";
+      const title = truncate(escapeSlackText(b.title), 200);
+      return `${statusIcon} *${b.start_time} – ${b.end_time}*: *${title}* (by ${orgName})`;
     });
 
     blocks.push({
@@ -303,4 +377,55 @@ export function buildScheduleBlockKit(
   });
 
   return blocks;
+}
+
+/**
+ * Builds a DM sent by an organizer/leader to a meeting's attendees (the
+ * "Message attendees" action).
+ */
+export function buildAttendeeMessageDM(
+  meeting: MeetingBooking,
+  fromName: string,
+  message: string,
+  appUrl: string
+): { text: string; blocks: object[] } {
+  const title = truncate(escapeSlackText(meeting.title), HEADER_TEXT_MAX);
+  const from = escapeSlackText(fromName);
+  const body = truncate(escapeSlackText(message), SECTION_TEXT_MAX - 200);
+  const meetingUrl = `${appUrl}/meeting-room?date=${meeting.meeting_date}&meeting=${meeting.id}`;
+  const text = `💬 Message about "${meeting.title}" from ${fromName}: ${message}`;
+
+  const blocks: object[] = [
+    {
+      type: "header",
+      text: {
+        type: "plain_text",
+        text: "💬 Message about your meeting",
+        emoji: true,
+      },
+    },
+    {
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: `Re: *"${title}"* (${meeting.start_time} – ${meeting.end_time})\nFrom *${from}*:\n\n${body}`,
+      },
+    },
+    {
+      type: "actions",
+      elements: [
+        {
+          type: "button",
+          text: {
+            type: "plain_text",
+            text: "Open Meeting Room",
+            emoji: true,
+          },
+          url: meetingUrl,
+        },
+      ],
+    },
+  ];
+
+  return { text, blocks };
 }

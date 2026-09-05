@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect, useMemo } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import {
   format,
   parseISO,
@@ -113,17 +113,35 @@ export function CalendarContent({
   const prevMonth = () => setCurrentMonth(subMonths(currentMonth, 1));
   const nextMonth = () => setCurrentMonth(addMonths(currentMonth, 1));
 
-  const getLeavesForDate = (date: Date) => {
-    if (viewFilter === "meetings") return [];
+  // Always returns the day's real leaves, regardless of the "Meetings Only"
+  // view filter. Write-path decisions (create vs. edit modal, the "already
+  // has 2 leaves" guard) must use this — not the filtered display variant —
+  // or toggling the calendar's display filter can silently corrupt what gets
+  // written.
+  const getAllLeavesForDate = (date: Date) => {
     const dateStr = format(date, "yyyy-MM-dd");
     return leaves.filter((l) => l.leave_date === dateStr);
   };
 
-  const getMeetingsForDate = (date: Date) => {
-    if (viewFilter === "leaves") return [];
+  // Display-only: hides leaves from the calendar grid when "Meetings Only" is active.
+  const getVisibleLeavesForDate = (date: Date) => {
+    if (viewFilter === "meetings") return [];
+    return getAllLeavesForDate(date);
+  };
+
+  // Always returns the day's real meetings, ignoring viewFilter/meetingScope.
+  // Used by the mobile day-detail sheet, which promises (see the info tooltip
+  // below) to show "everything scheduled" for the day it was opened for.
+  const getAllMeetingsForDate = (date: Date) => {
     const dateStr = format(date, "yyyy-MM-dd");
-    return meetings.filter((m) => {
-      if (m.meeting_date !== dateStr) return false;
+    return meetings.filter((m) => m.meeting_date === dateStr);
+  };
+
+  // Display-only: applies the "Leaves Only" filter and the meeting scope toggle
+  // for the calendar grid's day cells.
+  const getVisibleMeetingsForDate = (date: Date) => {
+    if (viewFilter === "leaves") return [];
+    return getAllMeetingsForDate(date).filter((m) => {
       if (meetingScope === "my") {
         const isOrganizer = m.organizer_id === user.id;
         const isAttendee = m.attendees?.some((a) => a.user_id === user.id);
@@ -147,7 +165,7 @@ export function CalendarContent({
       if (isWeekend(date) || holiday) return;
       const dateStr = format(date, "yyyy-MM-dd");
       // Don't allow selecting days that already have a leave
-      const dayLeaves = getLeavesForDate(date);
+      const dayLeaves = getAllLeavesForDate(date);
       if (dayLeaves.length > 0) return;
 
       setSelectedDates((prev) => {
@@ -170,7 +188,7 @@ export function CalendarContent({
 
     if (isWeekend(date) || holiday) return;
 
-    const dayLeaves = getLeavesForDate(date);
+    const dayLeaves = getAllLeavesForDate(date);
     if (dayLeaves.length === 1) {
       // Single leave — open edit
       setSelectedLeave(dayLeaves[0]);
@@ -245,7 +263,7 @@ export function CalendarContent({
         `)
         .gte("meeting_date", start)
         .lte("meeting_date", end)
-        .in("status", ["scheduled", "in_progress", "completed"]),
+        .in("status", ["scheduled", "in_progress", "completed", "cancelled"]),
     ]);
 
     if (leavesRes.data) setLeaves(leavesRes.data);
@@ -260,7 +278,16 @@ export function CalendarContent({
     }
   }, [currentMonth, user.id]);
 
+  // page.tsx server-renders this exact month's data as the initial* props;
+  // skip the first client fetch so we don't immediately discard and re-request
+  // data we already have. Subsequent month navigation still fetches normally,
+  // since fetchMonthData's identity changes with currentMonth.
+  const isFirstMount = useRef(true);
   useEffect(() => {
+    if (isFirstMount.current) {
+      isFirstMount.current = false;
+      return;
+    }
     fetchMonthData();
   }, [fetchMonthData]);
 
@@ -491,8 +518,8 @@ export function CalendarContent({
                   const isCurrentMonth = isSameMonth(day, currentMonth);
                   const isToday = isSameDay(day, new Date());
                   const weekend = isWeekend(day);
-                  const dayLeaves = getLeavesForDate(day);
-                  const dayMeetings = getMeetingsForDate(day);
+                  const dayLeaves = getVisibleLeavesForDate(day);
+                  const dayMeetings = getVisibleMeetingsForDate(day);
                   const holiday = getHolidayForDate(day);
                   const dateStr = format(day, "yyyy-MM-dd");
                   const isSelected =
@@ -661,8 +688,11 @@ export function CalendarContent({
                           {dayMeetings.map((m) => (
                             <div
                               key={m.id}
-                              className="h-2 w-2 rounded-full bg-indigo-500"
-                              title={`Meeting: ${m.title} (${m.start_time})`}
+                              className={cn(
+                                "h-2 w-2 rounded-full",
+                                m.status === "cancelled" ? "bg-muted-foreground/40" : "bg-indigo-500"
+                              )}
+                              title={`Meeting: ${m.title} (${m.start_time})${m.status === "cancelled" ? " — Cancelled" : ""}`}
                             />
                           ))}
                         </div>
@@ -676,10 +706,20 @@ export function CalendarContent({
                               key={m.id}
                               href={`/meeting-room?date=${dateStr}`}
                               onClick={(e) => e.stopPropagation()}
-                              className="flex items-center gap-1 px-1 py-0.5 rounded text-[10px] font-medium bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200/60 dark:border-indigo-800/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 transition-colors truncate"
-                              title={`Meeting: ${m.title} (${m.start_time} - ${m.end_time})`}
+                              className={cn(
+                                "flex items-center gap-1 px-1 py-0.5 rounded text-[10px] font-medium border transition-colors truncate",
+                                m.status === "cancelled"
+                                  ? "bg-muted/40 text-muted-foreground border-border/50 line-through opacity-70 hover:bg-muted/60"
+                                  : "bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border-indigo-200/60 dark:border-indigo-800/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60"
+                              )}
+                              title={`Meeting: ${m.title} (${m.start_time} - ${m.end_time})${m.status === "cancelled" ? " — Cancelled" : ""}`}
                             >
-                              <DoorOpen className="h-2.5 w-2.5 shrink-0 text-indigo-500" />
+                              <DoorOpen
+                                className={cn(
+                                  "h-2.5 w-2.5 shrink-0",
+                                  m.status === "cancelled" ? "text-muted-foreground" : "text-indigo-500"
+                                )}
+                              />
                               <span className="truncate">{m.title}</span>
                               <span className="text-[9px] opacity-75 shrink-0 font-mono hidden md:inline ml-auto">
                                 {m.start_time}
@@ -938,15 +978,15 @@ export function CalendarContent({
           }}
           date={sheetDate}
           holiday={sheetDate ? getHolidayForDate(sheetDate) : undefined}
-          leaves={sheetDate ? getLeavesForDate(sheetDate) : []}
-          meetings={sheetDate ? getMeetingsForDate(sheetDate) : []}
+          leaves={sheetDate ? getAllLeavesForDate(sheetDate) : []}
+          meetings={sheetDate ? getAllMeetingsForDate(sheetDate) : []}
           wfh={sheetDate ? wfhByDate.get(format(sheetDate, "yyyy-MM-dd")) : undefined}
           canFileLeave={
             !!sheetDate &&
             isSameMonth(sheetDate, currentMonth) &&
             !isWeekend(sheetDate) &&
             !getHolidayForDate(sheetDate) &&
-            getLeavesForDate(sheetDate).length < 2
+            getAllLeavesForDate(sheetDate).length < 2
           }
           onEditLeave={(leave) => {
             setSelectedLeave(leave);

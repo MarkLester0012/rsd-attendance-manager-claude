@@ -1,11 +1,13 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo } from "react";
+import { format, parseISO } from "date-fns";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -23,14 +25,12 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "sonner";
-import { Loader2, Search, Check, Users, UserX } from "lucide-react";
-import { createBooking } from "./actions";
+import { Loader2, Search, Check, Pencil, UserX } from "lucide-react";
+import { updateBooking } from "./actions";
 import { resolveAttendeeStatus, timeToMinutes, type LeaveRecord } from "@/lib/utils/meeting-conflicts";
-import { officeDateString } from "@/lib/utils/office-time";
-import { createClient } from "@/lib/supabase/client";
-import type { User } from "@/lib/types";
+import type { MeetingWithAttendees, User } from "@/lib/types";
 
-// Standard 30-min time slots from 07:00 to 20:00
+// Standard 30-min time slots from 07:00 to 20:00 — matches book-meeting-modal.tsx.
 const TIME_OPTIONS = Array.from({ length: 27 }, (_, i) => {
   const totalMinutes = 7 * 60 + i * 30;
   const h = Math.floor(totalMinutes / 60);
@@ -38,87 +38,47 @@ const TIME_OPTIONS = Array.from({ length: 27 }, (_, i) => {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 });
 
-interface BookMeetingModalProps {
+interface EditMeetingModalProps {
   open: boolean;
   onClose: () => void;
-  currentUser: User;
+  booking: MeetingWithAttendees;
   users: User[];
   leaves: LeaveRecord[];
-  /** The page's currently-viewed date — `leaves` is scoped to this date. */
-  currentDateStr: string;
   onSuccess: () => void;
 }
 
-export function BookMeetingModal({
+export function EditMeetingModal({
   open,
   onClose,
-  currentUser,
+  booking,
   users,
   leaves,
-  currentDateStr,
   onSuccess,
-}: BookMeetingModalProps) {
-  const todayStr = officeDateString();
-
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  // Default to the date currently being viewed, but never pre-fill a date
-  // before today (e.g. when opened while browsing a past date's schedule) —
-  // 'yyyy-MM-dd' strings compare correctly as plain strings.
-  const [meetingDate, setMeetingDate] = useState(
-    currentDateStr >= todayStr ? currentDateStr : todayStr
-  );
-  const [startTime, setStartTime] = useState("09:00");
-  const [endTime, setEndTime] = useState("10:00");
+}: EditMeetingModalProps) {
+  const [title, setTitle] = useState(booking.title);
+  const [description, setDescription] = useState(booking.description || "");
+  const [startTime, setStartTime] = useState(booking.start_time);
+  const [endTime, setEndTime] = useState(booking.end_time);
   const [selectedAttendees, setSelectedAttendees] = useState<Set<string>>(
-    new Set([currentUser.id])
+    new Set((booking.attendees || []).map((a) => a.user_id))
   );
-  const [notifyChannel, setNotifyChannel] = useState(true);
+  const [notifyChannel, setNotifyChannel] = useState(booking.notify_channel);
   const [searchUser, setSearchUser] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  // The `leaves` prop is scoped to currentDateStr. If the user picks a
-  // different meetingDate, refetch leaves for that date so the WFH/leave
-  // preview reflects the actual chosen day instead of silently showing
-  // everyone as in-office.
-  const [dateLeaves, setDateLeaves] = useState<LeaveRecord[]>(leaves);
-  useEffect(() => {
-    if (meetingDate === currentDateStr) {
-      setDateLeaves(leaves);
-      return;
-    }
-    let cancelled = false;
-    const supabase = createClient();
-    supabase
-      .from("leaves")
-      .select("user_id, leave_type, leave_date, duration, status")
-      .eq("leave_date", meetingDate)
-      .eq("status", "approved")
-      .then(({ data, error }) => {
-        if (cancelled) return;
-        if (error) {
-          console.error("Failed to load leaves for selected date:", error.message);
-          return;
-        }
-        setDateLeaves((data as LeaveRecord[]) || []);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [meetingDate, currentDateStr, leaves]);
+  const organizerId = booking.organizer_id;
 
   const timeError =
     timeToMinutes(endTime) <= timeToMinutes(startTime)
       ? "End time must be after start time"
       : null;
 
-  // Toggle attendee
   const toggleAttendee = (id: string) => {
     setSelectedAttendees((prev) => {
       const next = new Set(prev);
       if (next.has(id)) {
-        // Don't allow deselecting oneself as organizer
-        if (id !== currentUser.id) next.delete(id);
+        // Don't allow deselecting the organizer
+        if (id !== organizerId) next.delete(id);
       } else {
         next.add(id);
       }
@@ -126,7 +86,6 @@ export function BookMeetingModal({
     });
   };
 
-  // Filter users
   const filteredUsers = useMemo(() => {
     return users.filter((u) =>
       u.name.toLowerCase().includes(searchUser.toLowerCase()) ||
@@ -147,10 +106,9 @@ export function BookMeetingModal({
 
     setSubmitting(true);
     try {
-      const res = await createBooking({
+      const res = await updateBooking(booking.id, {
         title: title.trim(),
         description: description.trim() || undefined,
-        meeting_date: meetingDate,
         start_time: startTime,
         end_time: endTime,
         attendee_ids: Array.from(selectedAttendees),
@@ -162,15 +120,10 @@ export function BookMeetingModal({
         return;
       }
 
-      toast.success("Meeting scheduled successfully!");
+      toast.success("Meeting updated successfully!");
       onSuccess();
-      onClose();
-      // Reset state
-      setTitle("");
-      setDescription("");
-      setSelectedAttendees(new Set([currentUser.id]));
     } catch {
-      toast.error("Failed to schedule meeting");
+      toast.error("Failed to update meeting");
     } finally {
       setSubmitting(false);
     }
@@ -181,19 +134,23 @@ export function BookMeetingModal({
       <DialogContent className="max-w-[calc(100%-2rem)] sm:max-w-xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Users className="h-5 w-5 text-primary" />
-            Book Meeting Room
+            <Pencil className="h-5 w-5 text-primary" />
+            Edit Meeting
           </DialogTitle>
+          <DialogDescription>
+            {format(parseISO(booking.meeting_date), "EEEE, MMMM d, yyyy")} — the date can&apos;t
+            be changed here; cancel and rebook to move it to a different day.
+          </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4 py-2">
           {/* Title */}
           <div className="space-y-1.5">
-            <Label htmlFor="meeting-title">
+            <Label htmlFor="edit-meeting-title">
               Meeting Title <span className="text-red-500">*</span>
             </Label>
             <Input
-              id="meeting-title"
+              id="edit-meeting-title"
               placeholder="e.g. Weekly Tech Sync / Architecture Discussion"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
@@ -201,20 +158,8 @@ export function BookMeetingModal({
             />
           </div>
 
-          {/* Date, Start, End */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="meeting-date">Date</Label>
-              <Input
-                id="meeting-date"
-                type="date"
-                min={todayStr}
-                value={meetingDate}
-                onChange={(e) => setMeetingDate(e.target.value)}
-                required
-              />
-            </div>
-
+          {/* Start, End */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label>Start Time</Label>
               <Select value={startTime} onValueChange={setStartTime}>
@@ -251,9 +196,9 @@ export function BookMeetingModal({
 
           {/* Description */}
           <div className="space-y-1.5">
-            <Label htmlFor="meeting-desc">Description / Agenda (Optional)</Label>
+            <Label htmlFor="edit-meeting-desc">Description / Agenda (Optional)</Label>
             <EmojiTextarea
-              id="meeting-desc"
+              id="edit-meeting-desc"
               placeholder="Brief agenda or topics to cover..."
               rows={2}
               value={description}
@@ -264,7 +209,7 @@ export function BookMeetingModal({
           {/* Attendees Selection with live WFH/Leave preview */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <Label>Invite Attendees ({selectedAttendees.size})</Label>
+              <Label>Attendees ({selectedAttendees.size})</Label>
               <span className="text-xs text-muted-foreground">
                 Auto-detects WFH & Leave status
               </span>
@@ -290,8 +235,8 @@ export function BookMeetingModal({
                 <div className="space-y-1">
                   {filteredUsers.map((u) => {
                     const isSelected = selectedAttendees.has(u.id);
-                    const isSelf = u.id === currentUser.id;
-                    const status = resolveAttendeeStatus(u.id, meetingDate, dateLeaves, startTime);
+                    const isOrganizer = u.id === organizerId;
+                    const status = resolveAttendeeStatus(u.id, booking.meeting_date, leaves, startTime);
 
                     return (
                       <div
@@ -314,7 +259,10 @@ export function BookMeetingModal({
                             {isSelected && <Check className="h-3 w-3" />}
                           </div>
                           <span className="font-medium text-foreground">
-                            {u.name} {isSelf && <span className="text-xs text-muted-foreground">(You)</span>}
+                            {u.name}{" "}
+                            {isOrganizer && (
+                              <span className="text-xs text-muted-foreground">(Organizer)</span>
+                            )}
                           </span>
                         </div>
 
@@ -346,17 +294,12 @@ export function BookMeetingModal({
           {/* Slack notification toggle */}
           <div className="flex items-center justify-between rounded-lg border p-3 bg-muted/20">
             <div className="space-y-0.5">
-              <Label className="text-sm font-medium">
-                Notify Slack channel
-              </Label>
+              <Label className="text-sm font-medium">Notify Slack channel</Label>
               <p className="text-xs text-muted-foreground">
                 Posts a Block Kit card to the channel and sends direct messages to attendees when meeting starts
               </p>
             </div>
-            <Switch
-              checked={notifyChannel}
-              onCheckedChange={setNotifyChannel}
-            />
+            <Switch checked={notifyChannel} onCheckedChange={setNotifyChannel} />
           </div>
 
           <DialogFooter className="pt-2">
@@ -367,10 +310,10 @@ export function BookMeetingModal({
               {submitting ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Scheduling...
+                  Saving...
                 </>
               ) : (
-                "Confirm Booking"
+                "Save Changes"
               )}
             </Button>
           </DialogFooter>

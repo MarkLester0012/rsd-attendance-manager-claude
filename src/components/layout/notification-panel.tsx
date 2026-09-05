@@ -63,6 +63,7 @@ const ICON_MAP: Record<
   meeting_scheduled: { icon: DoorOpen, color: "text-blue-600 dark:text-blue-400" },
   meeting_starting: { icon: DoorOpen, color: "text-emerald-600 dark:text-emerald-400" },
   meeting_cancelled: { icon: CalendarX, color: "text-red-600 dark:text-red-400" },
+  meeting_message: { icon: MessageCircle, color: "text-blue-600 dark:text-blue-400" },
 };
 
 const NOTIFICATION_ROUTES: Record<NotificationType, string> = {
@@ -83,7 +84,25 @@ const NOTIFICATION_ROUTES: Record<NotificationType, string> = {
   meeting_scheduled: "/meeting-room",
   meeting_starting: "/meeting-room",
   meeting_cancelled: "/meeting-room",
+  meeting_message: "/meeting-room",
 };
+
+const MEETING_NOTIFICATION_TYPES: NotificationType[] = [
+  "meeting_scheduled",
+  "meeting_starting",
+  "meeting_cancelled",
+  "meeting_message",
+];
+
+/** Deep-links a meeting notification to its specific booking when the data is present. */
+function meetingRoute(n: Notification): string {
+  const bookingId = typeof n.data?.booking_id === "string" ? n.data.booking_id : null;
+  const meetingDate = typeof n.data?.meeting_date === "string" ? n.data.meeting_date : null;
+  if (bookingId && meetingDate) {
+    return `/meeting-room?date=${meetingDate}&meeting=${bookingId}`;
+  }
+  return NOTIFICATION_ROUTES[n.type];
+}
 
 function timeAgo(iso: string) {
   try {
@@ -131,6 +150,8 @@ export function NotificationPanel({ userId, userRole }: NotificationPanelProps) 
     const isProjectType = n.type === "project_added" || n.type === "project_removed";
     const route = isProjectType
       ? (userRole === "leader" || userRole === "hr" ? "/projects" : "/dashboard")
+      : MEETING_NOTIFICATION_TYPES.includes(n.type)
+      ? meetingRoute(n)
       : NOTIFICATION_ROUTES[n.type];
     router.push(route);
   }

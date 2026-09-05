@@ -528,6 +528,10 @@ begin
        and sender.role <> 'hr' then
       raise exception 'only HR can send % notifications', item_type;
     end if;
+    if item_type in ('meeting_scheduled', 'meeting_starting', 'meeting_cancelled', 'meeting_message')
+       and sender.role not in ('leader', 'hr') then
+      raise exception 'only leaders or HR can send % notifications', item_type;
+    end if;
 
     insert into public.notifications (user_id, type, title, body, data)
     values (
@@ -712,8 +716,43 @@ create table public.meeting_room_bookings (
   started_at timestamptz,
   ended_at timestamptz,
   created_at timestamptz default now() not null,
-  updated_at timestamptz default now() not null
+  updated_at timestamptz default now() not null,
+  constraint meeting_time_format
+    check (start_time ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$'
+       and end_time   ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$'),
+  constraint meeting_time_order check (end_time > start_time)
 );
+
+-- Generated range used only to enforce non-overlapping bookings below; app
+-- code continues to read/write the plain start_time/end_time text columns.
+-- Every date/time text-parsing function in Postgres — date_in, time_in,
+-- timestamp_in, even timestamptz_in — is catalogued STABLE, not IMMUTABLE
+-- (they all consult the DateStyle GUC), so ANY text::time/timestamp cast is
+-- rejected inside a STORED generated column. This expression avoids text
+-- parsing entirely: it splits 'HH:mm' into integers with split_part()/::int
+-- (both IMMUTABLE) and builds the timestamp with make_interval() (also
+-- IMMUTABLE) instead of any date/time input function.
+alter table public.meeting_room_bookings
+  add column time_range tsrange
+    generated always as (
+      tsrange(
+        meeting_date::timestamp + make_interval(
+          hours => split_part(start_time, ':', 1)::int,
+          mins => split_part(start_time, ':', 2)::int
+        ),
+        meeting_date::timestamp + make_interval(
+          hours => split_part(end_time, ':', 1)::int,
+          mins => split_part(end_time, ':', 2)::int
+        ),
+        '[)'
+      )
+    ) stored;
+
+-- tsrange has native GiST support, so no btree_gist extension is needed here.
+alter table public.meeting_room_bookings
+  add constraint meeting_room_no_overlap
+    exclude using gist (time_range with &&)
+    where (status in ('scheduled', 'in_progress'));
 
 create table public.meeting_attendees (
   id uuid default uuid_generate_v4() primary key,
@@ -725,6 +764,7 @@ create table public.meeting_attendees (
 
 create index idx_meeting_bookings_date on public.meeting_room_bookings(meeting_date);
 create index idx_meeting_bookings_status on public.meeting_room_bookings(status);
+create index idx_meeting_bookings_date_status on public.meeting_room_bookings(meeting_date, status);
 create index idx_meeting_attendees_booking on public.meeting_attendees(booking_id);
 create index idx_meeting_attendees_user on public.meeting_attendees(user_id);
 
@@ -788,6 +828,18 @@ create policy "meeting_attendees_delete" on public.meeting_attendees
     )
   );
 
+create policy "meeting_attendees_update" on public.meeting_attendees
+  for update to authenticated
+  using (
+    exists (
+      select 1 from public.users
+      where auth_id = auth.uid()
+      and role in ('leader', 'hr')
+    )
+  );
+
 create trigger meeting_room_bookings_updated_at before update on public.meeting_room_bookings
   for each row execute function public.handle_updated_at();
+
+alter publication supabase_realtime add table public.meeting_room_bookings;
 

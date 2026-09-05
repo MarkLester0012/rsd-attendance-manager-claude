@@ -75,34 +75,118 @@ describe("checkMeetingCollision", () => {
 
 describe("resolveAttendeeStatus", () => {
   it("resolves to in_office when user has no leaves", () => {
-    const status = resolveAttendeeStatus("u1", "2026-09-04", []);
+    const status = resolveAttendeeStatus("u1", "2026-09-04", [], "14:00");
     expect(status).toBe("in_office");
   });
 
   it("resolves to virtual when user has approved WFH", () => {
-    const status = resolveAttendeeStatus("u1", "2026-09-04", [
-      { user_id: "u1", leave_type: "WFH", leave_date: "2026-09-04", status: "approved" },
-    ]);
+    const status = resolveAttendeeStatus(
+      "u1",
+      "2026-09-04",
+      [{ user_id: "u1", leave_type: "WFH", leave_date: "2026-09-04", status: "approved" }],
+      "14:00"
+    );
     expect(status).toBe("virtual");
   });
 
   it("resolves to on_leave when user has approved BL or VL or SL", () => {
-    const blStatus = resolveAttendeeStatus("u1", "2026-09-04", [
-      { user_id: "u1", leave_type: "BL", leave_date: "2026-09-04", status: "approved" },
-    ]);
+    const blStatus = resolveAttendeeStatus(
+      "u1",
+      "2026-09-04",
+      [{ user_id: "u1", leave_type: "BL", leave_date: "2026-09-04", status: "approved" }],
+      "14:00"
+    );
     expect(blStatus).toBe("on_leave");
 
-    const vlStatus = resolveAttendeeStatus("u2", "2026-09-04", [
-      { user_id: "u2", leave_type: "VL", leave_date: "2026-09-04", status: "approved" },
-    ]);
+    const vlStatus = resolveAttendeeStatus(
+      "u2",
+      "2026-09-04",
+      [{ user_id: "u2", leave_type: "VL", leave_date: "2026-09-04", status: "approved" }],
+      "14:00"
+    );
     expect(vlStatus).toBe("on_leave");
   });
 
   it("ignores unapproved/pending leaves", () => {
-    const status = resolveAttendeeStatus("u1", "2026-09-04", [
-      { user_id: "u1", leave_type: "VL", leave_date: "2026-09-04", status: "pending" },
-    ]);
+    const status = resolveAttendeeStatus(
+      "u1",
+      "2026-09-04",
+      [{ user_id: "u1", leave_type: "VL", leave_date: "2026-09-04", status: "pending" }],
+      "14:00"
+    );
     expect(status).toBe("in_office");
+  });
+
+  it("a half_am leave does not affect a PM meeting", () => {
+    const status = resolveAttendeeStatus(
+      "u1",
+      "2026-09-04",
+      [
+        {
+          user_id: "u1",
+          leave_type: "VL",
+          leave_date: "2026-09-04",
+          duration: "half_am",
+          status: "approved",
+        },
+      ],
+      "15:00"
+    );
+    expect(status).toBe("in_office");
+  });
+
+  it("a half_am leave does affect an AM meeting", () => {
+    const status = resolveAttendeeStatus(
+      "u1",
+      "2026-09-04",
+      [
+        {
+          user_id: "u1",
+          leave_type: "VL",
+          leave_date: "2026-09-04",
+          duration: "half_am",
+          status: "approved",
+        },
+      ],
+      "09:00"
+    );
+    expect(status).toBe("on_leave");
+  });
+
+  it("a half_pm WFH leave does not make an AM meeting virtual", () => {
+    const status = resolveAttendeeStatus(
+      "u1",
+      "2026-09-04",
+      [
+        {
+          user_id: "u1",
+          leave_type: "WFH",
+          leave_date: "2026-09-04",
+          duration: "half_pm",
+          status: "approved",
+        },
+      ],
+      "09:00"
+    );
+    expect(status).toBe("in_office");
+  });
+
+  it("a half_pm WFH leave does make a PM meeting virtual", () => {
+    const status = resolveAttendeeStatus(
+      "u1",
+      "2026-09-04",
+      [
+        {
+          user_id: "u1",
+          leave_type: "WFH",
+          leave_date: "2026-09-04",
+          duration: "half_pm",
+          status: "approved",
+        },
+      ],
+      "15:00"
+    );
+    expect(status).toBe("virtual");
   });
 });
 
@@ -126,23 +210,40 @@ describe("getLiveRoomStatus", () => {
   };
 
   it("shows occupied when current time falls within meeting hours", () => {
-    const now = new Date("2026-09-04T14:30:00");
-    const status = getLiveRoomStatus(now, [dummyMeeting]);
+    const status = getLiveRoomStatus(14 * 60 + 30, [dummyMeeting]); // 14:30
     expect(status.isOccupied).toBe(true);
     expect(status.currentMeeting?.title).toBe("Leadership Sync");
   });
 
-  it("shows available when before the meeting", () => {
-    const now = new Date("2026-09-04T10:00:00");
-    const status = getLiveRoomStatus(now, [dummyMeeting]);
+  it("shows available when before the meeting, and reports it as the next meeting", () => {
+    const status = getLiveRoomStatus(10 * 60, [dummyMeeting]); // 10:00
     expect(status.isOccupied).toBe(false);
     expect(status.availableUntil).toBe("14:00");
+    expect(status.nextMeeting?.title).toBe("Leadership Sync");
   });
 
   it("shows available when after the meeting", () => {
-    const now = new Date("2026-09-04T15:30:00");
-    const status = getLiveRoomStatus(now, [dummyMeeting]);
+    const status = getLiveRoomStatus(15 * 60 + 30, [dummyMeeting]); // 15:30
     expect(status.isOccupied).toBe(false);
     expect(status.availableUntil).toBe("End of day");
+  });
+
+  it("shows exactly at start_time as occupied and exactly at end_time as free", () => {
+    expect(getLiveRoomStatus(14 * 60, [dummyMeeting]).isOccupied).toBe(true); // 14:00
+    expect(getLiveRoomStatus(15 * 60, [dummyMeeting]).isOccupied).toBe(false); // 15:00
+  });
+
+  it("does not report a stale in_progress meeting as occupied once its end_time has passed", () => {
+    const stale: MeetingBooking = { ...dummyMeeting, status: "in_progress" };
+    const status = getLiveRoomStatus(16 * 60, [stale]); // 16:00, an hour after end_time
+    expect(status.isOccupied).toBe(false);
+    expect(status.currentMeeting).toBe(null);
+  });
+
+  it("reports an in_progress meeting as occupied while still within its time window", () => {
+    const inProgress: MeetingBooking = { ...dummyMeeting, status: "in_progress" };
+    const status = getLiveRoomStatus(14 * 60 + 30, [inProgress]); // 14:30
+    expect(status.isOccupied).toBe(true);
+    expect(status.currentMeeting?.title).toBe("Leadership Sync");
   });
 });

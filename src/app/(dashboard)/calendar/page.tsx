@@ -74,7 +74,7 @@ export default async function CalendarPage() {
     `)
     .gte("meeting_date", startOfMonth)
     .lte("meeting_date", endOfMonth)
-    .in("status", ["scheduled", "in_progress", "completed"]);
+    .in("status", ["scheduled", "in_progress", "completed", "cancelled"]);
 
   return (
     <CalendarContent

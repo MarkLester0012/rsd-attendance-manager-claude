@@ -81,18 +81,33 @@ export interface LeaveRecord {
   status: string;
 }
 
+// Half-day cutoff: leaves with duration "half_am" cover before this minute,
+// "half_pm" cover from this minute onward. Matches the app's AM/PM labeling
+// (see HALF_DAY_TYPES in leave-types.ts); there's no other numeric boundary
+// defined elsewhere in the codebase, so 13:00 (after a 12-1pm lunch) is used.
+const HALF_DAY_CUTOFF_MINUTES = 13 * 60;
+
 /**
  * Determines whether an attendee is in-office, joining virtually via Slack Huddle (WFH),
- * or unavailable (on leave) based on their approved leaves for the date.
+ * or unavailable (on leave) during a specific meeting time window, based on their approved
+ * leaves for the date. A half-day leave only affects the half of the day it covers.
  */
 export function resolveAttendeeStatus(
   userId: string,
   dateStr: string,
-  leaves: LeaveRecord[]
+  leaves: LeaveRecord[],
+  meetingStartTime: string
 ): MeetingAttendeeStatus {
-  const userLeaves = leaves.filter(
-    (l) => l.user_id === userId && l.leave_date === dateStr && l.status === "approved"
-  );
+  const meetingStartMinutes = timeToMinutes(meetingStartTime);
+
+  const userLeaves = leaves.filter((l) => {
+    if (l.user_id !== userId || l.leave_date !== dateStr || l.status !== "approved") {
+      return false;
+    }
+    if (l.duration === "half_am") return meetingStartMinutes < HALF_DAY_CUTOFF_MINUTES;
+    if (l.duration === "half_pm") return meetingStartMinutes >= HALF_DAY_CUTOFF_MINUTES;
+    return true; // whole-day leave (or duration not provided) covers the full day
+  });
 
   if (userLeaves.length === 0) {
     return "in_office";
@@ -109,10 +124,13 @@ export function resolveAttendeeStatus(
 }
 
 /**
- * Calculates current room availability and active/upcoming meetings.
+ * Calculates current room availability and active/upcoming meetings, purely from
+ * the current time-of-day (minutes since midnight) — status alone never pins the
+ * room "occupied": a booking that outlived its end_time and hasn't been marked
+ * completed yet is treated as no longer current.
  */
 export function getLiveRoomStatus(
-  now: Date,
+  currentMinutes: number,
   todayBookings: MeetingBooking[]
 ): {
   isOccupied: boolean;
@@ -120,8 +138,6 @@ export function getLiveRoomStatus(
   nextMeeting: MeetingBooking | null;
   availableUntil: string | null;
 } {
-  const currentMinutes = now.getHours() * 60 + now.getMinutes();
-
   const activeBookings = todayBookings
     .filter((b) => b.status === "scheduled" || b.status === "in_progress")
     .sort((a, b) => timeToMinutes(a.start_time) - timeToMinutes(b.start_time));
@@ -130,7 +146,7 @@ export function getLiveRoomStatus(
   const current = activeBookings.find((b) => {
     const start = timeToMinutes(b.start_time);
     const end = timeToMinutes(b.end_time);
-    return (currentMinutes >= start && currentMinutes < end) || b.status === "in_progress";
+    return currentMinutes >= start && currentMinutes < end;
   }) || null;
 
   if (current) {

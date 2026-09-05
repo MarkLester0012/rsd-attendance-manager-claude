@@ -1,7 +1,7 @@
 import { after } from "next/server";
 import type { NextRequest } from "next/server";
 import { verifySlackSignature } from "@/lib/slack/signature";
-import { postResponseUrl, openModal, updateModal } from "@/lib/slack/client";
+import { postResponseUrl, openModal, updateModal, getWorkspaceBotToken } from "@/lib/slack/client";
 import { parseSlackEOD } from "@/lib/redmine/parser";
 import { decryptApiKey } from "@/lib/redmine/encryption";
 import { decryptToken } from "@/lib/slack/encryption";
@@ -9,11 +9,21 @@ import { createTimeEntry, getTimeEntries } from "@/lib/redmine/client";
 import { buildTimeLogModal, formatForRedmine } from "@/lib/slack/modal";
 import type { ModalMetadata } from "@/lib/slack/modal";
 import { buildScheduleBlockKit } from "@/lib/slack/meetings";
+import { buildBookMeetingModal, type BookMeetingModalMetadata } from "@/lib/slack/meeting-modal";
+import { createBookingCore, VALID_TIME } from "@/lib/meetings/create-booking";
+import { timeToMinutes } from "@/lib/utils/meeting-conflicts";
+import { officeDateString } from "@/lib/utils/office-time";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
 
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+// Server-only var (not NEXT_PUBLIC_) so it resolves at request time rather than
+// being inlined at build time — see APP_URL note in meeting-room/actions.ts.
+const APP_URL = process.env.APP_URL || "http://localhost:3000";
+if (!process.env.APP_URL && process.env.NODE_ENV === "production") {
+  console.error("APP_URL is not set — Slack links in this route will point at localhost.");
+}
+const DEFAULT_CHANNEL = process.env.SLACK_MEETING_ROOM_CHANNEL || "rsd-leader-team";
 
 // ─── shared helpers ───────────────────────────────────────────────────────────
 
@@ -41,6 +51,24 @@ async function lookupUser(slackUserId: string, slackTeamId: string) {
     .single();
 
   return { id: user.id, token };
+}
+
+/**
+ * Resolves the Slack user issuing a meeting-room command/interaction back to
+ * an app user, via the same slack_user_id + slack_team_id link used by
+ * lookupUser() above. Used to identify the caller for the meeting-room
+ * schedule and book commands, neither of which go through lookupUser()
+ * itself since they don't need the caller's decrypted Slack OAuth token.
+ */
+async function resolveMeetingRoomCaller(slackUserId: string, slackTeamId: string) {
+  const supabase = createAdminClient();
+  const { data: user } = await supabase
+    .from("users")
+    .select("id, name, role")
+    .eq("slack_user_id", slackUserId)
+    .eq("slack_team_id", slackTeamId)
+    .single();
+  return user ?? null;
 }
 
 /** Fetch how many hours the user has already logged to Redmine for a given date.
@@ -319,24 +347,216 @@ async function handleViewSubmission(payload: {
   return jsonResponse({ response_action: "clear" });
 }
 
+const CONNECT_SLACK_TEXT = `Connect your Slack account at <${APP_URL}/settings/integrations/slack|Settings → Integrations → Slack> to use this command.`;
+
 async function handleMeetingRoomCommand(params: URLSearchParams): Promise<Response> {
+  const slackUserId = params.get("user_id");
+  const slackTeamId = params.get("team_id");
+  if (!slackUserId || !slackTeamId) {
+    return jsonResponse({ response_type: "ephemeral", text: "Something went wrong — please try again." });
+  }
+
+  // Require the caller to be a linked app user before revealing any schedule
+  // data — titles, descriptions, and organizer names should not be visible to
+  // an unlinked Slack account (including single-channel guests).
+  const caller = await resolveMeetingRoomCaller(slackUserId, slackTeamId);
+  if (!caller) {
+    return jsonResponse({ response_type: "ephemeral", text: CONNECT_SLACK_TEXT });
+  }
+
   const text = (params.get("text") || "").trim().toLowerCase();
-  const today = new Date().toISOString().slice(0, 10);
+  const today = officeDateString();
   const targetDate = text.match(/^\d{4}-\d{2}-\d{2}$/) ? text : today;
 
   const supabase = createAdminClient();
-  const { data: bookings } = await supabase
+  const { data: bookings, error } = await supabase
     .from("meeting_room_bookings")
     .select("*, organizer:users!meeting_room_bookings_organizer_id_fkey(name, slack_user_id)")
     .eq("meeting_date", targetDate)
     .in("status", ["scheduled", "in_progress"])
     .order("start_time", { ascending: true });
 
+  if (error) {
+    console.error("Failed to load meeting room schedule for Slack command:", error.message);
+    return jsonResponse({
+      response_type: "ephemeral",
+      text: "Failed to load the meeting room schedule. Please try again or check the web app.",
+    });
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const blocks = buildScheduleBlockKit(targetDate, (bookings as any) || [], APP_URL);
   return jsonResponse({
     response_type: "ephemeral",
     blocks,
   });
+}
+
+async function handleMeetingRoomBookCommand(params: URLSearchParams): Promise<Response> {
+  const slackUserId = params.get("user_id");
+  const slackTeamId = params.get("team_id");
+  const triggerId = params.get("trigger_id");
+  if (!slackUserId || !slackTeamId || !triggerId) {
+    return jsonResponse({ response_type: "ephemeral", text: "Something went wrong — please try again." });
+  }
+
+  const caller = await resolveMeetingRoomCaller(slackUserId, slackTeamId);
+  if (!caller) {
+    return jsonResponse({ response_type: "ephemeral", text: CONNECT_SLACK_TEXT });
+  }
+  if (caller.role !== "leader" && caller.role !== "hr") {
+    return jsonResponse({
+      response_type: "ephemeral",
+      text: "Only leaders and HR can book the meeting room.",
+    });
+  }
+
+  const botToken = await getWorkspaceBotToken();
+  if (!botToken) {
+    return jsonResponse({
+      response_type: "ephemeral",
+      text: "The meeting room bot isn't configured yet. Please book from the web app instead.",
+    });
+  }
+
+  const metadata: BookMeetingModalMetadata = { organizerId: caller.id };
+  const modal = buildBookMeetingModal(officeDateString(), metadata);
+  const result = await openModal(botToken, triggerId, modal);
+
+  if (!result.ok) {
+    return jsonResponse({
+      response_type: "ephemeral",
+      text: `Failed to open the booking modal: ${result.error ?? "unknown error"}. Please try again.`,
+    });
+  }
+
+  return new Response(null, { status: 200 });
+}
+
+// ─── view_submission: Book meeting room from Slack ───────────────────────────
+
+async function handleBookMeetingSubmission(payload: {
+  view: {
+    private_metadata: string;
+    state: {
+      values: Record<
+        string,
+        Record<
+          string,
+          {
+            value?: string | null;
+            selected_date?: string | null;
+            selected_option?: { value?: string } | null;
+            selected_users?: string[] | null;
+            selected_options?: { value?: string }[] | null;
+          }
+        >
+      >;
+    };
+  };
+}): Promise<Response> {
+  const { view } = payload;
+
+  let metadata: BookMeetingModalMetadata;
+  try {
+    metadata = JSON.parse(view.private_metadata) as BookMeetingModalMetadata;
+  } catch {
+    return jsonResponse({ response_action: "clear" });
+  }
+
+  const values = view.state.values;
+  const title = values.title_block?.title_input?.value?.trim() || "";
+  const description = values.description_block?.description_input?.value?.trim() || "";
+  const meetingDate = values.date_block?.date_select?.selected_date || officeDateString();
+  const startTime = values.start_time_block?.start_time_select?.selected_option?.value || "";
+  const endTime = values.end_time_block?.end_time_select?.selected_option?.value || "";
+  const selectedSlackUserIds = values.attendees_block?.attendees_select?.selected_users || [];
+  const notifyChannel =
+    (values.notify_channel_block?.notify_channel_checkbox?.selected_options || []).length > 0;
+
+  // Validate synchronously so Slack shows native inline errors on the
+  // relevant block, rather than a generic failure toast.
+  const errors: Record<string, string> = {};
+  if (!title) {
+    errors.title_block = "Meeting title is required.";
+  }
+  if (!VALID_TIME.test(startTime) || !VALID_TIME.test(endTime)) {
+    errors.end_time_block = "Please select both a start and end time.";
+  } else if (timeToMinutes(endTime) <= timeToMinutes(startTime)) {
+    errors.end_time_block = "End time must be after start time.";
+  }
+  if (Object.keys(errors).length > 0) {
+    return jsonResponse({ response_action: "errors", errors });
+  }
+
+  const supabase = createAdminClient();
+
+  let attendeeIds: string[] = [];
+  if (selectedSlackUserIds.length > 0) {
+    const { data: attendeeUsers } = await supabase
+      .from("users")
+      .select("id, slack_user_id")
+      .in("slack_user_id", selectedSlackUserIds);
+    const resolved = attendeeUsers || [];
+    attendeeIds = resolved.map((u) => u.id);
+    const unresolvedCount = selectedSlackUserIds.length - resolved.length;
+    if (unresolvedCount > 0) {
+      console.warn(
+        `${unresolvedCount} selected Slack user(s) have no linked app account; excluded from attendees.`
+      );
+    }
+  }
+
+  const result = await createBookingCore(
+    supabase,
+    metadata.organizerId,
+    {
+      title,
+      description: description || undefined,
+      meeting_date: meetingDate,
+      start_time: startTime,
+      end_time: endTime,
+      attendee_ids: attendeeIds,
+      notify_channel: notifyChannel,
+    },
+    DEFAULT_CHANNEL
+  );
+
+  if ("error" in result) {
+    return jsonResponse({
+      response_action: "errors",
+      errors: { end_time_block: result.error },
+    });
+  }
+
+  const { booking, attendeeIds: allAttendeeIds } = result;
+  const notifyIds = allAttendeeIds.filter((id) => id !== metadata.organizerId);
+  if (notifyIds.length > 0) {
+    const { data: organizer } = await supabase
+      .from("users")
+      .select("name")
+      .eq("id", metadata.organizerId)
+      .single();
+    const organizerName = organizer?.name || "A leader";
+
+    // Session-less admin-client context (no auth.uid()), so this inserts
+    // directly rather than going through the create_notifications RPC — see
+    // api/cron/meetings/route.ts for the same pattern.
+    const { error: notifError } = await supabase.from("notifications").insert(
+      notifyIds.map((userId) => ({
+        user_id: userId,
+        type: "meeting_scheduled",
+        title: `Meeting Scheduled: ${booking.title}`,
+        body: `${booking.meeting_date} from ${booking.start_time} to ${booking.end_time} by ${organizerName}`,
+        data: { booking_id: booking.id, meeting_date: booking.meeting_date },
+      }))
+    );
+    if (notifError) {
+      console.error("Failed to notify attendees of Slack-booked meeting:", notifError.message);
+    }
+  }
+
+  return jsonResponse({ response_action: "clear" });
 }
 
 // ─── main POST handler ────────────────────────────────────────────────────────
@@ -356,7 +576,11 @@ export async function POST(req: NextRequest) {
 
   const params = new URLSearchParams(raw);
   const command = params.get("command");
-  if (command === "/meeting-room" || command === "/book-room") {
+  if (command === "/meeting-room") {
+    const text = (params.get("text") || "").trim();
+    if (/^book(\s|$)/i.test(text)) {
+      return handleMeetingRoomBookCommand(params);
+    }
     return handleMeetingRoomCommand(params);
   }
 
@@ -385,6 +609,13 @@ export async function POST(req: NextRequest) {
     payload.view?.callback_id === "log_eod_to_time_logger"
   ) {
     return handleViewSubmission(payload);
+  }
+
+  if (
+    payload.type === "view_submission" &&
+    payload.view?.callback_id === "book_meeting_room"
+  ) {
+    return handleBookMeetingSubmission(payload);
   }
 
   if (payload.type === "block_actions" && Array.isArray(payload.actions)) {

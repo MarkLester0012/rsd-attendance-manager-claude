@@ -227,7 +227,8 @@ export type NotificationType =
   | "allowance_submission_reviewed"
   | "meeting_scheduled"
   | "meeting_starting"
-  | "meeting_cancelled";
+  | "meeting_cancelled"
+  | "meeting_message";
 
 export interface Notification {
   id: string;
@@ -338,7 +339,6 @@ export interface MeetingAttendee {
   user_id: string;
   created_at: string;
   user?: User;
-  attendance_status?: MeetingAttendeeStatus;
 }
 
 export interface MeetingBooking {
