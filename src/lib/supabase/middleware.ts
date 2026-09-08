@@ -34,6 +34,12 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // Allow cron endpoints (authenticated via their own CRON_SECRET bearer
+  // token, not a session cookie) — see src/app/api/cron/meetings/route.ts.
+  if (request.nextUrl.pathname.startsWith("/api/cron/")) {
+    return NextResponse.next();
+  }
+
   const {
     data: { user },
   } = await supabase.auth.getUser();

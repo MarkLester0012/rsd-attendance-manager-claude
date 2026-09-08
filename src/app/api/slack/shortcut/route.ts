@@ -385,9 +385,14 @@ async function handleMeetingRoomCommand(params: URLSearchParams): Promise<Respon
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const activeCount = ((bookings as any[]) || []).filter(
+    (b) => b.status === "scheduled" || b.status === "in_progress"
+  ).length;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const blocks = buildScheduleBlockKit(targetDate, (bookings as any) || [], APP_URL);
   return jsonResponse({
     response_type: "ephemeral",
+    text: `Meeting Room Schedule for ${targetDate}: ${activeCount} meeting${activeCount === 1 ? "" : "s"}.`,
     blocks,
   });
 }

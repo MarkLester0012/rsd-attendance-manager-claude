@@ -63,7 +63,7 @@ export function buildMeetingStartBlockKit(
       type: "header",
       text: {
         type: "plain_text",
-        text: "🚪 Meeting Room In Use",
+        text: "Meeting Room In Use",
         emoji: true,
       },
     },
@@ -71,7 +71,7 @@ export function buildMeetingStartBlockKit(
       type: "section",
       text: {
         type: "mrkdwn",
-        text: `*${title}*\n⏰ *Time:* ${meeting.start_time} – ${meeting.end_time} | 👤 *Organizer:* ${formatUserTag(organizer)}`,
+        text: `*${title}*\n>*Time:* ${meeting.start_time} – ${meeting.end_time}\n>*Organizer:* ${formatUserTag(organizer)}`,
       },
     },
   ];
@@ -82,7 +82,7 @@ export function buildMeetingStartBlockKit(
       elements: [
         {
           type: "mrkdwn",
-          text: `📝 _${description}_`,
+          text: `_${description}_`,
         },
       ],
     });
@@ -93,11 +93,11 @@ export function buildMeetingStartBlockKit(
     fields: [
       {
         type: "mrkdwn",
-        text: `*🏢 In-Office (Meeting Room):*\n${inOfficeText}`,
+        text: `*In-Office (Meeting Room):*\n${inOfficeText}`,
       },
       {
         type: "mrkdwn",
-        text: `*💻 Virtual Attendees:*\n${virtualText}`,
+        text: `*Virtual Attendees:*\n${virtualText}`,
       },
     ],
   });
@@ -108,7 +108,7 @@ export function buildMeetingStartBlockKit(
       elements: [
         {
           type: "mrkdwn",
-          text: `🏖️ *Unavailable:* ${onLeaveText}`,
+          text: `*Unavailable:* ${onLeaveText}`,
         },
       ],
     });
@@ -120,7 +120,7 @@ export function buildMeetingStartBlockKit(
       type: "section",
       text: {
         type: "mrkdwn",
-        text: `💡 *Notice:* Virtual attendees please connect to the *Slack Huddle* in *${channelRef}*.`,
+        text: `>*Note:* Virtual attendees, please connect to the Slack Huddle in *${channelRef}*.`,
       },
     });
   }
@@ -160,13 +160,13 @@ export function buildMeetingDM(
   const meetingUrl = `${appUrl}/meeting-room?date=${meeting.meeting_date}&meeting=${meeting.id}`;
 
   if (status === "on_leave") {
-    const text = `🏖️ FYI: "${meeting.title}" (${meeting.start_time} - ${meeting.end_time}) is starting now. You're marked on leave today, so no action is needed — this is just a courtesy heads-up in case plans changed.`;
+    const text = `FYI: "${title}" (${meeting.start_time} - ${meeting.end_time}) is starting now. You're marked on leave today, so no action is needed — this is just a courtesy heads-up in case plans changed.`;
     const blocks: object[] = [
       {
         type: "header",
         text: {
           type: "plain_text",
-          text: "🏖️ Meeting Starting Now (FYI)",
+          text: "Meeting Starting Now (FYI)",
           emoji: true,
         },
       },
@@ -174,7 +174,7 @@ export function buildMeetingDM(
         type: "section",
         text: {
           type: "mrkdwn",
-          text: `The meeting *"${title}"* is starting now (${meeting.start_time} – ${meeting.end_time}).\n\nYou're marked *on leave* today, so this is just a courtesy notice — no action needed unless your plans changed.`,
+          text: `The meeting *"${title}"* is starting now (${meeting.start_time} – ${meeting.end_time}).\n\n>You're marked *on leave* today, so this is just a courtesy notice — no action needed unless your plans changed.`,
         },
       },
       {
@@ -196,13 +196,13 @@ export function buildMeetingDM(
   }
 
   if (status === "virtual") {
-    const text = `💻 Meeting Starting: "${meeting.title}" (${meeting.start_time} - ${meeting.end_time}). Please join via Slack Huddle in ${channelRef}.`;
+    const text = `Meeting Starting: "${title}" (${meeting.start_time} - ${meeting.end_time}). Please join via Slack Huddle in ${channelRef}.`;
     const blocks: object[] = [
       {
         type: "header",
         text: {
           type: "plain_text",
-          text: "💻 Meeting Starting Now",
+          text: "Meeting Starting Now",
           emoji: true,
         },
       },
@@ -210,7 +210,7 @@ export function buildMeetingDM(
         type: "section",
         text: {
           type: "mrkdwn",
-          text: `The meeting *"${title}"* is starting now (${meeting.start_time} – ${meeting.end_time}).\n\n🏠 Since you are *Working From Home* today, please join via the *Slack Huddle* in *${channelRef}*.`,
+          text: `The meeting *"${title}"* is starting now (${meeting.start_time} – ${meeting.end_time}).\n\n>Since you are *Working From Home* today, please join via the Slack Huddle in *${channelRef}*.`,
         },
       },
       {
@@ -233,13 +233,13 @@ export function buildMeetingDM(
   }
 
   // In-Office
-  const text = `🏢 Meeting Starting: "${meeting.title}" (${meeting.start_time} - ${meeting.end_time}). Please head to the Meeting Room.`;
+  const text = `Meeting Starting: "${title}" (${meeting.start_time} - ${meeting.end_time}). Please head to the Meeting Room.`;
   const blocks: object[] = [
     {
       type: "header",
       text: {
         type: "plain_text",
-        text: "🏢 Meeting Starting Now",
+        text: "Meeting Starting Now",
         emoji: true,
       },
     },
@@ -247,7 +247,7 @@ export function buildMeetingDM(
       type: "section",
       text: {
         type: "mrkdwn",
-        text: `The meeting *"${title}"* is starting now (${meeting.start_time} – ${meeting.end_time}).\n\n🚶 Please proceed to the *Meeting Room*.`,
+        text: `The meeting *"${title}"* is starting now (${meeting.start_time} – ${meeting.end_time}).\n\n>Please proceed to the Meeting Room.`,
       },
     },
     {
@@ -284,7 +284,7 @@ export function buildMeetingCancelledBlockKit(
       type: "header",
       text: {
         type: "plain_text",
-        text: "❌ Meeting Cancelled",
+        text: "Meeting Cancelled",
         emoji: true,
       },
     },
@@ -292,7 +292,7 @@ export function buildMeetingCancelledBlockKit(
       type: "section",
       text: {
         type: "mrkdwn",
-        text: `*"${title}"*\nScheduled for ${meeting.meeting_date} (${meeting.start_time} – ${meeting.end_time}) was cancelled by *${cancelledBy}*.\n\n🟢 The Meeting Room is now free for this time slot.`,
+        text: `*"${title}"*\nScheduled for ${meeting.meeting_date} (${meeting.start_time} – ${meeting.end_time}) was cancelled by *${cancelledBy}*.\n\n>The Meeting Room is now free for this time slot.`,
       },
     },
     {
@@ -329,7 +329,7 @@ export function buildScheduleBlockKit(
       type: "header",
       text: {
         type: "plain_text",
-        text: `📅 Meeting Room Schedule (${dateStr})`,
+        text: `Meeting Room Schedule (${dateStr})`,
         emoji: true,
       },
     },
@@ -340,22 +340,22 @@ export function buildScheduleBlockKit(
       type: "section",
       text: {
         type: "mrkdwn",
-        text: "🟢 *The Meeting Room is completely free!* No meetings are currently scheduled for this date.",
+        text: "*The Meeting Room is completely free.* No meetings are currently scheduled for this date.",
       },
     });
   } else {
     const listItems = activeBookings.map((b) => {
-      const statusIcon = b.status === "in_progress" ? "🔴 *[IN USE]*" : "⏳";
+      const statusLabel = b.status === "in_progress" ? " — *In Progress*" : "";
       const orgName = b.organizer?.name ? escapeSlackText(b.organizer.name) : "Unknown";
       const title = truncate(escapeSlackText(b.title), 200);
-      return `${statusIcon} *${b.start_time} – ${b.end_time}*: *${title}* (by ${orgName})`;
+      return `>*${b.start_time} – ${b.end_time}* — *${title}* (by ${orgName})${statusLabel}`;
     });
 
     blocks.push({
       type: "section",
       text: {
         type: "mrkdwn",
-        text: listItems.join("\n\n"),
+        text: listItems.join("\n"),
       },
     });
   }
@@ -393,14 +393,14 @@ export function buildAttendeeMessageDM(
   const from = escapeSlackText(fromName);
   const body = truncate(escapeSlackText(message), SECTION_TEXT_MAX - 200);
   const meetingUrl = `${appUrl}/meeting-room?date=${meeting.meeting_date}&meeting=${meeting.id}`;
-  const text = `💬 Message about "${meeting.title}" from ${fromName}: ${message}`;
+  const text = `Message about "${title}" from ${from}: ${body}`;
 
   const blocks: object[] = [
     {
       type: "header",
       text: {
         type: "plain_text",
-        text: "💬 Message about your meeting",
+        text: "Message about your meeting",
         emoji: true,
       },
     },
@@ -408,7 +408,7 @@ export function buildAttendeeMessageDM(
       type: "section",
       text: {
         type: "mrkdwn",
-        text: `Re: *"${title}"* (${meeting.start_time} – ${meeting.end_time})\nFrom *${from}*:\n\n${body}`,
+        text: `Re: *"${title}"* (${meeting.start_time} – ${meeting.end_time})\nFrom *${from}*:\n\n>${body}`,
       },
     },
     {

@@ -66,7 +66,7 @@ async function startMeeting(
     const postResult = await postChatMessage(
       botToken,
       channelName,
-      `🚪 Meeting Starting Now: "${booking.title}" (${booking.start_time} - ${booking.end_time})`,
+      `Meeting Starting Now: "${booking.title}" (${booking.start_time} - ${booking.end_time})`,
       blocks
     );
     if (postResult.ok && postResult.ts) {
@@ -87,6 +87,33 @@ async function startMeeting(
         return postDirectMessage(botToken, item.user.slack_user_id as string, dmPayload.text, dmPayload.blocks);
       })
   );
+
+  // Session-less admin-client context (no auth.uid()), so this inserts
+  // directly rather than going through the create_notifications RPC — same
+  // pattern as api/slack/shortcut/route.ts's Slack-booking notification, and
+  // the same shape as the manual "Start & Notify Slack" button
+  // (meeting-room/actions.ts's meeting_starting notification).
+  const notifyIds = attendeesWithStatus
+    .map((item) => item.user.id)
+    .filter((id) => id !== organizerUser.id);
+  if (notifyIds.length > 0) {
+    try {
+      const { error: notifError } = await supabase.from("notifications").insert(
+        notifyIds.map((userId) => ({
+          user_id: userId,
+          type: "meeting_starting",
+          title: `Meeting Starting Now: ${booking.title}`,
+          body: "Started automatically in the Meeting Room",
+          data: { booking_id: booking.id, meeting_date: booking.meeting_date },
+        }))
+      );
+      if (notifError) {
+        console.error(`Failed to notify attendees of auto-started meeting ${booking.id}:`, notifError.message);
+      }
+    } catch (e) {
+      console.error(`Error notifying attendees of auto-started meeting ${booking.id}:`, e);
+    }
+  }
 }
 
 export async function GET(req: Request) {

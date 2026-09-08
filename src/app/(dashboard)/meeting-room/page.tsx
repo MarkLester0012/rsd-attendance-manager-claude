@@ -6,11 +6,6 @@ import { officeDateString } from "@/lib/utils/office-time";
 import type { LeaveRecord } from "@/lib/utils/meeting-conflicts";
 import type { MeetingWithAttendees, User } from "@/lib/types";
 
-export const metadata = {
-  title: "Meeting Room Manager | RSD Attendance Manager",
-  description: "Schedule and manage company meeting room occupancy and Slack announcements",
-};
-
 const DATE_PARAM_RE = /^\d{4}-\d{2}-\d{2}$/;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -32,48 +27,55 @@ export default async function MeetingRoomPage({
 
   if (!authUser) redirect("/login");
 
-  const { data: user } = await supabase
-    .from("users")
-    .select("*, department:departments(*)")
-    .eq("auth_id", authUser.id)
-    .single();
+  // These four reads are independent of one another (only the earlier
+  // auth.getUser() session establishes the RLS context they all need), so
+  // they run in parallel instead of one after another — this used to block
+  // every prev/next date click behind four sequential round trips.
+  const [
+    { data: user },
+    { data: bookingsData },
+    { data: allUsers },
+    { data: leaves },
+  ] = await Promise.all([
+    supabase
+      .from("users")
+      .select("*, department:departments(*)")
+      .eq("auth_id", authUser.id)
+      .single(),
+    // Bookings on the selected date. The nested user select on attendees
+    // includes department so the attendee-detail popover doesn't need a
+    // separate query.
+    supabase
+      .from("meeting_room_bookings")
+      .select(`
+        *,
+        organizer:users!meeting_room_bookings_organizer_id_fkey(*),
+        attendees:meeting_attendees(
+          id,
+          booking_id,
+          user_id,
+          created_at,
+          user:users(*, department:departments(*))
+        )
+      `)
+      .eq("meeting_date", selectedDate)
+      .order("start_time", { ascending: true }),
+    // All users for attendee selection — narrowed to only the columns the
+    // attendee picker and detail popover actually use, rather than shipping
+    // every column of every employee to the browser.
+    supabase
+      .from("users")
+      .select("id, name, email, role, department_id, slack_user_id, department:departments(*)")
+      .order("name", { ascending: true }),
+    // Approved leaves on the selected date for attendee status resolution
+    supabase
+      .from("leaves")
+      .select("user_id, leave_type, leave_date, duration, status")
+      .eq("leave_date", selectedDate)
+      .eq("status", "approved"),
+  ]);
 
   if (!user) redirect("/login");
-
-  // Fetch bookings on the selected date. The nested user select on attendees
-  // includes department so the attendee-detail popover doesn't need a
-  // separate query.
-  const { data: bookingsData } = await supabase
-    .from("meeting_room_bookings")
-    .select(`
-      *,
-      organizer:users!meeting_room_bookings_organizer_id_fkey(*),
-      attendees:meeting_attendees(
-        id,
-        booking_id,
-        user_id,
-        created_at,
-        user:users(*, department:departments(*))
-      )
-    `)
-    .eq("meeting_date", selectedDate)
-    .order("start_time", { ascending: true });
-
-  // Fetch active users for attendee selection — narrowed to only the columns
-  // the attendee picker and detail popover actually use, rather than shipping
-  // every column of every employee to the browser.
-  const { data: allUsers } = await supabase
-    .from("users")
-    .select("id, name, email, role, department_id, slack_user_id, department:departments(*)")
-    .eq("is_active", true)
-    .order("name", { ascending: true });
-
-  // Fetch approved leaves on the selected date for attendee status resolution
-  const { data: leaves } = await supabase
-    .from("leaves")
-    .select("user_id, leave_type, leave_date, duration, status")
-    .eq("leave_date", selectedDate)
-    .eq("status", "approved");
 
   return (
     <MeetingRoomContent

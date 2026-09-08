@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect, useRef, useCallback } from "react";
+import { useState, useMemo, useEffect, useRef, useCallback, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { format, addDays, subDays, parseISO } from "date-fns";
 import {
@@ -61,6 +61,7 @@ import {
   type LeaveRecord,
 } from "@/lib/utils/meeting-conflicts";
 import { officeDateString, officeMinutesOfDay } from "@/lib/utils/office-time";
+import { createClient } from "@/lib/supabase/client";
 import { LEAVE_TYPES } from "@/lib/constants/leave-types";
 import type {
   MeetingWithAttendees,
@@ -116,6 +117,7 @@ export function MeetingRoomContent({
   const [currentTimeMinutes, setCurrentTimeMinutes] = useState(() => officeMinutesOfDay());
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [highlightedId, setHighlightedId] = useState<string | null>(highlightMeetingId);
+  const [isDateChangePending, startDateChangeTransition] = useTransition();
 
   const cardRefs = useRef(new Map<string, HTMLDivElement>());
 
@@ -123,6 +125,62 @@ export function MeetingRoomContent({
   useEffect(() => {
     setBookings(initialBookings);
   }, [initialBookings]);
+
+  // Refetch bookings for the currently-viewed date. Used by the realtime
+  // subscription below so a meeting started/cancelled/auto-transitioned by
+  // someone else (or by the cron) shows up here without a manual reload —
+  // mirrors the query in page.tsx and the pattern in room-status-badge.tsx.
+  const refetchBookings = useCallback(async () => {
+    const supabase = createClient();
+    const { data, error } = await supabase
+      .from("meeting_room_bookings")
+      .select(`
+        *,
+        organizer:users!meeting_room_bookings_organizer_id_fkey(*),
+        attendees:meeting_attendees(
+          id,
+          booking_id,
+          user_id,
+          created_at,
+          user:users(*, department:departments(*))
+        )
+      `)
+      .eq("meeting_date", currentDateStr)
+      .order("start_time", { ascending: true });
+
+    if (error) {
+      console.error("Failed to refresh meeting room bookings:", error.message);
+      return;
+    }
+    setBookings((data || []) as unknown as MeetingWithAttendees[]);
+  }, [currentDateStr]);
+
+  useEffect(() => {
+    const supabase = createClient();
+    const channel = supabase
+      .channel(`meeting_room_bookings_${currentDateStr}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "meeting_room_bookings",
+          filter: `meeting_date=eq.${currentDateStr}`,
+        },
+        () => {
+          refetchBookings();
+        }
+      )
+      .subscribe((status) => {
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          console.error("Meeting room realtime subscription failed:", status);
+        }
+      });
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [currentDateStr, refetchBookings]);
 
   // Scroll to and briefly highlight the meeting a notification linked to.
   useEffect(() => {
@@ -158,12 +216,18 @@ export function MeetingRoomContent({
     return getLiveRoomStatus(currentTimeMinutes, bookings);
   }, [bookings, currentTimeMinutes, isCurrentDayToday]);
 
-  // Date Navigation handlers
+  // Date Navigation handlers. Wrapped in useTransition so prev/next/today
+  // clicks get immediate pending feedback (buttons disable, timeline dims) —
+  // a searchParams-only navigation to this same route segment does not
+  // reliably re-trigger loading.tsx's Suspense boundary, so without this the
+  // click otherwise looks like it did nothing until the server responds.
   const handleDateChange = (newDateStr: string) => {
     const params = new URLSearchParams(searchParams?.toString());
     params.set("date", newDateStr);
     params.delete("meeting");
-    router.push(`/meeting-room?${params.toString()}`);
+    startDateChangeTransition(() => {
+      router.push(`/meeting-room?${params.toString()}`);
+    });
   };
 
   const handlePrevDay = () => {
@@ -348,7 +412,11 @@ export function MeetingRoomContent({
       <Card
         className={cn(
           "border-2 transition-all duration-300 shadow-sm",
-          liveStatus.isOccupied ? "border-amber-500/50" : "border-emerald-500/40"
+          !isCurrentDayToday
+            ? "border-border"
+            : liveStatus.isOccupied
+            ? "border-amber-500/50"
+            : "border-emerald-500/40"
         )}
       >
         <CardContent className="p-5 sm:p-6">
@@ -356,29 +424,55 @@ export function MeetingRoomContent({
             <div className="space-y-2">
               <div className="flex items-center gap-2.5">
                 <span className="relative flex h-3.5 w-3.5">
-                  {liveStatus.isOccupied && (
+                  {isCurrentDayToday && liveStatus.isOccupied && (
                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 bg-amber-400" />
                   )}
                   <span
                     className={cn(
                       "relative inline-flex rounded-full h-3.5 w-3.5",
-                      liveStatus.isOccupied ? "bg-amber-500" : "bg-emerald-500"
+                      !isCurrentDayToday
+                        ? "bg-muted-foreground/40"
+                        : liveStatus.isOccupied
+                        ? "bg-amber-500"
+                        : "bg-emerald-500"
                     )}
                   />
                 </span>
                 <span
                   className={cn(
                     "text-xs font-bold uppercase tracking-wider",
-                    liveStatus.isOccupied
+                    !isCurrentDayToday
+                      ? "text-muted-foreground"
+                      : liveStatus.isOccupied
                       ? "text-amber-700 dark:text-amber-400"
                       : "text-emerald-700 dark:text-emerald-400"
                   )}
                 >
-                  {liveStatus.isOccupied ? "Meeting Room is Currently Occupied" : "Meeting Room is Currently Available"}
+                  {!isCurrentDayToday
+                    ? "Viewing Schedule"
+                    : liveStatus.isOccupied
+                    ? "Meeting Room is Currently Occupied"
+                    : "Meeting Room is Currently Available"}
                 </span>
               </div>
 
-              {liveStatus.isOccupied && liveStatus.currentMeeting ? (
+              {!isCurrentDayToday ? (
+                <div>
+                  <h3 className="text-xl font-semibold text-foreground">
+                    {format(parseISO(currentDateStr), "EEEE, MMMM d")}
+                  </h3>
+                  <p className="text-sm text-muted-foreground">
+                    {(() => {
+                      const activeCount = bookings.filter(
+                        (b) => b.status === "scheduled" || b.status === "in_progress"
+                      ).length;
+                      return activeCount > 0
+                        ? `${activeCount} meeting${activeCount === 1 ? "" : "s"} scheduled for this date.`
+                        : "No meetings scheduled for this date.";
+                    })()}
+                  </p>
+                </div>
+              ) : liveStatus.isOccupied && liveStatus.currentMeeting ? (
                 <div className="space-y-1">
                   <h3 className="text-xl font-bold text-foreground">
                     {liveStatus.currentMeeting.title}
@@ -471,7 +565,12 @@ export function MeetingRoomContent({
       </Card>
 
       {/* Hourly Visual Timeline Track */}
-      <Card className="shadow-sm border-border">
+      <Card
+        className={cn(
+          "shadow-sm border-border transition-opacity",
+          isDateChangePending && "opacity-50 pointer-events-none"
+        )}
+      >
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
             <div>
@@ -601,20 +700,37 @@ export function MeetingRoomContent({
       {/* Date Navigation & Controls */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-2">
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="icon" onClick={handlePrevDay} title="Previous Day">
-            <ChevronLeft className="h-4 w-4" />
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={handlePrevDay}
+            disabled={isDateChangePending}
+            title="Previous Day"
+          >
+            {isDateChangePending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <ChevronLeft className="h-4 w-4" />
+            )}
           </Button>
 
           <Button
             variant={isCurrentDayToday ? "default" : "outline"}
             size="sm"
             onClick={handleToday}
+            disabled={isDateChangePending}
             className="text-xs"
           >
             Today
           </Button>
 
-          <Button variant="outline" size="icon" onClick={handleNextDay} title="Next Day">
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={handleNextDay}
+            disabled={isDateChangePending}
+            title="Next Day"
+          >
             <ChevronRight className="h-4 w-4" />
           </Button>
 

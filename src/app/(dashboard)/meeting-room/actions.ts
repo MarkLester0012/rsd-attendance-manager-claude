@@ -77,7 +77,7 @@ async function sendMeetingStartSlack(
     const postResult = await postChatMessage(
       botToken,
       channelName,
-      `🚪 Meeting Starting Now: "${booking.title}" (${booking.start_time} - ${booking.end_time})`,
+      `Meeting Starting Now: "${booking.title}" (${booking.start_time} - ${booking.end_time})`,
       blocks
     );
     if (postResult.ok && postResult.ts) {
@@ -427,7 +427,7 @@ export async function cancelBooking(bookingId: string) {
     const result = await postChatMessage(
       botToken,
       booking.slack_channel || DEFAULT_CHANNEL,
-      `❌ Meeting Cancelled: "${booking.title}" by ${caller.name}`,
+      `Meeting Cancelled: "${booking.title}" by ${caller.name}`,
       blocks
     );
     if (!result.ok) {
