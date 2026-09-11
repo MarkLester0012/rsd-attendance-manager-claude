@@ -16,11 +16,13 @@ import {
 import {
   buildMeetingStartBlockKit,
   buildMeetingDM,
+  buildMeetingUpdatedBlockKit,
   buildMeetingCancelledBlockKit,
   buildAttendeeMessageDM,
   type AttendeeWithStatus,
 } from "@/lib/slack/meetings";
 import { createBookingCore, VALID_TIME, type CreateBookingCoreInput } from "@/lib/meetings/create-booking";
+import { notifyBookingCreated } from "@/lib/meetings/notify";
 import type { User } from "@/lib/types";
 
 // Server-only var (not NEXT_PUBLIC_): NEXT_PUBLIC_* vars are inlined into the
@@ -73,12 +75,13 @@ async function sendMeetingStartSlack(
   const channelName = booking.slack_channel || DEFAULT_CHANNEL;
 
   if (booking.notify_channel) {
-    const blocks = buildMeetingStartBlockKit(booking as never, organizer, attendeesWithStatus, APP_URL);
+    const message = buildMeetingStartBlockKit(booking as never, organizer, attendeesWithStatus, APP_URL);
     const postResult = await postChatMessage(
       botToken,
       channelName,
-      `Meeting Starting Now: "${booking.title}" (${booking.start_time} - ${booking.end_time})`,
-      blocks
+      message.text,
+      message.blocks,
+      message.color
     );
     if (postResult.ok && postResult.ts) {
       await supabase
@@ -94,8 +97,14 @@ async function sendMeetingStartSlack(
     attendeesWithStatus
       .filter((item) => item.user.slack_user_id)
       .map((item) => {
-        const dmPayload = buildMeetingDM(booking as never, item.status, APP_URL);
-        return postDirectMessage(botToken, item.user.slack_user_id as string, dmPayload.text, dmPayload.blocks);
+        const dmPayload = buildMeetingDM(booking as never, organizer, item.status, APP_URL);
+        return postDirectMessage(
+          botToken,
+          item.user.slack_user_id as string,
+          dmPayload.text,
+          dmPayload.blocks,
+          dmPayload.color
+        );
       })
   );
 }
@@ -147,6 +156,8 @@ export async function createBooking(input: CreateBookingInput) {
     }
   }
 
+  await notifyBookingCreated(supabase, newBooking, caller, attendeeIds, APP_URL, DEFAULT_CHANNEL);
+
   revalidatePath("/meeting-room");
   revalidatePath("/calendar");
   return { success: true, booking: newBooking };
@@ -176,7 +187,7 @@ export async function updateBooking(bookingId: string, input: UpdateBookingInput
 
   const { data: existing } = await supabase
     .from("meeting_room_bookings")
-    .select("id, meeting_date, status")
+    .select("*, organizer:users!meeting_room_bookings_organizer_id_fkey(*)")
     .eq("id", bookingId)
     .single();
   if (!existing) return { error: "Booking not found" };
@@ -248,6 +259,54 @@ export async function updateBooking(bookingId: string, input: UpdateBookingInput
       .in("user_id", toRemove);
   }
 
+  // Describe what changed, for the Slack notice and the in-app notification.
+  const changes: string[] = [];
+  if (existing.title !== title) {
+    changes.push(`Title: "${existing.title}" -> "${title}"`);
+  }
+  if (existing.start_time !== input.start_time || existing.end_time !== input.end_time) {
+    changes.push(`Time: ${existing.start_time} - ${existing.end_time} -> ${input.start_time} - ${input.end_time}`);
+  }
+  if (toAdd.length > 0 || toRemove.length > 0) {
+    changes.push("Attendees updated");
+  }
+
+  const organizer = (existing.organizer as User) || caller;
+  const notifyChannel = input.notify_channel ?? true;
+  if (notifyChannel) {
+    const botToken = await getWorkspaceBotToken();
+    if (botToken) {
+      const updatedBooking = { ...existing, title, start_time: input.start_time, end_time: input.end_time };
+      const message = buildMeetingUpdatedBlockKit(updatedBooking as never, organizer, caller.name, changes, APP_URL);
+      const result = await postChatMessage(
+        botToken,
+        existing.slack_channel || DEFAULT_CHANNEL,
+        message.text,
+        message.blocks,
+        message.color
+      );
+      if (!result.ok) {
+        console.error(`Failed to post meeting-updated message for booking ${bookingId}:`, result.error);
+      }
+    }
+  }
+
+  const notifyIds = desiredIds.filter((id) => id !== caller.id);
+  if (notifyIds.length > 0) {
+    const { error: notifError } = await supabase.rpc("create_notifications", {
+      payload: notifyIds.map((userId) => ({
+        user_id: userId,
+        type: "meeting_scheduled" as const,
+        title: `Meeting Updated: ${title}`,
+        body: `${existing.meeting_date} from ${input.start_time} to ${input.end_time}, updated by ${caller.name}`,
+        data: { booking_id: bookingId, meeting_date: existing.meeting_date },
+      })),
+    });
+    if (notifError) {
+      console.error("Failed to notify attendees of updated booking:", notifError.message);
+    }
+  }
+
   revalidatePath("/meeting-room");
   revalidatePath("/calendar");
   return { success: true };
@@ -297,6 +356,9 @@ export async function startMeetingAndNotify(bookingId: string) {
   const organizerUser = (claimed.organizer as User) || caller;
   await sendMeetingStartSlack(claimed, organizerUser, attendeesWithStatus, supabase);
 
+  const startedByNote =
+    caller.id === organizerUser.id ? `Organized by ${organizerUser.name}` : `Organized by ${organizerUser.name}, started by ${caller.name}`;
+
   const notifyIds = attendeeIds.filter((id) => id !== caller.id);
   if (notifyIds.length > 0) {
     const { error: notifError } = await supabase.rpc("create_notifications", {
@@ -304,7 +366,7 @@ export async function startMeetingAndNotify(bookingId: string) {
         user_id: userId,
         type: "meeting_starting" as const,
         title: `Meeting Starting Now: ${claimed.title}`,
-        body: `Started by ${caller.name} in the Meeting Room`,
+        body: `${startedByNote} in the Meeting Room`,
         data: { booking_id: claimed.id, meeting_date: claimed.meeting_date },
       })),
     });
@@ -406,7 +468,7 @@ export async function cancelBooking(bookingId: string) {
 
   const { data: booking } = await supabase
     .from("meeting_room_bookings")
-    .select("*")
+    .select("*, organizer:users!meeting_room_bookings_organizer_id_fkey(*)")
     .eq("id", bookingId)
     .single();
 
@@ -421,14 +483,17 @@ export async function cancelBooking(bookingId: string) {
     .eq("status", booking.status); // guard against a concurrent state change
   if (updateErr) return { error: updateErr.message };
 
+  const organizer = (booking.organizer as User) || caller;
+
   const botToken = await getWorkspaceBotToken();
   if (botToken && booking.notify_channel) {
-    const blocks = buildMeetingCancelledBlockKit(booking, caller.name, APP_URL);
+    const message = buildMeetingCancelledBlockKit(booking, organizer, caller.name, APP_URL);
     const result = await postChatMessage(
       botToken,
       booking.slack_channel || DEFAULT_CHANNEL,
-      `Meeting Cancelled: "${booking.title}" by ${caller.name}`,
-      blocks
+      message.text,
+      message.blocks,
+      message.color
     );
     if (!result.ok) {
       console.error(`Failed to post cancellation for booking ${bookingId}:`, result.error);
@@ -444,13 +509,16 @@ export async function cancelBooking(bookingId: string) {
     .map((a) => a.user_id)
     .filter((id) => id !== caller.id);
 
+  const cancelledByNote =
+    caller.id === organizer.id ? `by ${organizer.name}` : `by ${caller.name} (organized by ${organizer.name})`;
+
   if (notifyIds.length > 0) {
     const { error: notifError } = await supabase.rpc("create_notifications", {
       payload: notifyIds.map((userId) => ({
         user_id: userId,
         type: "meeting_cancelled" as const,
         title: `Meeting Cancelled: ${booking.title}`,
-        body: `The meeting scheduled on ${booking.meeting_date} (${booking.start_time} - ${booking.end_time}) was cancelled by ${caller.name}.`,
+        body: `The meeting scheduled on ${booking.meeting_date} (${booking.start_time} - ${booking.end_time}) was cancelled ${cancelledByNote}.`,
         data: { booking_id: booking.id, meeting_date: booking.meeting_date },
       })),
     });
@@ -474,10 +542,12 @@ export async function messageAttendees(bookingId: string, message: string) {
 
   const { data: booking } = await supabase
     .from("meeting_room_bookings")
-    .select("*")
+    .select("*, organizer:users!meeting_room_bookings_organizer_id_fkey(*)")
     .eq("id", bookingId)
     .single();
   if (!booking) return { error: "Booking not found" };
+
+  const organizer = (booking.organizer as User) || caller;
 
   const { data: attendeesData } = await supabase
     .from("meeting_attendees")
@@ -491,11 +561,13 @@ export async function messageAttendees(bookingId: string, message: string) {
 
   const botToken = await getWorkspaceBotToken();
   if (botToken) {
-    const dmPayload = buildAttendeeMessageDM(booking, caller.name, trimmed, APP_URL);
+    const dmPayload = buildAttendeeMessageDM(booking, organizer, caller.name, trimmed, APP_URL);
     await Promise.allSettled(
       recipients
         .filter((u) => u.slack_user_id)
-        .map((u) => postDirectMessage(botToken, u.slack_user_id as string, dmPayload.text, dmPayload.blocks))
+        .map((u) =>
+          postDirectMessage(botToken, u.slack_user_id as string, dmPayload.text, dmPayload.blocks, dmPayload.color)
+        )
     );
   }
 

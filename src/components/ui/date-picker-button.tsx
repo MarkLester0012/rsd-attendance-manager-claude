@@ -14,6 +14,8 @@ interface DatePickerButtonProps {
   mode?: "day" | "month";
   placeholder?: string;
   disabled?: boolean;
+  /** Dates before this are unselectable (day mode only). */
+  minDate?: Date;
   className?: string;
   align?: "start" | "center" | "end";
   dateFormat?: string;
@@ -65,6 +67,7 @@ export function DatePickerButton({
   mode = "day",
   placeholder = "Select date",
   disabled,
+  minDate,
   className,
   align = "start",
   dateFormat,
@@ -104,6 +107,7 @@ export function DatePickerButton({
           <Calendar
             mode="single"
             selected={value ?? undefined}
+            disabled={minDate ? { before: minDate } : undefined}
             onSelect={(d) => {
               onChange(d ?? null);
               setOpen(false);
