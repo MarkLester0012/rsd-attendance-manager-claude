@@ -546,36 +546,45 @@ async function handleBookMeetingSubmission(payload: {
 
   const { booking, attendeeIds: allAttendeeIds } = result;
 
-  const { data: organizer } = await supabase
-    .from("users")
-    .select("*")
-    .eq("id", metadata.organizerId)
-    .single();
+  // `clear` closes the modal immediately; the Slack channel post and in-app
+  // notifications happen in the background afterward. Slack requires a
+  // view_submission response within 3 seconds — notifyBookingCreated makes a
+  // real outbound call to Slack's API on top of the DB writes above, which on
+  // its own can approach that budget, so none of this can run before the
+  // response the way the time-logger submission handler already defers its
+  // Redmine call via `after()` below.
+  after(async () => {
+    const { data: organizer } = await supabase
+      .from("users")
+      .select("*")
+      .eq("id", metadata.organizerId)
+      .single();
 
-  if (organizer) {
-    await notifyBookingCreated(supabase, booking, organizer, allAttendeeIds, APP_URL, DEFAULT_CHANNEL);
-  }
-
-  const notifyIds = allAttendeeIds.filter((id) => id !== metadata.organizerId);
-  if (notifyIds.length > 0) {
-    const organizerName = organizer?.name || "A leader";
-
-    // Session-less admin-client context (no auth.uid()), so this inserts
-    // directly rather than going through the create_notifications RPC — see
-    // api/cron/meetings/route.ts for the same pattern.
-    const { error: notifError } = await supabase.from("notifications").insert(
-      notifyIds.map((userId) => ({
-        user_id: userId,
-        type: "meeting_scheduled",
-        title: `Meeting Scheduled: ${booking.title}`,
-        body: `${booking.meeting_date} from ${booking.start_time} to ${booking.end_time} by ${organizerName}`,
-        data: { booking_id: booking.id, meeting_date: booking.meeting_date },
-      }))
-    );
-    if (notifError) {
-      console.error("Failed to notify attendees of Slack-booked meeting:", notifError.message);
+    if (organizer) {
+      await notifyBookingCreated(supabase, booking, organizer, allAttendeeIds, APP_URL, DEFAULT_CHANNEL);
     }
-  }
+
+    const notifyIds = allAttendeeIds.filter((id) => id !== metadata.organizerId);
+    if (notifyIds.length > 0) {
+      const organizerName = organizer?.name || "A leader";
+
+      // Session-less admin-client context (no auth.uid()), so this inserts
+      // directly rather than going through the create_notifications RPC — see
+      // api/cron/meetings/route.ts for the same pattern.
+      const { error: notifError } = await supabase.from("notifications").insert(
+        notifyIds.map((userId) => ({
+          user_id: userId,
+          type: "meeting_scheduled",
+          title: `Meeting Scheduled: ${booking.title}`,
+          body: `${booking.meeting_date} from ${booking.start_time} to ${booking.end_time} by ${organizerName}`,
+          data: { booking_id: booking.id, meeting_date: booking.meeting_date },
+        }))
+      );
+      if (notifError) {
+        console.error("Failed to notify attendees of Slack-booked meeting:", notifError.message);
+      }
+    }
+  });
 
   return jsonResponse({ response_action: "clear" });
 }
