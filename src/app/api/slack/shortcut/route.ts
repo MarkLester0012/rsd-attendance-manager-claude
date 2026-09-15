@@ -12,9 +12,11 @@ import { buildScheduleBlockKit, buildNoticeBlocks, type SlackMessage } from "@/l
 import { buildBookMeetingModal, type BookMeetingModalMetadata } from "@/lib/slack/meeting-modal";
 import { createBookingCore, VALID_TIME } from "@/lib/meetings/create-booking";
 import { notifyBookingCreated } from "@/lib/meetings/notify";
-import { timeToMinutes } from "@/lib/utils/meeting-conflicts";
-import { officeDateString } from "@/lib/utils/office-time";
+import { timeToMinutes, getLiveRoomStatus } from "@/lib/utils/meeting-conflicts";
+import { officeDateString, officeMinutesOfDay } from "@/lib/utils/office-time";
+import { normalizeSlackChannel, isValidSlackChannel } from "@/lib/utils/slack-channel";
 import { createAdminClient } from "@/lib/supabase/admin";
+import type { MeetingBooking } from "@/lib/types";
 
 export const runtime = "nodejs";
 
@@ -399,8 +401,13 @@ async function handleMeetingRoomCommand(params: URLSearchParams): Promise<Respon
     );
   }
 
+  const isToday = targetDate === today;
+  const liveStatus = isToday
+    ? getLiveRoomStatus(officeMinutesOfDay(), (bookings ?? []) as MeetingBooking[])
+    : undefined;
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const message = buildScheduleBlockKit(targetDate, (bookings as any) || [], APP_URL);
+  const message = buildScheduleBlockKit(targetDate, (bookings as any) || [], APP_URL, liveStatus);
   return ephemeralResponse(message);
 }
 
@@ -432,7 +439,20 @@ async function handleMeetingRoomBookCommand(params: URLSearchParams): Promise<Re
     );
   }
 
-  const metadata: BookMeetingModalMetadata = { organizerId: caller.id };
+  const rawChannel = params.get("channel_name");
+  const normalizedChannel = normalizeSlackChannel(rawChannel);
+  const slackChannel =
+    normalizedChannel &&
+    normalizedChannel !== "directmessage" &&
+    normalizedChannel !== "privategroup" &&
+    isValidSlackChannel(normalizedChannel)
+      ? normalizedChannel
+      : undefined;
+
+  const metadata: BookMeetingModalMetadata = {
+    organizerId: caller.id,
+    slackChannel,
+  };
   const modal = buildBookMeetingModal(officeDateString(), metadata);
   const result = await openModal(botToken, triggerId, modal);
 
@@ -533,6 +553,7 @@ async function handleBookMeetingSubmission(payload: {
       end_time: endTime,
       attendee_ids: attendeeIds,
       notify_channel: notifyChannel,
+      slack_channel: metadata.slackChannel,
     },
     DEFAULT_CHANNEL
   );
@@ -561,7 +582,7 @@ async function handleBookMeetingSubmission(payload: {
       .single();
 
     if (organizer) {
-      await notifyBookingCreated(supabase, booking, organizer, allAttendeeIds, APP_URL, DEFAULT_CHANNEL);
+      await notifyBookingCreated(supabase, booking, organizer, allAttendeeIds, APP_URL);
     }
 
     const notifyIds = allAttendeeIds.filter((id) => id !== metadata.organizerId);

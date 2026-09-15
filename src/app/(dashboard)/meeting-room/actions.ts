@@ -23,6 +23,7 @@ import {
 } from "@/lib/slack/meetings";
 import { createBookingCore, VALID_TIME, type CreateBookingCoreInput } from "@/lib/meetings/create-booking";
 import { notifyBookingCreated } from "@/lib/meetings/notify";
+import { parseSlackChannel } from "@/lib/utils/slack-channel";
 import type { User } from "@/lib/types";
 
 // Server-only var (not NEXT_PUBLIC_): NEXT_PUBLIC_* vars are inlined into the
@@ -124,6 +125,11 @@ export async function createBooking(input: CreateBookingInput) {
   const { error: authErr, caller, supabase } = await getAuthorizedLeaderOrHR();
   if (authErr || !caller) return { error: authErr };
 
+  // Validate here, not just in createBookingCore: this is the path with a
+  // form field to show the rejection against.
+  const parsedChannel = parseSlackChannel(input.slack_channel);
+  if (!parsedChannel.ok) return { error: parsedChannel.error };
+
   const coreInput: CreateBookingCoreInput = {
     title: input.title,
     description: input.description,
@@ -132,7 +138,7 @@ export async function createBooking(input: CreateBookingInput) {
     end_time: input.end_time,
     attendee_ids: input.attendee_ids,
     notify_channel: input.notify_channel,
-    slack_channel: input.slack_channel,
+    slack_channel: parsedChannel.value ?? undefined,
   };
 
   const result = await createBookingCore(supabase, caller.id, coreInput, DEFAULT_CHANNEL);
@@ -156,7 +162,7 @@ export async function createBooking(input: CreateBookingInput) {
     }
   }
 
-  await notifyBookingCreated(supabase, newBooking, caller, attendeeIds, APP_URL, DEFAULT_CHANNEL);
+  await notifyBookingCreated(supabase, newBooking, caller, attendeeIds, APP_URL);
 
   revalidatePath("/meeting-room");
   revalidatePath("/calendar");
@@ -170,6 +176,7 @@ export interface UpdateBookingInput {
   end_time: string;
   attendee_ids: string[];
   notify_channel?: boolean;
+  slack_channel?: string;
 }
 
 export async function updateBooking(bookingId: string, input: UpdateBookingInput) {
@@ -184,6 +191,8 @@ export async function updateBooking(bookingId: string, input: UpdateBookingInput
   if (timeToMinutes(input.end_time) <= timeToMinutes(input.start_time)) {
     return { error: "End time must be after start time" };
   }
+  const parsedChannel = parseSlackChannel(input.slack_channel);
+  if (!parsedChannel.ok) return { error: parsedChannel.error };
 
   const { data: existing } = await supabase
     .from("meeting_room_bookings")
@@ -217,6 +226,12 @@ export async function updateBooking(bookingId: string, input: UpdateBookingInput
     };
   }
 
+  // A blank channel input means "leave it as-is", not "wipe it" — parsedChannel.value
+  // is null both for blank input and for an explicit clear, and there is no
+  // separate signal to distinguish them, so we always keep the existing value
+  // rather than reset it to the env default.
+  const nextChannel = parsedChannel.value ?? existing.slack_channel;
+
   const { error: updateErr } = await supabase
     .from("meeting_room_bookings")
     .update({
@@ -225,6 +240,7 @@ export async function updateBooking(bookingId: string, input: UpdateBookingInput
       start_time: input.start_time,
       end_time: input.end_time,
       notify_channel: input.notify_channel ?? true,
+      slack_channel: nextChannel,
     })
     .eq("id", bookingId);
 
@@ -260,6 +276,9 @@ export async function updateBooking(bookingId: string, input: UpdateBookingInput
   }
 
   // Describe what changed, for the Slack notice and the in-app notification.
+  const prevEffectiveChannel = existing.slack_channel || DEFAULT_CHANNEL;
+  const effectiveChannel = nextChannel || DEFAULT_CHANNEL;
+
   const changes: string[] = [];
   if (existing.title !== title) {
     changes.push(`Title: "${existing.title}" -> "${title}"`);
@@ -270,17 +289,29 @@ export async function updateBooking(bookingId: string, input: UpdateBookingInput
   if (toAdd.length > 0 || toRemove.length > 0) {
     changes.push("Attendees updated");
   }
+  if (prevEffectiveChannel !== effectiveChannel) {
+    changes.push(`Slack channel: #${prevEffectiveChannel} -> #${effectiveChannel}`);
+  }
 
   const organizer = (existing.organizer as User) || caller;
   const notifyChannel = input.notify_channel ?? true;
   if (notifyChannel) {
     const botToken = await getWorkspaceBotToken();
     if (botToken) {
-      const updatedBooking = { ...existing, title, start_time: input.start_time, end_time: input.end_time };
+      // slack_channel: effectiveChannel so the card's own copy always matches
+      // where it's actually posted — posting to the new channel (below) while
+      // the builder still saw the old one would make the card's text lie.
+      const updatedBooking = {
+        ...existing,
+        title,
+        start_time: input.start_time,
+        end_time: input.end_time,
+        slack_channel: effectiveChannel,
+      };
       const message = buildMeetingUpdatedBlockKit(updatedBooking as never, organizer, caller.name, changes, APP_URL);
       const result = await postChatMessage(
         botToken,
-        existing.slack_channel || DEFAULT_CHANNEL,
+        effectiveChannel,
         message.text,
         message.blocks,
         message.color

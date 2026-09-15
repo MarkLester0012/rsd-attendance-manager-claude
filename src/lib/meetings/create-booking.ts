@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { timeToMinutes } from "@/lib/utils/meeting-conflicts";
+import { normalizeSlackChannel } from "@/lib/utils/slack-channel";
 import type { MeetingBooking } from "@/lib/types";
 
 /**
@@ -50,7 +51,12 @@ export async function createBookingCore(
   }
 
   const notify_channel = input.notify_channel ?? true;
-  const slack_channel = input.slack_channel || defaultChannel;
+  // Normalize silently (never reject) here: this core is shared by the web
+  // server action, which already validates and rejects a malformed channel
+  // before calling in, and by the Slack `/meeting-room book` path, which has
+  // no form field to show a rejection against — an auto-detected channel
+  // that fails validation must fall back to the default, not fail the booking.
+  const slack_channel = normalizeSlackChannel(input.slack_channel) || defaultChannel;
 
   const { data: newBooking, error: bookingErr } = await supabase
     .from("meeting_room_bookings")

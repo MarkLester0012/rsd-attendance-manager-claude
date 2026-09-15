@@ -77,6 +77,11 @@ export default async function MeetingRoomPage({
 
   if (!user) redirect("/login");
 
+  // SLACK_MEETING_ROOM_CHANNEL is deliberately not NEXT_PUBLIC_ (see CLAUDE.md),
+  // so it can't be read client-side — read it here and thread it down as the
+  // channel field's placeholder/fallback display value.
+  const defaultSlackChannel = process.env.SLACK_MEETING_ROOM_CHANNEL || "rsd-leader-team";
+
   return (
     <MeetingRoomContent
       currentUser={user as User}
@@ -88,6 +93,7 @@ export default async function MeetingRoomPage({
       leaves={(leaves || []) as unknown as LeaveRecord[]}
       currentDateStr={selectedDate}
       highlightMeetingId={highlightMeetingId}
+      defaultSlackChannel={defaultSlackChannel}
     />
   );
 }

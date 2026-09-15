@@ -28,6 +28,7 @@ import { toast } from "sonner";
 import { Loader2, Search, Check, Pencil, UserX } from "lucide-react";
 import { updateBooking } from "./actions";
 import { resolveAttendeeStatus, timeToMinutes, type LeaveRecord } from "@/lib/utils/meeting-conflicts";
+import { parseSlackChannel } from "@/lib/utils/slack-channel";
 import type { MeetingWithAttendees, User } from "@/lib/types";
 
 // Standard 30-min time slots from 07:00 to 20:00 — matches book-meeting-modal.tsx.
@@ -44,6 +45,8 @@ interface EditMeetingModalProps {
   booking: MeetingWithAttendees;
   users: User[];
   leaves: LeaveRecord[];
+  /** Channel used when the field is left blank — shown as the input's placeholder. */
+  defaultSlackChannel: string;
   onSuccess: () => void;
 }
 
@@ -53,6 +56,7 @@ export function EditMeetingModal({
   booking,
   users,
   leaves,
+  defaultSlackChannel,
   onSuccess,
 }: EditMeetingModalProps) {
   const [title, setTitle] = useState(booking.title);
@@ -63,6 +67,7 @@ export function EditMeetingModal({
     new Set((booking.attendees || []).map((a) => a.user_id))
   );
   const [notifyChannel, setNotifyChannel] = useState(booking.notify_channel);
+  const [slackChannel, setSlackChannel] = useState(booking.slack_channel ?? "");
   const [searchUser, setSearchUser] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
@@ -72,6 +77,9 @@ export function EditMeetingModal({
     timeToMinutes(endTime) <= timeToMinutes(startTime)
       ? "End time must be after start time"
       : null;
+
+  const parsedChannel = parseSlackChannel(slackChannel);
+  const channelError = parsedChannel.ok ? null : parsedChannel.error;
 
   const toggleAttendee = (id: string) => {
     setSelectedAttendees((prev) => {
@@ -103,6 +111,10 @@ export function EditMeetingModal({
       toast.error(timeError);
       return;
     }
+    if (channelError) {
+      toast.error(channelError);
+      return;
+    }
 
     setSubmitting(true);
     try {
@@ -113,6 +125,7 @@ export function EditMeetingModal({
         end_time: endTime,
         attendee_ids: Array.from(selectedAttendees),
         notify_channel: notifyChannel,
+        slack_channel: parsedChannel.ok ? parsedChannel.value ?? undefined : undefined,
       });
 
       if (res.error) {
@@ -291,22 +304,51 @@ export function EditMeetingModal({
             </ScrollArea>
           </div>
 
-          {/* Slack notification toggle */}
-          <div className="flex items-center justify-between rounded-lg border p-3 bg-muted/20">
-            <div className="space-y-0.5">
-              <Label className="text-sm font-medium">Notify Slack channel</Label>
-              <p className="text-xs text-muted-foreground">
-                Posts a Block Kit card to the channel and sends direct messages to attendees when meeting starts
-              </p>
+          {/* Slack notification toggle + channel */}
+          <div className="rounded-lg border p-3 bg-muted/20 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label className="text-sm font-medium">Notify Slack channel</Label>
+                <p className="text-xs text-muted-foreground">
+                  Posts a Block Kit card to the channel and sends direct messages to attendees when meeting starts
+                </p>
+              </div>
+              <Switch checked={notifyChannel} onCheckedChange={setNotifyChannel} />
             </div>
-            <Switch checked={notifyChannel} onCheckedChange={setNotifyChannel} />
+
+            {notifyChannel && (
+              <div className="space-y-1.5 border-t pt-3">
+                <Label htmlFor="edit-meeting-slack-channel">Slack channel</Label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+                    #
+                  </span>
+                  <Input
+                    id="edit-meeting-slack-channel"
+                    placeholder={defaultSlackChannel}
+                    value={slackChannel}
+                    onChange={(e) => setSlackChannel(e.target.value)}
+                    aria-invalid={!!channelError}
+                    className="pl-6"
+                  />
+                </div>
+                {channelError ? (
+                  <p className="text-xs text-destructive">{channelError}</p>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    Leave blank to keep the current channel. The bot must already be in private
+                    channels to post there.
+                  </p>
+                )}
+              </div>
+            )}
           </div>
 
           <DialogFooter className="pt-2">
             <Button type="button" variant="ghost" onClick={onClose} disabled={submitting}>
               Cancel
             </Button>
-            <Button type="submit" disabled={submitting || !!timeError}>
+            <Button type="submit" disabled={submitting || !!timeError || !!channelError}>
               {submitting ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
