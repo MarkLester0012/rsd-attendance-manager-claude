@@ -1,16 +1,14 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { MeetingBooking, User } from "@/lib/types";
-import { getWorkspaceBotToken, postChatMessage } from "@/lib/slack/client";
-import { buildMeetingBookedBlockKit, MEETING_COLORS } from "@/lib/slack/meetings";
+import { getWorkspaceBotToken, postDirectMessage } from "@/lib/slack/client";
+import { buildMeetingBookedBlockKit, buildMeetingInvitedDM } from "@/lib/slack/meetings";
 
 /**
- * Posts the "Meeting Booked" broadcast to the meeting's Slack channel.
- * Shared by both booking entry points (the web server action and the Slack
- * `/meeting-room book` modal submission) so the channel post — like
- * `createBookingCore` for the DB write — is written once.
- *
- * Channel post only; no per-attendee DM fan-out on booking (DMs stay
- * reserved for when the meeting actually starts).
+ * DMs the organizer a "Meeting Booked" confirmation and each attendee a
+ * "Meeting Invitation" — no channel post. Shared by both booking entry
+ * points (the web server action and the Slack `/meeting-room book` modal
+ * submission) so this is written once, like `createBookingCore` for the DB
+ * write.
  */
 export async function notifyBookingCreated(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -18,8 +16,7 @@ export async function notifyBookingCreated(
   booking: MeetingBooking,
   organizer: User,
   attendeeIds: string[],
-  appUrl: string,
-  defaultChannel: string
+  appUrl: string
 ): Promise<void> {
   if (!booking.notify_channel) return;
 
@@ -31,21 +28,29 @@ export async function notifyBookingCreated(
     .select("*")
     .in("id", attendeeIds.length > 0 ? attendeeIds : [""]);
 
-  const message = buildMeetingBookedBlockKit(
-    booking,
-    organizer,
-    (attendeeUsers as User[]) || [],
-    appUrl
-  );
+  const attendees = (attendeeUsers as User[]) || [];
+  const others = attendees.filter((u) => u.id !== organizer.id);
 
-  const result = await postChatMessage(
-    botToken,
-    booking.slack_channel || defaultChannel,
-    message.text,
-    message.blocks,
-    MEETING_COLORS.booked
-  );
-  if (!result.ok) {
-    console.error(`Failed to post booking-created message for booking ${booking.id}:`, result.error);
+  if (organizer.slack_user_id) {
+    const message = buildMeetingBookedBlockKit(booking, organizer, attendees, appUrl);
+    const result = await postDirectMessage(
+      botToken,
+      organizer.slack_user_id,
+      message.text,
+      message.blocks,
+      message.color
+    );
+    if (!result.ok) {
+      console.error(`Failed to DM organizer for booking ${booking.id}:`, result.error);
+    }
   }
+
+  await Promise.allSettled(
+    others
+      .filter((u) => u.slack_user_id)
+      .map((u) => {
+        const message = buildMeetingInvitedDM(booking, organizer, appUrl);
+        return postDirectMessage(botToken, u.slack_user_id as string, message.text, message.blocks, message.color);
+      })
+  );
 }

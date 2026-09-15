@@ -80,6 +80,8 @@ interface MeetingRoomContentProps {
   leaves: LeaveRecord[];
   currentDateStr: string;
   highlightMeetingId: string | null;
+  /** SLACK_MEETING_ROOM_CHANNEL, server-read (it isn't NEXT_PUBLIC_) — the channel used when a booking doesn't specify one. */
+  defaultSlackChannel: string;
 }
 
 // Matches the 07:00-20:00 range offered in the booking modal's time picker,
@@ -103,6 +105,7 @@ export function MeetingRoomContent({
   leaves,
   currentDateStr,
   highlightMeetingId,
+  defaultSlackChannel,
 }: MeetingRoomContentProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -490,7 +493,7 @@ export function MeetingRoomContent({
                     {liveStatus.currentMeeting.notify_channel && (
                       <Badge variant="secondary" className="gap-1 text-xs">
                         <MessageSquare className="h-3 w-3 text-blue-500" /> #
-                        {liveStatus.currentMeeting.slack_channel || "rsd-leader-team"}
+                        {liveStatus.currentMeeting.slack_channel || defaultSlackChannel}
                       </Badge>
                     )}
                   </div>
@@ -544,7 +547,11 @@ export function MeetingRoomContent({
                     </>
                   )}
                   <a
-                    href="slack://channel?id=rsd-leader-team"
+                    href={`https://slack.com/app_redirect?channel=${encodeURIComponent(
+                      liveStatus.currentMeeting.slack_channel || defaultSlackChannel
+                    )}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
                     className="inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:underline px-2 py-1"
                     title="Open Slack channel / huddle"
                   >
@@ -867,7 +874,7 @@ export function MeetingRoomContent({
                             className="text-xs text-muted-foreground gap-1 border-border/70"
                           >
                             <MessageSquare className="h-3 w-3 text-blue-500" />
-                            #{b.slack_channel || "rsd-leader-team"}
+                            #{b.slack_channel || defaultSlackChannel}
                           </Badge>
                         )}
                       </div>
@@ -1061,6 +1068,7 @@ export function MeetingRoomContent({
           users={allUsers}
           leaves={leaves}
           currentDateStr={currentDateStr}
+          defaultSlackChannel={defaultSlackChannel}
           onSuccess={() => {
             router.refresh();
           }}
@@ -1075,6 +1083,7 @@ export function MeetingRoomContent({
           booking={editingBooking}
           users={allUsers}
           leaves={leaves}
+          defaultSlackChannel={defaultSlackChannel}
           onSuccess={() => {
             setEditingBooking(null);
             router.refresh();

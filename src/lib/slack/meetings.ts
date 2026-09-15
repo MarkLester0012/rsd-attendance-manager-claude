@@ -1,4 +1,5 @@
 import type { MeetingAttendeeStatus, MeetingBooking, User } from "@/lib/types";
+import type { getLiveRoomStatus } from "@/lib/utils/meeting-conflicts";
 
 export interface AttendeeWithStatus {
   user: User;
@@ -109,6 +110,45 @@ export function buildMeetingBookedBlockKit(
 
   return {
     text: `Meeting Booked: "${meeting.title}" (${meeting.start_time} - ${meeting.end_time}) by ${organizer.name}`,
+    blocks,
+    color: MEETING_COLORS.booked,
+  };
+}
+
+/**
+ * Builds the DM sent to each attendee (excluding the organizer) when a
+ * meeting is booked — the invite counterpart to buildMeetingBookedBlockKit,
+ * which is the organizer's own confirmation.
+ */
+export function buildMeetingInvitedDM(
+  meeting: MeetingBooking,
+  organizer: User,
+  appUrl: string
+): SlackMessage {
+  const title = truncate(escapeSlackText(meeting.title), HEADER_TEXT_MAX);
+  const description = meeting.description
+    ? truncate(escapeSlackText(meeting.description), SECTION_TEXT_MAX)
+    : null;
+
+  const blocks: object[] = [
+    { type: "header", text: { type: "plain_text", text: "Meeting Invitation", emoji: false } },
+    { type: "section", text: { type: "mrkdwn", text: `*${title}*` } },
+    dateTimeFields(meeting, organizer),
+    { type: "context", elements: [{ type: "mrkdwn", text: "You've been invited to this meeting." }] },
+  ];
+
+  if (description) {
+    blocks.push({
+      type: "context",
+      elements: [{ type: "mrkdwn", text: `_${description}_` }],
+    });
+  }
+
+  blocks.push({ type: "divider" });
+  blocks.push(viewInAppButton("View in App", appUrl, meeting, true));
+
+  return {
+    text: `You're invited: "${meeting.title}" (${meeting.start_time} - ${meeting.end_time}), organized by ${organizer.name}`,
     blocks,
     color: MEETING_COLORS.booked,
   };
@@ -380,7 +420,8 @@ export function buildMeetingCancelledBlockKit(
 export function buildScheduleBlockKit(
   dateStr: string,
   bookings: (MeetingBooking & { organizer?: User })[],
-  appUrl: string
+  appUrl: string,
+  liveStatus?: ReturnType<typeof getLiveRoomStatus>
 ): SlackMessage {
   const activeBookings = bookings
     .filter((b) => b.status === "scheduled" || b.status === "in_progress")
@@ -392,6 +433,59 @@ export function buildScheduleBlockKit(
       text: { type: "plain_text", text: `Meeting Room Schedule (${dateStr})`, emoji: false },
     },
   ];
+
+  let statusLeadText = "";
+
+  if (liveStatus) {
+    if (liveStatus.isOccupied && liveStatus.currentMeeting) {
+      const current = liveStatus.currentMeeting;
+      const currentWithOrg = bookings.find((b) => b.id === current.id) ?? current;
+      const title = truncate(escapeSlackText(current.title), 100);
+      const orgName = (currentWithOrg as { organizer?: User }).organizer?.name
+        ? escapeSlackText((currentWithOrg as { organizer?: User }).organizer!.name)
+        : "Unknown";
+      const channel = current.slack_channel || "rsd-leader-team";
+
+      blocks.push({
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `🔴 *In Use* — "${title}" until ${current.end_time}`,
+        },
+      });
+      blocks.push({
+        type: "context",
+        elements: [
+          {
+            type: "mrkdwn",
+            text: `Organized by *${orgName}* · #${channel}`,
+          },
+        ],
+      });
+      statusLeadText = `🔴 In Use: "${title}" until ${current.end_time}. `;
+    } else if (liveStatus.nextMeeting) {
+      const nextTitle = truncate(escapeSlackText(liveStatus.nextMeeting.title), 100);
+      blocks.push({
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `🟢 *Available* — free until ${liveStatus.availableUntil}, then "${nextTitle}"`,
+        },
+      });
+      statusLeadText = `🟢 Available until ${liveStatus.availableUntil}. `;
+    } else {
+      blocks.push({
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: "🟢 *Available* — no further meetings today",
+        },
+      });
+      statusLeadText = "🟢 Available. ";
+    }
+
+    blocks.push({ type: "divider" });
+  }
 
   if (activeBookings.length === 0) {
     blocks.push({
@@ -406,7 +500,8 @@ export function buildScheduleBlockKit(
       const statusLabel = b.status === "in_progress" ? " — *In Progress*" : "";
       const orgName = b.organizer?.name ? escapeSlackText(b.organizer.name) : "Unknown";
       const title = truncate(escapeSlackText(b.title), 200);
-      return `>*${b.start_time} – ${b.end_time}* — *${title}* (by ${orgName})${statusLabel}`;
+      const channelTag = b.notify_channel ? ` · #${b.slack_channel || "rsd-leader-team"}` : "";
+      return `>*${b.start_time} – ${b.end_time}* — *${title}* (by ${orgName})${channelTag}${statusLabel}`;
     });
 
     blocks.push({
@@ -430,7 +525,7 @@ export function buildScheduleBlockKit(
 
   const activeCount = activeBookings.length;
   return {
-    text: `Meeting Room Schedule for ${dateStr}: ${activeCount} meeting${activeCount === 1 ? "" : "s"}.`,
+    text: `${statusLeadText}Meeting Room Schedule for ${dateStr}: ${activeCount} meeting${activeCount === 1 ? "" : "s"}.`,
     blocks,
     color: MEETING_COLORS.updated,
   };

@@ -2,6 +2,7 @@
 // with plenty of room to spare.
 export interface BookMeetingModalMetadata {
   organizerId: string;
+  slackChannel?: string;
 }
 
 // Standard 30-min time slots from 07:00 to 20:00 — matches TIME_OPTIONS in

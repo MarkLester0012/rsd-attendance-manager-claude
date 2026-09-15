@@ -27,7 +27,7 @@ SLACK_CLIENT_SECRET=
 SLACK_SIGNING_SECRET=              # Webhook signature verification
 SLACK_ENCRYPTION_KEY=              # Encrypts stored OAuth tokens
 SLACK_BOT_TOKEN=                   # Workspace bot token used to post meeting room Slack messages/DMs
-SLACK_MEETING_ROOM_CHANNEL=        # Channel for meeting room broadcasts (default: rsd-leader-team)
+SLACK_MEETING_ROOM_CHANNEL=        # Fallback channel for meeting room broadcasts when a booking specifies no channel (default: rsd-leader-team)
 
 # Redmine integration
 REDMINE_URL=
