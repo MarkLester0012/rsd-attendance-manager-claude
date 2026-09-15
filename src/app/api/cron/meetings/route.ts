@@ -62,12 +62,13 @@ async function startMeeting(
   const channelName = booking.slack_channel || DEFAULT_CHANNEL;
 
   if (booking.notify_channel) {
-    const blocks = buildMeetingStartBlockKit(booking, organizerUser, attendeesWithStatus, APP_URL);
+    const message = buildMeetingStartBlockKit(booking, organizerUser, attendeesWithStatus, APP_URL);
     const postResult = await postChatMessage(
       botToken,
       channelName,
-      `Meeting Starting Now: "${booking.title}" (${booking.start_time} - ${booking.end_time})`,
-      blocks
+      message.text,
+      message.blocks,
+      message.color
     );
     if (postResult.ok && postResult.ts) {
       await supabase
@@ -83,8 +84,14 @@ async function startMeeting(
     attendeesWithStatus
       .filter((item) => item.user.slack_user_id)
       .map((item) => {
-        const dmPayload = buildMeetingDM(booking, item.status, APP_URL);
-        return postDirectMessage(botToken, item.user.slack_user_id as string, dmPayload.text, dmPayload.blocks);
+        const dmPayload = buildMeetingDM(booking, organizerUser, item.status, APP_URL);
+        return postDirectMessage(
+          botToken,
+          item.user.slack_user_id as string,
+          dmPayload.text,
+          dmPayload.blocks,
+          dmPayload.color
+        );
       })
   );
 
@@ -103,7 +110,7 @@ async function startMeeting(
           user_id: userId,
           type: "meeting_starting",
           title: `Meeting Starting Now: ${booking.title}`,
-          body: "Started automatically in the Meeting Room",
+          body: `Organized by ${organizerUser.name}, started automatically in the Meeting Room`,
           data: { booking_id: booking.id, meeting_date: booking.meeting_date },
         }))
       );

@@ -8,9 +8,10 @@ import { decryptToken } from "@/lib/slack/encryption";
 import { createTimeEntry, getTimeEntries } from "@/lib/redmine/client";
 import { buildTimeLogModal, formatForRedmine } from "@/lib/slack/modal";
 import type { ModalMetadata } from "@/lib/slack/modal";
-import { buildScheduleBlockKit } from "@/lib/slack/meetings";
+import { buildScheduleBlockKit, buildNoticeBlocks, type SlackMessage } from "@/lib/slack/meetings";
 import { buildBookMeetingModal, type BookMeetingModalMetadata } from "@/lib/slack/meeting-modal";
 import { createBookingCore, VALID_TIME } from "@/lib/meetings/create-booking";
+import { notifyBookingCreated } from "@/lib/meetings/notify";
 import { timeToMinutes } from "@/lib/utils/meeting-conflicts";
 import { officeDateString } from "@/lib/utils/office-time";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -31,6 +32,18 @@ function jsonResponse(body: object, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
     headers: { "Content-Type": "application/json" },
+  });
+}
+
+/**
+ * Renders a `SlackMessage` as an ephemeral slash-command response body —
+ * blocks wrapped in a colored `attachments[]` entry, same as a channel post.
+ */
+function ephemeralResponse(message: SlackMessage): Response {
+  return jsonResponse({
+    response_type: "ephemeral",
+    text: message.text,
+    attachments: [{ color: message.color, blocks: message.blocks }],
   });
 }
 
@@ -361,7 +374,7 @@ async function handleMeetingRoomCommand(params: URLSearchParams): Promise<Respon
   // an unlinked Slack account (including single-channel guests).
   const caller = await resolveMeetingRoomCaller(slackUserId, slackTeamId);
   if (!caller) {
-    return jsonResponse({ response_type: "ephemeral", text: CONNECT_SLACK_TEXT });
+    return ephemeralResponse(buildNoticeBlocks("Not Connected", CONNECT_SLACK_TEXT));
   }
 
   const text = (params.get("text") || "").trim().toLowerCase();
@@ -378,23 +391,17 @@ async function handleMeetingRoomCommand(params: URLSearchParams): Promise<Respon
 
   if (error) {
     console.error("Failed to load meeting room schedule for Slack command:", error.message);
-    return jsonResponse({
-      response_type: "ephemeral",
-      text: "Failed to load the meeting room schedule. Please try again or check the web app.",
-    });
+    return ephemeralResponse(
+      buildNoticeBlocks(
+        "Failed to Load Schedule",
+        "Failed to load the meeting room schedule. Please try again or check the web app."
+      )
+    );
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const activeCount = ((bookings as any[]) || []).filter(
-    (b) => b.status === "scheduled" || b.status === "in_progress"
-  ).length;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const blocks = buildScheduleBlockKit(targetDate, (bookings as any) || [], APP_URL);
-  return jsonResponse({
-    response_type: "ephemeral",
-    text: `Meeting Room Schedule for ${targetDate}: ${activeCount} meeting${activeCount === 1 ? "" : "s"}.`,
-    blocks,
-  });
+  const message = buildScheduleBlockKit(targetDate, (bookings as any) || [], APP_URL);
+  return ephemeralResponse(message);
 }
 
 async function handleMeetingRoomBookCommand(params: URLSearchParams): Promise<Response> {
@@ -407,21 +414,22 @@ async function handleMeetingRoomBookCommand(params: URLSearchParams): Promise<Re
 
   const caller = await resolveMeetingRoomCaller(slackUserId, slackTeamId);
   if (!caller) {
-    return jsonResponse({ response_type: "ephemeral", text: CONNECT_SLACK_TEXT });
+    return ephemeralResponse(buildNoticeBlocks("Not Connected", CONNECT_SLACK_TEXT));
   }
   if (caller.role !== "leader" && caller.role !== "hr") {
-    return jsonResponse({
-      response_type: "ephemeral",
-      text: "Only leaders and HR can book the meeting room.",
-    });
+    return ephemeralResponse(
+      buildNoticeBlocks("Not Authorized", "Only leaders and HR can book the meeting room.")
+    );
   }
 
   const botToken = await getWorkspaceBotToken();
   if (!botToken) {
-    return jsonResponse({
-      response_type: "ephemeral",
-      text: "The meeting room bot isn't configured yet. Please book from the web app instead.",
-    });
+    return ephemeralResponse(
+      buildNoticeBlocks(
+        "Bot Not Configured",
+        "The meeting room bot isn't configured yet. Please book from the web app instead."
+      )
+    );
   }
 
   const metadata: BookMeetingModalMetadata = { organizerId: caller.id };
@@ -429,10 +437,12 @@ async function handleMeetingRoomBookCommand(params: URLSearchParams): Promise<Re
   const result = await openModal(botToken, triggerId, modal);
 
   if (!result.ok) {
-    return jsonResponse({
-      response_type: "ephemeral",
-      text: `Failed to open the booking modal: ${result.error ?? "unknown error"}. Please try again.`,
-    });
+    return ephemeralResponse(
+      buildNoticeBlocks(
+        "Failed to Open Booking Modal",
+        `Failed to open the booking modal: ${result.error ?? "unknown error"}. Please try again.`
+      )
+    );
   }
 
   return new Response(null, { status: 200 });
@@ -535,13 +545,19 @@ async function handleBookMeetingSubmission(payload: {
   }
 
   const { booking, attendeeIds: allAttendeeIds } = result;
+
+  const { data: organizer } = await supabase
+    .from("users")
+    .select("*")
+    .eq("id", metadata.organizerId)
+    .single();
+
+  if (organizer) {
+    await notifyBookingCreated(supabase, booking, organizer, allAttendeeIds, APP_URL, DEFAULT_CHANNEL);
+  }
+
   const notifyIds = allAttendeeIds.filter((id) => id !== metadata.organizerId);
   if (notifyIds.length > 0) {
-    const { data: organizer } = await supabase
-      .from("users")
-      .select("name")
-      .eq("id", metadata.organizerId)
-      .single();
     const organizerName = organizer?.name || "A leader";
 
     // Session-less admin-client context (no auth.uid()), so this inserts

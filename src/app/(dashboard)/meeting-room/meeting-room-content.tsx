@@ -5,7 +5,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { format, addDays, subDays, parseISO } from "date-fns";
 import {
   DoorOpen,
-  Calendar,
   Clock,
   Plus,
   Play,
@@ -42,6 +41,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
+import { DatePickerButton } from "@/components/ui/date-picker-button";
 import { EmojiTextarea } from "@/components/ui/emoji-textarea";
 import { UserAvatar } from "@/components/ui/user-avatar";
 import { BookMeetingModal } from "./book-meeting-modal";
@@ -552,13 +552,7 @@ export function MeetingRoomContent({
                     Slack Huddle
                   </a>
                 </>
-              ) : (
-                canManageMeetings && (
-                  <Button size="sm" onClick={() => setIsBookModalOpen(true)} className="gap-1.5">
-                    <Plus className="h-4 w-4" /> Book Now
-                  </Button>
-                )
-              )}
+              ) : null}
             </div>
           </div>
         </CardContent>
@@ -735,10 +729,14 @@ export function MeetingRoomContent({
           </Button>
 
           <div className="flex items-center gap-2 ml-2">
-            <Calendar className="h-4 w-4 text-muted-foreground" />
-            <span className="text-sm font-semibold text-foreground">
-              {format(parseISO(currentDateStr), "EEEE, MMMM d, yyyy")}
-            </span>
+            <DatePickerButton
+              value={parseISO(currentDateStr)}
+              onChange={(d) => d && handleDateChange(format(d, "yyyy-MM-dd"))}
+              disabled={isDateChangePending}
+              align="center"
+              dateFormat="EEEE, MMMM d, yyyy"
+              className="min-w-[220px]"
+            />
             {isCurrentDayToday && (
               <Badge variant="secondary" className="text-[10px] font-normal">
                 Today
@@ -900,7 +898,7 @@ export function MeetingRoomContent({
                             size="xs"
                             className="h-5 w-5 text-[10px]"
                           />
-                          <span>{b.organizer?.name}</span>
+                          <span>{b.organizer?.name || "Organizer"}</span>
                         </div>
                       </div>
 

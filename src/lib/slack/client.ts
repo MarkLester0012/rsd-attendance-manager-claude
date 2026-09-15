@@ -103,19 +103,29 @@ export async function getWorkspaceBotToken(): Promise<string | null> {
 
 /**
  * Posts a message to a public or private Slack channel.
+ *
+ * `color` wraps `blocks` in a legacy `attachments[]` entry so the message
+ * gets a colored bar down the left side — Block Kit has no native "alert"
+ * block, and this is still the standard way Slack apps signal event type
+ * (booked vs. cancelled vs. updated) at a glance in a busy channel.
  */
 export async function postChatMessage(
   botToken: string,
   channel: string,
   text: string,
-  blocks?: object[]
+  blocks?: object[],
+  color?: string
 ): Promise<{ ok: boolean; ts?: string; error?: string }> {
   const body: Record<string, unknown> = {
     channel,
     text,
   };
   if (blocks && blocks.length > 0) {
-    body.blocks = blocks;
+    if (color) {
+      body.attachments = [{ color, blocks }];
+    } else {
+      body.blocks = blocks;
+    }
   }
 
   const res = await fetch("https://slack.com/api/chat.postMessage", {
@@ -139,8 +149,9 @@ export async function postDirectMessage(
   botToken: string,
   slackUserId: string,
   text: string,
-  blocks?: object[]
+  blocks?: object[],
+  color?: string
 ): Promise<{ ok: boolean; ts?: string; error?: string }> {
-  return postChatMessage(botToken, slackUserId, text, blocks);
+  return postChatMessage(botToken, slackUserId, text, blocks, color);
 }
 

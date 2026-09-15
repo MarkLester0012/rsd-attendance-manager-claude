@@ -11,6 +11,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { DatePickerButton } from "@/components/ui/date-picker-button";
 import { Switch } from "@/components/ui/switch";
 import { EmojiTextarea } from "@/components/ui/emoji-textarea";
 import {
@@ -23,6 +24,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "sonner";
+import { format, parseISO } from "date-fns";
 import { Loader2, Search, Check, Users, UserX } from "lucide-react";
 import { createBooking } from "./actions";
 import { resolveAttendeeStatus, timeToMinutes, type LeaveRecord } from "@/lib/utils/meeting-conflicts";
@@ -140,6 +142,10 @@ export function BookMeetingModal({
       toast.error("Please enter a meeting title");
       return;
     }
+    if (meetingDate < todayStr) {
+      toast.error("Cannot book a meeting in the past");
+      return;
+    }
     if (timeError) {
       toast.error(timeError);
       return;
@@ -204,14 +210,12 @@ export function BookMeetingModal({
           {/* Date, Start, End */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="space-y-1.5">
-              <Label htmlFor="meeting-date">Date</Label>
-              <Input
-                id="meeting-date"
-                type="date"
-                min={todayStr}
-                value={meetingDate}
-                onChange={(e) => setMeetingDate(e.target.value)}
-                required
+              <Label>Date</Label>
+              <DatePickerButton
+                value={parseISO(meetingDate)}
+                onChange={(d) => d && setMeetingDate(format(d, "yyyy-MM-dd"))}
+                minDate={parseISO(todayStr)}
+                className="w-full"
               />
             </div>
 
