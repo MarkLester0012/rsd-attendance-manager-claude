@@ -65,9 +65,11 @@ export function buildBookMeetingModal(
         type: "datepicker",
         action_id: "date_select",
         initial_date: defaultDateStr,
-        // Parity with the web modal's DatePickerButton minDate — defaultDateStr
-        // is always office "today" at the moment the modal opens (see caller).
-        min_date: defaultDateStr,
+        // No min_date here: Slack's plain `datepicker` element doesn't support
+        // min_date/max_date at all (only the separate `datetimepicker` element
+        // does) — sending it made views.open fail with invalid_arguments. A
+        // past date is instead rejected server-side by createBookingCore's
+        // isBookingInThePast() check, surfaced as an inline Slack error.
       },
     },
     {
