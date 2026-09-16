@@ -355,6 +355,7 @@ export interface MeetingBooking {
   slack_message_ts: string | null;
   started_at: string | null;
   ended_at: string | null;
+  was_extended: boolean;
   created_at: string;
   updated_at: string;
   organizer?: User;

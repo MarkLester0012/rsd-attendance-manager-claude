@@ -49,7 +49,7 @@ export async function notifyBookingCreated(
     others
       .filter((u) => u.slack_user_id)
       .map((u) => {
-        const message = buildMeetingInvitedDM(booking, organizer, appUrl);
+        const message = buildMeetingInvitedDM(booking, organizer, attendees, appUrl);
         return postDirectMessage(botToken, u.slack_user_id as string, message.text, message.blocks, message.color);
       })
   );

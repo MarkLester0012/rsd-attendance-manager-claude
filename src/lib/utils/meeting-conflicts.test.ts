@@ -205,6 +205,7 @@ describe("getLiveRoomStatus", () => {
     slack_message_ts: null,
     started_at: null,
     ended_at: null,
+    was_extended: false,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   };

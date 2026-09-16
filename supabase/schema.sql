@@ -715,6 +715,7 @@ create table public.meeting_room_bookings (
   slack_message_ts text,
   started_at timestamptz,
   ended_at timestamptz,
+  was_extended boolean not null default false,
   created_at timestamptz default now() not null,
   updated_at timestamptz default now() not null,
   constraint meeting_time_format

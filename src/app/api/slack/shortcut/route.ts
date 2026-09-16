@@ -388,7 +388,7 @@ async function handleMeetingRoomCommand(params: URLSearchParams): Promise<Respon
     .from("meeting_room_bookings")
     .select("*, organizer:users!meeting_room_bookings_organizer_id_fkey(name, slack_user_id)")
     .eq("meeting_date", targetDate)
-    .in("status", ["scheduled", "in_progress"])
+    .in("status", ["scheduled", "in_progress", "completed"])
     .order("start_time", { ascending: true });
 
   if (error) {
