@@ -478,7 +478,7 @@ export async function extendMeeting(bookingId: string, additionalMinutes: number
 
   const { error: updateErr } = await supabase
     .from("meeting_room_bookings")
-    .update({ end_time: newEndTime })
+    .update({ end_time: newEndTime, was_extended: true })
     .eq("id", bookingId);
 
   if (updateErr) {

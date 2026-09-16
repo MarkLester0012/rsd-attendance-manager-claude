@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { buildScheduleBlockKit } from "./meetings";
+import {
+  buildScheduleBlockKit,
+  buildMeetingBookedBlockKit,
+  buildMeetingInvitedDM,
+  getCompletionStatus,
+} from "./meetings";
 import type { MeetingBooking, User } from "@/lib/types";
 
 const mockOrganizer: User = {
@@ -12,6 +17,21 @@ const mockOrganizer: User = {
   department_id: "dept-1",
   leave_balance: 15,
   slack_user_id: "U12345",
+  slack_team_id: "T12345",
+  created_at: "2026-01-01T00:00:00Z",
+  updated_at: "2026-01-01T00:00:00Z",
+};
+
+const mockAttendee: User = {
+  id: "user-2",
+  auth_id: "auth-2",
+  name: "Bob Teammate",
+  username: "bob",
+  email: "bob@example.com",
+  role: "member",
+  department_id: "dept-1",
+  leave_balance: 10,
+  slack_user_id: "U67890",
   slack_team_id: "T12345",
   created_at: "2026-01-01T00:00:00Z",
   updated_at: "2026-01-01T00:00:00Z",
@@ -31,6 +51,7 @@ const mockBooking1: MeetingBooking & { organizer: User } = {
   slack_message_ts: null,
   started_at: null,
   ended_at: null,
+  was_extended: false,
   created_at: "2026-09-15T00:00:00Z",
   updated_at: "2026-09-15T00:00:00Z",
   organizer: mockOrganizer,
@@ -50,6 +71,7 @@ const mockBooking2: MeetingBooking & { organizer: User } = {
   slack_message_ts: null,
   started_at: null,
   ended_at: null,
+  was_extended: false,
   created_at: "2026-09-15T00:00:00Z",
   updated_at: "2026-09-15T00:00:00Z",
   organizer: mockOrganizer,
@@ -130,5 +152,139 @@ describe("buildScheduleBlockKit", () => {
     expect(jsonBlocks).toContain("#dev-team");
     // mockBooking2 has notify_channel: false
     expect(jsonBlocks).not.toContain("#rsd-leader-team");
+  });
+
+  it("renders past completed meetings with completion status in a separate section", () => {
+    // 09:00 - 10:00 meeting that ended early at 09:45 (01:45 UTC = 09:45 Manila)
+    const completedBooking: MeetingBooking & { organizer: User } = {
+      id: "booking-completed-1",
+      title: "Morning Standup",
+      description: null,
+      organizer_id: "user-1",
+      meeting_date: "2026-09-15",
+      start_time: "09:00",
+      end_time: "10:00",
+      status: "completed",
+      notify_channel: true,
+      slack_channel: "dev-team",
+      slack_message_ts: null,
+      started_at: "2026-09-15T01:00:00Z",
+      ended_at: "2026-09-15T01:45:00Z",
+      was_extended: false,
+      created_at: "2026-09-15T00:00:00Z",
+      updated_at: "2026-09-15T01:45:00Z",
+      organizer: mockOrganizer,
+    };
+
+    const message = buildScheduleBlockKit("2026-09-15", [mockBooking2, completedBooking], appUrl);
+    const jsonBlocks = JSON.stringify(message.blocks);
+
+    expect(jsonBlocks).toContain("Past Meetings Today:");
+    expect(jsonBlocks).toContain("Morning Standup");
+    expect(jsonBlocks).toContain("[Ended early at 09:45]");
+    expect(jsonBlocks).toContain("~*09:00 – 10:00* — *Morning Standup* (by Alice Leader)~ · #dev-team · [Ended early at 09:45]");
+    expect(message.text).toContain("1 upcoming, 1 past.");
+  });
+});
+
+describe("getCompletionStatus", () => {
+  it("detects early completion", () => {
+    const booking: MeetingBooking = {
+      ...mockBooking1,
+      status: "completed",
+      // 01:40 UTC = 09:40 Manila (ended 20 mins before 10:00)
+      ended_at: "2026-09-15T01:40:00Z",
+    };
+    expect(getCompletionStatus(booking)).toBe("[Ended early at 09:40]");
+  });
+
+  it("detects on-time completion", () => {
+    const booking: MeetingBooking = {
+      ...mockBooking1,
+      status: "completed",
+      // 02:00 UTC = 10:00 Manila
+      ended_at: "2026-09-15T02:00:00Z",
+    };
+    expect(getCompletionStatus(booking)).toBe("[Completed on time]");
+  });
+
+  it("detects extended completion via the was_extended flag, not a time comparison", () => {
+    // end_time is 10:00 because extendMeeting() already mutated it to the new
+    // (extended) value — was_extended is the only thing that distinguishes
+    // this from a meeting that simply ended on time.
+    const booking: MeetingBooking = {
+      ...mockBooking1,
+      status: "completed",
+      was_extended: true,
+      ended_at: "2026-09-15T02:00:00Z",
+    };
+    expect(getCompletionStatus(booking)).toBe("[Extended to 10:00]");
+  });
+
+  it("does not misreport a meeting caught a minute late by cron as extended", () => {
+    // was_extended: false, ended_at a couple minutes after end_time — this
+    // used to spuriously read as "Extended" under the old time-diff logic.
+    const booking: MeetingBooking = {
+      ...mockBooking1,
+      status: "completed",
+      was_extended: false,
+      // 02:02 UTC = 10:02 Manila, 2 minutes after the 10:00 end_time
+      ended_at: "2026-09-15T02:02:00Z",
+    };
+    expect(getCompletionStatus(booking)).toBe("[Completed on time]");
+  });
+
+  it("returns [Completed] when ended_at is missing", () => {
+    const booking: MeetingBooking = {
+      ...mockBooking1,
+      status: "completed",
+      ended_at: null,
+    };
+    expect(getCompletionStatus(booking)).toBe("[Completed]");
+  });
+});
+
+describe("booking-confirmation DMs", () => {
+  const appUrl = "http://localhost:3000";
+
+  it("builds the organizer's own confirmation DM without listing them in Attendees", () => {
+    const message = buildMeetingBookedBlockKit(
+      mockBooking1,
+      mockOrganizer,
+      [mockOrganizer, mockAttendee],
+      appUrl
+    );
+
+    const jsonBlocks = JSON.stringify(message.blocks);
+    expect(jsonBlocks).toContain("Meeting Booked");
+    expect(jsonBlocks).toContain("*Tech Sync*");
+    expect(jsonBlocks).toContain("Tuesday, Sep 15");
+    expect(jsonBlocks).toContain("*Organizer:*\\n<@U12345>");
+    // Regression: the organizer already has their own line above — they
+    // must not also appear in the Attendees list.
+    expect(jsonBlocks).toContain("*Attendees:* <@U67890>");
+    expect(jsonBlocks).not.toContain("*Attendees:* <@U12345>");
+    expect(jsonBlocks).toContain(">Weekly sync");
+  });
+
+  it("builds the attendee invitation DM without a redundant 'you've been invited' line", () => {
+    const message = buildMeetingInvitedDM(
+      mockBooking1,
+      mockOrganizer,
+      [mockOrganizer, mockAttendee],
+      appUrl
+    );
+
+    const jsonBlocks = JSON.stringify(message.blocks);
+    expect(jsonBlocks).toContain("Meeting Invitation");
+    expect(jsonBlocks).toContain("*Tech Sync*");
+    expect(jsonBlocks).toContain("Tuesday, Sep 15");
+    expect(jsonBlocks).toContain("*Organizer:*\\n<@U12345>");
+    // Same regression as above: the invite DM must exclude the organizer
+    // from its own Attendees list too.
+    expect(jsonBlocks).toContain("*Attendees:* <@U67890>");
+    expect(jsonBlocks).not.toContain("*Attendees:* <@U12345>");
+    expect(jsonBlocks).toContain(">Weekly sync");
+    expect(jsonBlocks).not.toContain("You've been invited");
   });
 });

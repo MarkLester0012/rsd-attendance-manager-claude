@@ -1,5 +1,7 @@
+import { format, parseISO, isValid } from "date-fns";
 import type { MeetingAttendeeStatus, MeetingBooking, User } from "@/lib/types";
-import type { getLiveRoomStatus } from "@/lib/utils/meeting-conflicts";
+import { timeToMinutes, type getLiveRoomStatus } from "@/lib/utils/meeting-conflicts";
+import { OFFICE_TZ } from "@/lib/utils/office-time";
 
 export interface AttendeeWithStatus {
   user: User;
@@ -50,7 +52,7 @@ function dateTimeFields(meeting: MeetingBooking, organizer: User): object {
   return {
     type: "section",
     fields: [
-      { type: "mrkdwn", text: `*Date:*\n${meeting.meeting_date}` },
+      { type: "mrkdwn", text: `*Date:*\n${formatMeetingDate(meeting.meeting_date)}` },
       { type: "mrkdwn", text: `*Time:*\n${meeting.start_time} – ${meeting.end_time}` },
       { type: "mrkdwn", text: `*Organizer:*\n${formatUserTag(organizer)}` },
     ],
@@ -71,25 +73,38 @@ function viewInAppButton(text: string, appUrl: string, meeting: MeetingBooking, 
   };
 }
 
+function formatMeetingDate(dateStr: string): string {
+  try {
+    const parsed = parseISO(dateStr);
+    if (!isValid(parsed)) return dateStr;
+    return format(parsed, "EEEE, MMM d");
+  } catch {
+    return dateStr;
+  }
+}
+
 /**
- * Builds the Slack Block Kit payload posted to the channel when a meeting is
- * first booked.
+ * Shared block body for the two booking-confirmation DMs below (organizer's
+ * own confirmation and each attendee's invite) — title, date/time/organizer,
+ * an attendees list that excludes the organizer (who already has their own
+ * line right above), and the optional description. Each caller supplies only
+ * its own header text and fallback `text` string, since that's the one thing
+ * that legitimately differs between "you booked this" and "you're invited."
  */
-export function buildMeetingBookedBlockKit(
+function meetingConfirmationBlocks(
   meeting: MeetingBooking,
   organizer: User,
   attendees: User[],
   appUrl: string
-): SlackMessage {
+): object[] {
   const title = truncate(escapeSlackText(meeting.title), HEADER_TEXT_MAX);
   const description = meeting.description
     ? truncate(escapeSlackText(meeting.description), SECTION_TEXT_MAX)
     : null;
   const others = attendees.filter((u) => u.id !== organizer.id);
-  const attendeeText = others.length > 0 ? others.map(formatUserTag).join(", ") : "_None_";
+  const attendeeText = others.length > 0 ? others.map(formatUserTag).join(", ") : "None";
 
   const blocks: object[] = [
-    { type: "header", text: { type: "plain_text", text: "Meeting Booked", emoji: false } },
     { type: "section", text: { type: "mrkdwn", text: `*${title}*` } },
     dateTimeFields(meeting, organizer),
     {
@@ -100,16 +115,32 @@ export function buildMeetingBookedBlockKit(
 
   if (description) {
     blocks.push({
-      type: "context",
-      elements: [{ type: "mrkdwn", text: `_${description}_` }],
+      type: "section",
+      text: { type: "mrkdwn", text: `>${description}` },
     });
   }
 
   blocks.push({ type: "divider" });
   blocks.push(viewInAppButton("View in App", appUrl, meeting, true));
+  return blocks;
+}
+
+/**
+ * Builds the DM sent to the organizer confirming their own booking.
+ */
+export function buildMeetingBookedBlockKit(
+  meeting: MeetingBooking,
+  organizer: User,
+  attendees: User[],
+  appUrl: string
+): SlackMessage {
+  const blocks: object[] = [
+    { type: "header", text: { type: "plain_text", text: "Meeting Booked", emoji: false } },
+    ...meetingConfirmationBlocks(meeting, organizer, attendees, appUrl),
+  ];
 
   return {
-    text: `Meeting Booked: "${meeting.title}" (${meeting.start_time} - ${meeting.end_time}) by ${organizer.name}`,
+    text: `Meeting Booked: "${meeting.title}" (${meeting.start_time} - ${meeting.end_time})`,
     blocks,
     color: MEETING_COLORS.booked,
   };
@@ -117,38 +148,22 @@ export function buildMeetingBookedBlockKit(
 
 /**
  * Builds the DM sent to each attendee (excluding the organizer) when a
- * meeting is booked — the invite counterpart to buildMeetingBookedBlockKit,
- * which is the organizer's own confirmation.
+ * meeting is booked — same body as buildMeetingBookedBlockKit, different
+ * header and fallback text.
  */
 export function buildMeetingInvitedDM(
   meeting: MeetingBooking,
   organizer: User,
+  attendees: User[],
   appUrl: string
 ): SlackMessage {
-  const title = truncate(escapeSlackText(meeting.title), HEADER_TEXT_MAX);
-  const description = meeting.description
-    ? truncate(escapeSlackText(meeting.description), SECTION_TEXT_MAX)
-    : null;
-
   const blocks: object[] = [
     { type: "header", text: { type: "plain_text", text: "Meeting Invitation", emoji: false } },
-    { type: "section", text: { type: "mrkdwn", text: `*${title}*` } },
-    dateTimeFields(meeting, organizer),
-    { type: "context", elements: [{ type: "mrkdwn", text: "You've been invited to this meeting." }] },
+    ...meetingConfirmationBlocks(meeting, organizer, attendees, appUrl),
   ];
 
-  if (description) {
-    blocks.push({
-      type: "context",
-      elements: [{ type: "mrkdwn", text: `_${description}_` }],
-    });
-  }
-
-  blocks.push({ type: "divider" });
-  blocks.push(viewInAppButton("View in App", appUrl, meeting, true));
-
   return {
-    text: `You're invited: "${meeting.title}" (${meeting.start_time} - ${meeting.end_time}), organized by ${organizer.name}`,
+    text: `Meeting Invitation: "${meeting.title}" (${meeting.start_time} - ${meeting.end_time}), organized by ${organizer.name}`,
     blocks,
     color: MEETING_COLORS.booked,
   };
@@ -414,6 +429,54 @@ export function buildMeetingCancelledBlockKit(
   };
 }
 
+function formatOfficeTime(isoString: string): string {
+  try {
+    const d = new Date(isoString);
+    if (isNaN(d.getTime())) return "";
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: OFFICE_TZ,
+      hour12: false,
+      hour: "2-digit",
+      minute: "2-digit",
+    }).formatToParts(d);
+    const map: Record<string, string> = {};
+    for (const p of parts) map[p.type] = p.value;
+    const hour = String(Number(map.hour) % 24).padStart(2, "0");
+    const minute = String(Number(map.minute)).padStart(2, "0");
+    return `${hour}:${minute}`;
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Derives completion status detail for a completed meeting. "Extended" is
+ * read directly off `was_extended` rather than inferred from comparing
+ * ended_at to end_time: extendMeeting() mutates end_time in place, so by the
+ * time a genuinely-extended meeting completes, ended_at naturally lands close
+ * to that (already-extended) end_time — a time-diff comparison alone can
+ * never actually detect it, and would instead misfire "Extended" for a
+ * normal meeting the once-a-minute auto-complete cron happened to catch a
+ * minute late.
+ */
+export function getCompletionStatus(booking: MeetingBooking): string {
+  if (booking.was_extended) {
+    return `[Extended to ${booking.end_time}]`;
+  }
+
+  if (!booking.ended_at) {
+    return "[Completed]";
+  }
+
+  const endedTime = formatOfficeTime(booking.ended_at);
+  if (!endedTime) {
+    return "[Completed]";
+  }
+
+  const diff = timeToMinutes(endedTime) - timeToMinutes(booking.end_time);
+  return diff < -1 ? `[Ended early at ${endedTime}]` : "[Completed on time]";
+}
+
 /**
  * Builds schedule list blocks for /meeting-room Slack command response.
  */
@@ -425,6 +488,10 @@ export function buildScheduleBlockKit(
 ): SlackMessage {
   const activeBookings = bookings
     .filter((b) => b.status === "scheduled" || b.status === "in_progress")
+    .sort((a, b) => a.start_time.localeCompare(b.start_time));
+
+  const completedBookings = bookings
+    .filter((b) => b.status === "completed")
     .sort((a, b) => a.start_time.localeCompare(b.start_time));
 
   const blocks: object[] = [
@@ -487,7 +554,7 @@ export function buildScheduleBlockKit(
     blocks.push({ type: "divider" });
   }
 
-  if (activeBookings.length === 0) {
+  if (activeBookings.length === 0 && completedBookings.length === 0) {
     blocks.push({
       type: "section",
       text: {
@@ -496,18 +563,52 @@ export function buildScheduleBlockKit(
       },
     });
   } else {
-    const listItems = activeBookings.map((b) => {
-      const statusLabel = b.status === "in_progress" ? " — *In Progress*" : "";
-      const orgName = b.organizer?.name ? escapeSlackText(b.organizer.name) : "Unknown";
-      const title = truncate(escapeSlackText(b.title), 200);
-      const channelTag = b.notify_channel ? ` · #${b.slack_channel || "rsd-leader-team"}` : "";
-      return `>*${b.start_time} – ${b.end_time}* — *${title}* (by ${orgName})${channelTag}${statusLabel}`;
-    });
+    if (activeBookings.length > 0) {
+      const listItems = activeBookings.map((b) => {
+        const statusLabel = b.status === "in_progress" ? " — *In Progress*" : "";
+        const orgName = b.organizer?.name ? escapeSlackText(b.organizer.name) : "Unknown";
+        const title = truncate(escapeSlackText(b.title), 200);
+        const channelTag = b.notify_channel ? ` · #${b.slack_channel || "rsd-leader-team"}` : "";
+        return `>*${b.start_time} – ${b.end_time}* — *${title}* (by ${orgName})${channelTag}${statusLabel}`;
+      });
 
-    blocks.push({
-      type: "section",
-      text: { type: "mrkdwn", text: listItems.join("\n") },
-    });
+      blocks.push({
+        type: "section",
+        text: { type: "mrkdwn", text: listItems.join("\n") },
+      });
+    } else {
+      blocks.push({
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: "*No upcoming meetings scheduled for this date.*",
+        },
+      });
+    }
+
+    if (completedBookings.length > 0) {
+      blocks.push({ type: "divider" });
+      blocks.push({
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: "*Past Meetings Today:*",
+        },
+      });
+
+      const completedItems = completedBookings.map((b) => {
+        const orgName = b.organizer?.name ? escapeSlackText(b.organizer.name) : "Unknown";
+        const title = truncate(escapeSlackText(b.title), 200);
+        const channelTag = b.notify_channel ? ` · #${b.slack_channel || "rsd-leader-team"}` : "";
+        const statusDetail = getCompletionStatus(b);
+        return `>~*${b.start_time} – ${b.end_time}* — *${title}* (by ${orgName})~${channelTag} · ${statusDetail}`;
+      });
+
+      blocks.push({
+        type: "section",
+        text: { type: "mrkdwn", text: completedItems.join("\n") },
+      });
+    }
   }
 
   blocks.push({ type: "divider" });
@@ -523,9 +624,19 @@ export function buildScheduleBlockKit(
     ],
   });
 
-  const activeCount = activeBookings.length;
+  let countSummary = "";
+  if (activeBookings.length > 0 && completedBookings.length > 0) {
+    countSummary = `${activeBookings.length} upcoming, ${completedBookings.length} past.`;
+  } else if (activeBookings.length > 0) {
+    countSummary = `${activeBookings.length} meeting${activeBookings.length === 1 ? "" : "s"}.`;
+  } else if (completedBookings.length > 0) {
+    countSummary = `${completedBookings.length} past meeting${completedBookings.length === 1 ? "" : "s"}.`;
+  } else {
+    countSummary = "0 meetings.";
+  }
+
   return {
-    text: `${statusLeadText}Meeting Room Schedule for ${dateStr}: ${activeCount} meeting${activeCount === 1 ? "" : "s"}.`,
+    text: `${statusLeadText}Meeting Room Schedule for ${dateStr}: ${countSummary}`,
     blocks,
     color: MEETING_COLORS.updated,
   };
