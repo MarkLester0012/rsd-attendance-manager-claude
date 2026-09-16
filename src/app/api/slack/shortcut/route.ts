@@ -16,6 +16,7 @@ import { timeToMinutes, getLiveRoomStatus } from "@/lib/utils/meeting-conflicts"
 import { officeDateString, officeMinutesOfDay } from "@/lib/utils/office-time";
 import { normalizeSlackChannel, isValidSlackChannel } from "@/lib/utils/slack-channel";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { withTimeout } from "@/lib/supabase/with-timeout";
 import type { MeetingBooking } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -77,12 +78,19 @@ async function lookupUser(slackUserId: string, slackTeamId: string) {
  */
 async function resolveMeetingRoomCaller(slackUserId: string, slackTeamId: string) {
   const supabase = createAdminClient();
-  const { data: user } = await supabase
-    .from("users")
-    .select("id, name, role")
-    .eq("slack_user_id", slackUserId)
-    .eq("slack_team_id", slackTeamId)
-    .single();
+  // Bounded so a slow/unresponsive database fails fast within Slack's 3s
+  // slash-command window instead of hanging until Vercel's 300s function
+  // timeout kills the request.
+  const timeout = withTimeout();
+  const { data: user } = await timeout.settle(
+    supabase
+      .from("users")
+      .select("id, name, role")
+      .eq("slack_user_id", slackUserId)
+      .eq("slack_team_id", slackTeamId)
+      .abortSignal(timeout.signal)
+      .single()
+  );
   return user ?? null;
 }
 
@@ -384,12 +392,17 @@ async function handleMeetingRoomCommand(params: URLSearchParams): Promise<Respon
   const targetDate = text.match(/^\d{4}-\d{2}-\d{2}$/) ? text : today;
 
   const supabase = createAdminClient();
-  const { data: bookings, error } = await supabase
-    .from("meeting_room_bookings")
-    .select("*, organizer:users!meeting_room_bookings_organizer_id_fkey(name, slack_user_id)")
-    .eq("meeting_date", targetDate)
-    .in("status", ["scheduled", "in_progress", "completed"])
-    .order("start_time", { ascending: true });
+  // Same bounded-timeout reasoning as resolveMeetingRoomCaller above.
+  const scheduleTimeout = withTimeout();
+  const { data: bookings, error } = await scheduleTimeout.settle(
+    supabase
+      .from("meeting_room_bookings")
+      .select("*, organizer:users!meeting_room_bookings_organizer_id_fkey(name, slack_user_id)")
+      .eq("meeting_date", targetDate)
+      .in("status", ["scheduled", "in_progress", "completed"])
+      .order("start_time", { ascending: true })
+      .abortSignal(scheduleTimeout.signal)
+  );
 
   if (error) {
     console.error("Failed to load meeting room schedule for Slack command:", error.message);
