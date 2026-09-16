@@ -27,8 +27,9 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "sonner";
 import { Loader2, Search, Check, Pencil, UserX } from "lucide-react";
 import { updateBooking } from "./actions";
-import { resolveAttendeeStatus, timeToMinutes, type LeaveRecord } from "@/lib/utils/meeting-conflicts";
+import { resolveAttendeeStatus, timeToMinutes, isBookingInThePast, type LeaveRecord } from "@/lib/utils/meeting-conflicts";
 import { parseSlackChannel } from "@/lib/utils/slack-channel";
+import { officeDateString, officeMinutesOfDay } from "@/lib/utils/office-time";
 import type { MeetingWithAttendees, User } from "@/lib/types";
 
 // Standard 30-min time slots from 07:00 to 20:00 — matches book-meeting-modal.tsx.
@@ -109,6 +110,10 @@ export function EditMeetingModal({
     }
     if (timeError) {
       toast.error(timeError);
+      return;
+    }
+    if (isBookingInThePast(booking.meeting_date, startTime, officeDateString(), officeMinutesOfDay())) {
+      toast.error("Cannot move this meeting to a time that has already passed");
       return;
     }
     if (channelError) {

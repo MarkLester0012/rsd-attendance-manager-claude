@@ -27,9 +27,9 @@ import { toast } from "sonner";
 import { format, parseISO } from "date-fns";
 import { Loader2, Search, Check, Users, UserX } from "lucide-react";
 import { createBooking } from "./actions";
-import { resolveAttendeeStatus, timeToMinutes, type LeaveRecord } from "@/lib/utils/meeting-conflicts";
+import { resolveAttendeeStatus, timeToMinutes, isBookingInThePast, type LeaveRecord } from "@/lib/utils/meeting-conflicts";
 import { parseSlackChannel } from "@/lib/utils/slack-channel";
-import { officeDateString } from "@/lib/utils/office-time";
+import { officeDateString, officeMinutesOfDay } from "@/lib/utils/office-time";
 import { createClient } from "@/lib/supabase/client";
 import type { User } from "@/lib/types";
 
@@ -152,6 +152,10 @@ export function BookMeetingModal({
     }
     if (meetingDate < todayStr) {
       toast.error("Cannot book a meeting in the past");
+      return;
+    }
+    if (isBookingInThePast(meetingDate, startTime, todayStr, officeMinutesOfDay())) {
+      toast.error("Cannot book a meeting for a time that has already passed");
       return;
     }
     if (timeError) {

@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { timeToMinutes } from "@/lib/utils/meeting-conflicts";
+import { timeToMinutes, isBookingInThePast } from "@/lib/utils/meeting-conflicts";
 import { normalizeSlackChannel } from "@/lib/utils/slack-channel";
+import { officeDateString, officeMinutesOfDay } from "@/lib/utils/office-time";
 import type { MeetingBooking } from "@/lib/types";
 
 /**
@@ -48,6 +49,9 @@ export async function createBookingCore(
   }
   if (timeToMinutes(input.end_time) <= timeToMinutes(input.start_time)) {
     return { error: "End time must be after start time" };
+  }
+  if (isBookingInThePast(input.meeting_date, input.start_time, officeDateString(), officeMinutesOfDay())) {
+    return { error: "Cannot book a meeting for a time that has already passed." };
   }
 
   const notify_channel = input.notify_channel ?? true;

@@ -7,7 +7,9 @@ import {
   timeToMinutes,
   minutesToTime,
   resolveAttendeeStatus,
+  isBookingInThePast,
 } from "@/lib/utils/meeting-conflicts";
+import { officeDateString, officeMinutesOfDay } from "@/lib/utils/office-time";
 import {
   getWorkspaceBotToken,
   postChatMessage,
@@ -203,6 +205,12 @@ export async function updateBooking(bookingId: string, input: UpdateBookingInput
   if (!existing) return { error: "Booking not found" };
   if (existing.status === "cancelled" || existing.status === "completed") {
     return { error: `Cannot edit a ${existing.status} meeting` };
+  }
+  // The date field is locked in the edit modal, so this only ever matters for
+  // a meeting scheduled today — the same past-time gap createBookingCore
+  // guards against on create.
+  if (isBookingInThePast(existing.meeting_date, input.start_time, officeDateString(), officeMinutesOfDay())) {
+    return { error: "Cannot move this meeting to a time that has already passed." };
   }
 
   const { data: otherBookings } = await supabase

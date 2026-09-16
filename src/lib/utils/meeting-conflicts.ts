@@ -19,6 +19,25 @@ export function minutesToTime(totalMinutes: number): string {
 }
 
 /**
+ * True when a proposed meeting_date + start_time is already in the past
+ * relative to office "now" — an earlier date outright, or today with a start
+ * time before the current minute. A start time equal to the current minute
+ * is not "in the past." Takes office today/now as parameters rather than
+ * reading the clock itself, matching getLiveRoomStatus's shape below — the
+ * same function is reused as-is by server code and by both client modals.
+ */
+export function isBookingInThePast(
+  meetingDate: string,
+  startTime: string,
+  officeToday: string,
+  officeNowMinutes: number
+): boolean {
+  if (meetingDate < officeToday) return true;
+  if (meetingDate > officeToday) return false;
+  return timeToMinutes(startTime) < officeNowMinutes;
+}
+
+/**
  * Checks if two time intervals overlap.
  * Assumes start < end for each interval.
  */

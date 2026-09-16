@@ -65,6 +65,9 @@ export function buildBookMeetingModal(
         type: "datepicker",
         action_id: "date_select",
         initial_date: defaultDateStr,
+        // Parity with the web modal's DatePickerButton minDate — defaultDateStr
+        // is always office "today" at the moment the modal opens (see caller).
+        min_date: defaultDateStr,
       },
     },
     {

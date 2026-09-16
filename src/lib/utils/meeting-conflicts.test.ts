@@ -6,6 +6,7 @@ import {
   checkMeetingCollision,
   resolveAttendeeStatus,
   getLiveRoomStatus,
+  isBookingInThePast,
 } from "./meeting-conflicts";
 import type { MeetingBooking } from "@/lib/types";
 
@@ -246,5 +247,30 @@ describe("getLiveRoomStatus", () => {
     const status = getLiveRoomStatus(14 * 60 + 30, [inProgress]); // 14:30
     expect(status.isOccupied).toBe(true);
     expect(status.currentMeeting?.title).toBe("Leadership Sync");
+  });
+});
+
+describe("isBookingInThePast", () => {
+  const today = "2026-09-16";
+  const nowMinutes = 14 * 60; // 14:00
+
+  it("is true for any time on an earlier date", () => {
+    expect(isBookingInThePast("2026-09-15", "23:45", today, nowMinutes)).toBe(true);
+  });
+
+  it("is false for any time on a later date, regardless of how early", () => {
+    expect(isBookingInThePast("2026-09-17", "00:00", today, nowMinutes)).toBe(false);
+  });
+
+  it("is true for today with a start time before the current minute", () => {
+    expect(isBookingInThePast(today, "09:00", today, nowMinutes)).toBe(true);
+  });
+
+  it("is false for today at exactly the current minute", () => {
+    expect(isBookingInThePast(today, "14:00", today, nowMinutes)).toBe(false);
+  });
+
+  it("is false for today with a start time after the current minute", () => {
+    expect(isBookingInThePast(today, "15:00", today, nowMinutes)).toBe(false);
   });
 });
