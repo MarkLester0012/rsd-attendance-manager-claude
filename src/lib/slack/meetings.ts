@@ -22,6 +22,11 @@ export const MEETING_COLORS = {
   updated: "#ecb22e",
   cancelled: "#e01e5a",
   message: "#4a154b",
+  // Same colors as booked/cancelled, named for their own use: buildScheduleBlockKit
+  // colors its accent bar by live room status instead of the fixed 'updated' amber,
+  // so occupied/free reads from the bar itself rather than a 🔴/🟢 in the text.
+  available: "#2eb67d",
+  occupied: "#e01e5a",
 } as const;
 
 /**
@@ -48,12 +53,17 @@ export function formatUserTag(u: User): string {
   return u.slack_user_id ? `<@${u.slack_user_id}>` : escapeSlackText(u.name);
 }
 
+// 2 fields, not 3 — Slack lays fields out 2-per-row, so a 3rd field (Organizer)
+// used to strand itself alone on its own row. Combining Date+Time keeps this
+// to one clean row everywhere it's used (Booked/Invited/Updated DMs).
 function dateTimeFields(meeting: MeetingBooking, organizer: User): object {
   return {
     type: "section",
     fields: [
-      { type: "mrkdwn", text: `*Date:*\n${formatMeetingDate(meeting.meeting_date)}` },
-      { type: "mrkdwn", text: `*Time:*\n${meeting.start_time} – ${meeting.end_time}` },
+      {
+        type: "mrkdwn",
+        text: `*Date & Time:*\n${formatMeetingDate(meeting.meeting_date)} · ${meeting.start_time} – ${meeting.end_time}`,
+      },
       { type: "mrkdwn", text: `*Organizer:*\n${formatUserTag(organizer)}` },
     ],
   };
@@ -102,16 +112,19 @@ function meetingConfirmationBlocks(
     ? truncate(escapeSlackText(meeting.description), SECTION_TEXT_MAX)
     : null;
   const others = attendees.filter((u) => u.id !== organizer.id);
-  const attendeeText = others.length > 0 ? others.map(formatUserTag).join(", ") : "None";
 
   const blocks: object[] = [
     { type: "section", text: { type: "mrkdwn", text: `*${title}*` } },
     dateTimeFields(meeting, organizer),
-    {
-      type: "context",
-      elements: [{ type: "mrkdwn", text: `*Attendees:* ${attendeeText}` }],
-    },
   ];
+
+  // Omit the line entirely for a solo booking rather than printing "Attendees: None".
+  if (others.length > 0) {
+    blocks.push({
+      type: "context",
+      elements: [{ type: "mrkdwn", text: `*Attendees:* ${others.map(formatUserTag).join(", ")}` }],
+    });
+  }
 
   if (description) {
     blocks.push({
@@ -140,7 +153,7 @@ export function buildMeetingBookedBlockKit(
   ];
 
   return {
-    text: `Meeting Booked: "${meeting.title}" (${meeting.start_time} - ${meeting.end_time})`,
+    text: `Meeting Booked: "${meeting.title}" on ${formatMeetingDate(meeting.meeting_date)} (${meeting.start_time} - ${meeting.end_time})`,
     blocks,
     color: MEETING_COLORS.booked,
   };
@@ -163,7 +176,7 @@ export function buildMeetingInvitedDM(
   ];
 
   return {
-    text: `Meeting Invitation: "${meeting.title}" (${meeting.start_time} - ${meeting.end_time}), organized by ${organizer.name}`,
+    text: `Meeting Invitation: "${meeting.title}" on ${formatMeetingDate(meeting.meeting_date)} (${meeting.start_time} - ${meeting.end_time}), organized by ${organizer.name}`,
     blocks,
     color: MEETING_COLORS.booked,
   };
@@ -494,74 +507,52 @@ export function buildScheduleBlockKit(
     .filter((b) => b.status === "completed")
     .sort((a, b) => a.start_time.localeCompare(b.start_time));
 
-  const blocks: object[] = [
-    {
-      type: "header",
-      text: { type: "plain_text", text: `Meeting Room Schedule (${dateStr})`, emoji: false },
-    },
-  ];
-
+  // Status is conveyed by the message's accent bar color (green = available,
+  // red = occupied) rather than a 🔴/🟢 in the text, so the status line itself
+  // stays to just the boundary time — title/organizer/channel for the current
+  // meeting are never restated here since the list below already shows them.
+  let statusLine = "";
   let statusLeadText = "";
+  let color: string = MEETING_COLORS.updated;
 
   if (liveStatus) {
     if (liveStatus.isOccupied && liveStatus.currentMeeting) {
-      const current = liveStatus.currentMeeting;
-      const currentWithOrg = bookings.find((b) => b.id === current.id) ?? current;
-      const title = truncate(escapeSlackText(current.title), 100);
-      const orgName = (currentWithOrg as { organizer?: User }).organizer?.name
-        ? escapeSlackText((currentWithOrg as { organizer?: User }).organizer!.name)
-        : "Unknown";
-      const channel = current.slack_channel || "rsd-leader-team";
-
-      blocks.push({
-        type: "section",
-        text: {
-          type: "mrkdwn",
-          text: `🔴 *In Use* — "${title}" until ${current.end_time}`,
-        },
-      });
-      blocks.push({
-        type: "context",
-        elements: [
-          {
-            type: "mrkdwn",
-            text: `Organized by *${orgName}* · #${channel}`,
-          },
-        ],
-      });
-      statusLeadText = `🔴 In Use: "${title}" until ${current.end_time}. `;
+      const endTime = liveStatus.currentMeeting.end_time;
+      statusLine = `*In Use* until ${endTime}`;
+      statusLeadText = `In Use until ${endTime}`;
+      color = MEETING_COLORS.occupied;
     } else if (liveStatus.nextMeeting) {
-      const nextTitle = truncate(escapeSlackText(liveStatus.nextMeeting.title), 100);
-      blocks.push({
-        type: "section",
-        text: {
-          type: "mrkdwn",
-          text: `🟢 *Available* — free until ${liveStatus.availableUntil}, then "${nextTitle}"`,
-        },
-      });
-      statusLeadText = `🟢 Available until ${liveStatus.availableUntil}. `;
+      statusLine = `*Available* until ${liveStatus.availableUntil}`;
+      statusLeadText = `Available until ${liveStatus.availableUntil}`;
+      color = MEETING_COLORS.available;
     } else {
-      blocks.push({
-        type: "section",
-        text: {
-          type: "mrkdwn",
-          text: "🟢 *Available* — no further meetings today",
-        },
-      });
-      statusLeadText = "🟢 Available. ";
+      statusLine = "*Available* — free for the rest of the day";
+      statusLeadText = "Available";
+      color = MEETING_COLORS.available;
     }
-
-    blocks.push({ type: "divider" });
   }
 
+  const titleText =
+    `*Meeting Room — ${formatMeetingDate(dateStr)}*` + (statusLine ? `\n${statusLine}` : "");
+
+  const blocks: object[] = [{ type: "section", text: { type: "mrkdwn", text: titleText } }];
+
+  // Body content is built separately so an empty body (today, zero bookings —
+  // the status line above already says "Available") adds no extra blocks or
+  // dividers, instead of a redundant "completely free" paragraph right under
+  // a status line that just said the same thing.
+  const bodyBlocks: object[] = [];
+
   if (activeBookings.length === 0 && completedBookings.length === 0) {
-    blocks.push({
-      type: "section",
-      text: {
-        type: "mrkdwn",
-        text: "*The Meeting Room is completely free.* No meetings are currently scheduled for this date.",
-      },
-    });
+    if (!liveStatus) {
+      bodyBlocks.push({
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: "*The Meeting Room is completely free.* No meetings are currently scheduled for this date.",
+        },
+      });
+    }
   } else {
     if (activeBookings.length > 0) {
       const listItems = activeBookings.map((b) => {
@@ -572,12 +563,12 @@ export function buildScheduleBlockKit(
         return `>*${b.start_time} – ${b.end_time}* — *${title}* (by ${orgName})${channelTag}${statusLabel}`;
       });
 
-      blocks.push({
+      bodyBlocks.push({
         type: "section",
         text: { type: "mrkdwn", text: listItems.join("\n") },
       });
     } else {
-      blocks.push({
+      bodyBlocks.push({
         type: "section",
         text: {
           type: "mrkdwn",
@@ -587,13 +578,12 @@ export function buildScheduleBlockKit(
     }
 
     if (completedBookings.length > 0) {
-      blocks.push({ type: "divider" });
-      blocks.push({
-        type: "section",
-        text: {
-          type: "mrkdwn",
-          text: "*Past Meetings Today:*",
-        },
+      bodyBlocks.push({ type: "divider" });
+      // Demoted to a context element (vs. a bold section) — same information,
+      // less visual weight than the upcoming list above it.
+      bodyBlocks.push({
+        type: "context",
+        elements: [{ type: "mrkdwn", text: "*Past Meetings Today*" }],
       });
 
       const completedItems = completedBookings.map((b) => {
@@ -604,11 +594,16 @@ export function buildScheduleBlockKit(
         return `>~*${b.start_time} – ${b.end_time}* — *${title}* (by ${orgName})~${channelTag} · ${statusDetail}`;
       });
 
-      blocks.push({
+      bodyBlocks.push({
         type: "section",
         text: { type: "mrkdwn", text: completedItems.join("\n") },
       });
     }
+  }
+
+  if (bodyBlocks.length > 0) {
+    blocks.push({ type: "divider" });
+    blocks.push(...bodyBlocks);
   }
 
   blocks.push({ type: "divider" });
@@ -635,11 +630,11 @@ export function buildScheduleBlockKit(
     countSummary = "0 meetings.";
   }
 
-  return {
-    text: `${statusLeadText}Meeting Room Schedule for ${dateStr}: ${countSummary}`,
-    blocks,
-    color: MEETING_COLORS.updated,
-  };
+  const text = statusLeadText
+    ? `${statusLeadText} — ${dateStr}: ${countSummary}`
+    : `Meeting Room Schedule for ${dateStr}: ${countSummary}`;
+
+  return { text, blocks, color };
 }
 
 /**

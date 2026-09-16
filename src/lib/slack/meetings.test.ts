@@ -90,11 +90,13 @@ describe("buildScheduleBlockKit", () => {
 
     const message = buildScheduleBlockKit("2026-09-15", [mockBooking1], appUrl, liveStatus);
 
-    expect(message.text).toContain('🔴 In Use: "Tech Sync" until 10:00.');
+    expect(message.text).toContain("In Use until 10:00");
+    expect(message.color).toBe("#e01e5a"); // MEETING_COLORS.occupied — status is color, not emoji
     const jsonBlocks = JSON.stringify(message.blocks);
-    expect(jsonBlocks).toContain("🔴 *In Use*");
-    expect(jsonBlocks).toContain("Tech Sync");
-    expect(jsonBlocks).toContain("until 10:00");
+    expect(jsonBlocks).toContain("*In Use* until 10:00");
+    // Title/organizer/channel are not restated in the status line — only the
+    // list below (asserted separately) shows them, so this must appear once.
+    expect((jsonBlocks.match(/Tech Sync/g) || []).length).toBe(1);
     expect(jsonBlocks).toContain("Alice Leader");
     expect(jsonBlocks).toContain("#dev-team");
   });
@@ -109,9 +111,13 @@ describe("buildScheduleBlockKit", () => {
 
     const message = buildScheduleBlockKit("2026-09-15", [mockBooking2], appUrl, liveStatus);
 
-    expect(message.text).toContain("🟢 Available until 14:00.");
+    expect(message.text).toContain("Available until 14:00");
+    expect(message.color).toBe("#2eb67d"); // MEETING_COLORS.available
     const jsonBlocks = JSON.stringify(message.blocks);
-    expect(jsonBlocks).toContain("🟢 *Available* — free until 14:00, then \\\"Design Review\\\"");
+    expect(jsonBlocks).toContain("*Available* until 14:00");
+    // The next meeting's title isn't repeated in the status line — the list
+    // below (asserted in the channel-tag test) is the only place it appears.
+    expect(jsonBlocks).not.toContain("then");
   });
 
   it("renders Available — no further meetings when room is free and nothing left", () => {
@@ -124,10 +130,13 @@ describe("buildScheduleBlockKit", () => {
 
     const message = buildScheduleBlockKit("2026-09-15", [], appUrl, liveStatus);
 
-    expect(message.text).toContain("🟢 Available.");
+    expect(message.text).toContain("Available — 2026-09-15: 0 meetings.");
+    expect(message.color).toBe("#2eb67d"); // MEETING_COLORS.available
     const jsonBlocks = JSON.stringify(message.blocks);
-    expect(jsonBlocks).toContain("🟢 *Available* — no further meetings today");
-    expect(jsonBlocks).toContain("The Meeting Room is completely free");
+    expect(jsonBlocks).toContain("*Available* — free for the rest of the day");
+    // The status line already says the room is free — the old separate
+    // "completely free" paragraph would have been pure repetition here.
+    expect(jsonBlocks).not.toContain("The Meeting Room is completely free");
   });
 
   it("omits the live status section for a non-today date", () => {
@@ -137,10 +146,11 @@ describe("buildScheduleBlockKit", () => {
     expect(message.text).not.toContain("In Use");
     expect(message.text).not.toContain("Available");
     expect(message.text).toBe("Meeting Room Schedule for 2026-12-25: 1 meeting.");
+    expect(message.color).toBe("#ecb22e"); // MEETING_COLORS.updated fallback — no status to color by
 
     const jsonBlocks = JSON.stringify(message.blocks);
-    expect(jsonBlocks).not.toContain("🔴 *In Use*");
-    expect(jsonBlocks).not.toContain("🟢 *Available*");
+    expect(jsonBlocks).not.toContain("*In Use*");
+    expect(jsonBlocks).not.toContain("*Available*");
     expect(jsonBlocks).toContain("Tech Sync");
   });
 
@@ -179,7 +189,7 @@ describe("buildScheduleBlockKit", () => {
     const message = buildScheduleBlockKit("2026-09-15", [mockBooking2, completedBooking], appUrl);
     const jsonBlocks = JSON.stringify(message.blocks);
 
-    expect(jsonBlocks).toContain("Past Meetings Today:");
+    expect(jsonBlocks).toContain("Past Meetings Today");
     expect(jsonBlocks).toContain("Morning Standup");
     expect(jsonBlocks).toContain("[Ended early at 09:45]");
     expect(jsonBlocks).toContain("~*09:00 – 10:00* — *Morning Standup* (by Alice Leader)~ · #dev-team · [Ended early at 09:45]");
