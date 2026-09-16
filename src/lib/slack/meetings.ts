@@ -442,6 +442,45 @@ export function buildMeetingCancelledBlockKit(
   };
 }
 
+/**
+ * Builds a short, low-key DM sent to organizers of that day's other, later
+ * meetings when an earlier meeting is extended. This is a courtesy heads-up,
+ * never a warning: extendMeeting()'s collision check already guarantees an
+ * extension can't overlap a later meeting's start time, so the recipient's
+ * own booking is always unaffected by definition — the copy says so plainly
+ * rather than implying any risk to their slot.
+ */
+export function buildMeetingExtendedNoticeDM(
+  extendedMeeting: MeetingBooking,
+  organizer: User,
+  appUrl: string
+): SlackMessage {
+  const title = truncate(escapeSlackText(extendedMeeting.title), HEADER_TEXT_MAX);
+
+  const blocks: object[] = [
+    { type: "header", text: { type: "plain_text", text: "Meeting Room Update", emoji: false } },
+    {
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: `*"${title}"* (organized by ${formatUserTag(organizer)}) has been extended to *${extendedMeeting.end_time}*.`,
+      },
+    },
+    {
+      type: "context",
+      elements: [{ type: "mrkdwn", text: "Your meeting today is unaffected — just a heads-up." }],
+    },
+    { type: "divider" },
+    viewInAppButton("View in App", appUrl, extendedMeeting),
+  ];
+
+  return {
+    text: `Meeting Room Update: "${extendedMeeting.title}" extended to ${extendedMeeting.end_time} — your meeting today is unaffected.`,
+    blocks,
+    color: MEETING_COLORS.updated,
+  };
+}
+
 function formatOfficeTime(isoString: string): string {
   try {
     const d = new Date(isoString);

@@ -228,7 +228,8 @@ export type NotificationType =
   | "meeting_scheduled"
   | "meeting_starting"
   | "meeting_cancelled"
-  | "meeting_message";
+  | "meeting_message"
+  | "meeting_extended";
 
 export interface Notification {
   id: string;

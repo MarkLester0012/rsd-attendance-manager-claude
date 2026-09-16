@@ -19,6 +19,7 @@ import {
   buildMeetingUpdatedBlockKit,
   buildMeetingCancelledBlockKit,
   buildAttendeeMessageDM,
+  buildMeetingExtendedNoticeDM,
   type AttendeeWithStatus,
 } from "@/lib/slack/meetings";
 import { createBookingCore, VALID_TIME, type CreateBookingCoreInput } from "@/lib/meetings/create-booking";
@@ -439,7 +440,7 @@ export async function extendMeeting(bookingId: string, additionalMinutes: number
 
   const { data: booking, error: bErr } = await supabase
     .from("meeting_room_bookings")
-    .select("*")
+    .select("*, organizer:users!meeting_room_bookings_organizer_id_fkey(*)")
     .eq("id", bookingId)
     .single();
 
@@ -486,6 +487,62 @@ export async function extendMeeting(bookingId: string, additionalMinutes: number
       return { error: "Cannot extend: the meeting room is booked for that time." };
     }
     return { error: updateErr.message };
+  }
+
+  // Courtesy heads-up to organizers of that day's other, later meetings.
+  // checkMeetingCollision above already guarantees this extension can never
+  // overlap their booking, so this is purely informational — gated on
+  // notify_channel like every other Slack touchpoint for this booking.
+  if (booking.notify_channel) {
+    const { data: laterBookings } = await supabase
+      .from("meeting_room_bookings")
+      .select("organizer:users!meeting_room_bookings_organizer_id_fkey(*)")
+      .eq("meeting_date", booking.meeting_date)
+      .neq("id", bookingId)
+      .neq("organizer_id", booking.organizer_id)
+      .in("status", ["scheduled", "in_progress"])
+      .gt("start_time", booking.start_time);
+
+    const seenOrganizerIds = new Set<string>();
+    const recipients: User[] = [];
+    for (const row of (laterBookings as unknown as { organizer: User | null }[]) || []) {
+      if (row.organizer && !seenOrganizerIds.has(row.organizer.id)) {
+        seenOrganizerIds.add(row.organizer.id);
+        recipients.push(row.organizer);
+      }
+    }
+
+    if (recipients.length > 0) {
+      const extendedBooking = { ...booking, end_time: newEndTime };
+      const organizer = (booking.organizer as User) || null;
+
+      if (organizer) {
+        const botToken = await getWorkspaceBotToken();
+        if (botToken) {
+          const message = buildMeetingExtendedNoticeDM(extendedBooking, organizer, APP_URL);
+          await Promise.allSettled(
+            recipients
+              .filter((u) => u.slack_user_id)
+              .map((u) =>
+                postDirectMessage(botToken, u.slack_user_id as string, message.text, message.blocks, message.color)
+              )
+          );
+        }
+      }
+
+      const { error: notifError } = await supabase.rpc("create_notifications", {
+        payload: recipients.map((u) => ({
+          user_id: u.id,
+          type: "meeting_extended" as const,
+          title: `Meeting Room: "${booking.title}" extended`,
+          body: `Extended to ${newEndTime}. Your meeting today is unaffected.`,
+          data: { booking_id: bookingId, meeting_date: booking.meeting_date },
+        })),
+      });
+      if (notifError) {
+        console.error("Failed to notify other organizers of meeting extension:", notifError.message);
+      }
+    }
   }
 
   revalidatePath("/meeting-room");

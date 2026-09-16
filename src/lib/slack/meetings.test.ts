@@ -3,6 +3,7 @@ import {
   buildScheduleBlockKit,
   buildMeetingBookedBlockKit,
   buildMeetingInvitedDM,
+  buildMeetingExtendedNoticeDM,
   getCompletionStatus,
 } from "./meetings";
 import type { MeetingBooking, User } from "@/lib/types";
@@ -296,5 +297,22 @@ describe("booking-confirmation DMs", () => {
     expect(jsonBlocks).not.toContain("*Attendees:* <@U12345>");
     expect(jsonBlocks).toContain(">Weekly sync");
     expect(jsonBlocks).not.toContain("You've been invited");
+  });
+});
+
+describe("buildMeetingExtendedNoticeDM", () => {
+  const appUrl = "http://localhost:3000";
+
+  it("tells the recipient their own meeting is unaffected, not at risk", () => {
+    const extended: MeetingBooking = { ...mockBooking1, end_time: "10:30", was_extended: true };
+    const message = buildMeetingExtendedNoticeDM(extended, mockOrganizer, appUrl);
+
+    const jsonBlocks = JSON.stringify(message.blocks);
+    expect(jsonBlocks).toContain("Tech Sync");
+    expect(jsonBlocks).toContain("10:30");
+    expect(jsonBlocks).toContain("<@U12345>"); // the extended meeting's organizer
+    expect(jsonBlocks).toContain("unaffected");
+    expect(message.text).toContain("unaffected");
+    expect(message.text).toContain("10:30");
   });
 });

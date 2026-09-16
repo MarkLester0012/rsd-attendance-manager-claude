@@ -528,7 +528,7 @@ begin
        and sender.role <> 'hr' then
       raise exception 'only HR can send % notifications', item_type;
     end if;
-    if item_type in ('meeting_scheduled', 'meeting_starting', 'meeting_cancelled', 'meeting_message')
+    if item_type in ('meeting_scheduled', 'meeting_starting', 'meeting_cancelled', 'meeting_message', 'meeting_extended')
        and sender.role not in ('leader', 'hr') then
       raise exception 'only leaders or HR can send % notifications', item_type;
     end if;

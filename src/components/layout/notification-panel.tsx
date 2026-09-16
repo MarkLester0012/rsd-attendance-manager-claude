@@ -18,6 +18,7 @@ import {
   PartyPopper,
   Bus,
   DoorOpen,
+  Timer,
 } from "lucide-react";
 import {
   Popover,
@@ -64,6 +65,7 @@ const ICON_MAP: Record<
   meeting_starting: { icon: DoorOpen, color: "text-emerald-600 dark:text-emerald-400" },
   meeting_cancelled: { icon: CalendarX, color: "text-red-600 dark:text-red-400" },
   meeting_message: { icon: MessageCircle, color: "text-blue-600 dark:text-blue-400" },
+  meeting_extended: { icon: Timer, color: "text-amber-600 dark:text-amber-400" },
 };
 
 const NOTIFICATION_ROUTES: Record<NotificationType, string> = {
@@ -85,6 +87,7 @@ const NOTIFICATION_ROUTES: Record<NotificationType, string> = {
   meeting_starting: "/meeting-room",
   meeting_cancelled: "/meeting-room",
   meeting_message: "/meeting-room",
+  meeting_extended: "/meeting-room",
 };
 
 const MEETING_NOTIFICATION_TYPES: NotificationType[] = [
@@ -92,6 +95,7 @@ const MEETING_NOTIFICATION_TYPES: NotificationType[] = [
   "meeting_starting",
   "meeting_cancelled",
   "meeting_message",
+  "meeting_extended",
 ];
 
 /** Deep-links a meeting notification to its specific booking when the data is present. */
