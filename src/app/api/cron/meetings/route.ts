@@ -4,7 +4,12 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { timeToMinutes } from "@/lib/utils/meeting-conflicts";
 import { officeDateString, officeMinutesOfDay } from "@/lib/utils/office-time";
 import { getWorkspaceBotToken, postChatMessage, postDirectMessage } from "@/lib/slack/client";
-import { buildMeetingStartBlockKit, buildMeetingDM, type AttendeeWithStatus } from "@/lib/slack/meetings";
+import {
+  buildMeetingStartBlockKit,
+  buildMeetingDM,
+  buildMeetingCancelledBlockKit,
+  type AttendeeWithStatus,
+} from "@/lib/slack/meetings";
 import { resolveAttendeeStatus } from "@/lib/utils/meeting-conflicts";
 import type { MeetingBooking, User } from "@/lib/types";
 
@@ -123,6 +128,73 @@ async function startMeeting(
   }
 }
 
+/**
+ * Cancels a single meeting that was never started and whose whole window has
+ * elapsed — otherwise nothing ever touches it (pass 2 below only auto-starts
+ * `scheduled` rows where `currentMinutes < endMin`, and pass 1 only
+ * auto-completes rows already `in_progress`), so it would stay `scheduled`
+ * forever, showing up as a phantom "upcoming" meeting on that date's
+ * schedule indefinitely. Reuses `cancelled` status — no new status value.
+ */
+async function autoCancelAbandonedMeeting(
+  supabase: ReturnType<typeof createAdminClient>,
+  booking: BookingRow,
+  attendees: User[]
+): Promise<void> {
+  // Claim before doing any Slack/notification work, so a race with a late
+  // manual start or cancel can only ever resolve once — same pattern as
+  // startMeeting above.
+  const { data: claimed } = await supabase
+    .from("meeting_room_bookings")
+    .update({ status: "cancelled" })
+    .eq("id", booking.id)
+    .eq("status", "scheduled")
+    .select("id")
+    .single();
+
+  if (!claimed) return;
+
+  const organizerUser = booking.organizer;
+  const botToken = await getWorkspaceBotToken();
+
+  if (botToken && organizerUser && booking.notify_channel) {
+    const channelName = booking.slack_channel || DEFAULT_CHANNEL;
+    const message = buildMeetingCancelledBlockKit(
+      booking,
+      organizerUser,
+      "the system — meeting was never started",
+      APP_URL
+    );
+    const result = await postChatMessage(botToken, channelName, message.text, message.blocks, message.color);
+    if (!result.ok) {
+      console.error(`Failed to post auto-cancellation for booking ${booking.id}:`, result.error);
+    }
+  }
+
+  // Session-less admin-client context (no auth.uid()), so this inserts
+  // directly rather than going through the create_notifications RPC — same
+  // precedent as startMeeting's notification above.
+  const notifyIds = attendees.map((u) => u.id);
+  if (notifyIds.length > 0) {
+    try {
+      const { error: notifError } = await supabase.from("notifications").insert(
+        notifyIds.map((userId) => ({
+          user_id: userId,
+          type: "meeting_cancelled",
+          title: `Meeting Cancelled: ${booking.title}`,
+          body: `Automatically cancelled — the meeting scheduled for ${booking.start_time}–${booking.end_time} was never started.`,
+          data: { booking_id: booking.id, meeting_date: booking.meeting_date },
+        }))
+      );
+      if (notifError) {
+        console.error(`Failed to notify attendees of auto-cancelled meeting ${booking.id}:`, notifError.message);
+      }
+    } catch (e) {
+      console.error(`Error notifying attendees of auto-cancelled meeting ${booking.id}:`, e);
+    }
+  }
+}
+
 export async function GET(req: Request) {
   if (!isAuthorized(req)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -154,7 +226,8 @@ export async function GET(req: Request) {
       .eq("status", "in_progress");
   }
 
-  // ─── Pass 2: start meetings whose start_time has arrived ────────────────
+  // ─── Pass 2: start meetings whose start_time has arrived, or cancel ones
+  // whose window closed before anyone ever started them ────────────────────
   const { data: bookings, error: bookingsErr } = await supabase
     .from("meeting_room_bookings")
     .select("*, organizer:users!meeting_room_bookings_organizer_id_fkey(*)")
@@ -166,16 +239,26 @@ export async function GET(req: Request) {
     return NextResponse.json({ ok: false, error: bookingsErr.message }, { status: 500 });
   }
 
-  const startingMeetings = ((bookings as BookingRow[]) || []).filter((b) => {
+  const scheduledBookings = (bookings as BookingRow[]) || [];
+
+  const startingMeetings = scheduledBookings.filter((b) => {
     const startMin = timeToMinutes(b.start_time);
     const endMin = timeToMinutes(b.end_time);
     return currentMinutes >= startMin && currentMinutes < endMin;
   });
 
-  const startedIds: string[] = [];
+  // A `scheduled` meeting whose end_time has already passed falls through
+  // startingMeetings' `currentMinutes < endMin` check above and would
+  // otherwise never be touched by either pass — this is that catch.
+  const abandonedMeetings = scheduledBookings.filter(
+    (b) => currentMinutes >= timeToMinutes(b.end_time)
+  );
 
-  if (startingMeetings.length > 0) {
-    const bookingIds = startingMeetings.map((b) => b.id);
+  const startedIds: string[] = [];
+  const cancelledIds: string[] = [];
+
+  if (startingMeetings.length > 0 || abandonedMeetings.length > 0) {
+    const bookingIds = [...startingMeetings, ...abandonedMeetings].map((b) => b.id);
 
     const { data: attendeesData } = await supabase
       .from("meeting_attendees")
@@ -215,6 +298,16 @@ export async function GET(req: Request) {
         console.error(`Error auto-starting meeting ${booking.id}:`, e);
       }
     }
+
+    for (const booking of abandonedMeetings) {
+      try {
+        const attendees = attendeesByBooking.get(booking.id) || [];
+        await autoCancelAbandonedMeeting(supabase, booking, attendees);
+        cancelledIds.push(booking.id);
+      } catch (e) {
+        console.error(`Error auto-cancelling abandoned meeting ${booking.id}:`, e);
+      }
+    }
   }
 
   return NextResponse.json({
@@ -223,5 +316,7 @@ export async function GET(req: Request) {
     checked: startingMeetings.length,
     started: startedIds.length,
     startedIds,
+    autoCancelled: cancelledIds.length,
+    autoCancelledIds: cancelledIds,
   });
 }

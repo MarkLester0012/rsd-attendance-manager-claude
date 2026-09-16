@@ -66,17 +66,25 @@ async function getAuthorizedLeaderOrHR() {
   return { error: null, caller, supabase };
 }
 
-/** Sends channel + per-attendee DM Slack notifications for a meeting starting now. */
+/**
+ * Sends channel + per-attendee DM Slack notifications for a meeting starting
+ * now. Returns a short warning string when the channel post itself failed
+ * (bad channel name, bot not invited, etc.) so a caller with a live request
+ * can surface it — undefined otherwise, including when no bot token is
+ * configured at all (a global config issue, not something worth a toast on
+ * every single start).
+ */
 async function sendMeetingStartSlack(
   booking: { id: string; title: string; description: string | null; organizer_id: string; meeting_date: string; start_time: string; end_time: string; status: string; notify_channel: boolean; slack_channel: string | null; slack_message_ts: string | null; started_at: string | null; ended_at: string | null; created_at: string; updated_at: string },
   organizer: User,
   attendeesWithStatus: AttendeeWithStatus[],
   supabase: Awaited<ReturnType<typeof createClient>>
-) {
+): Promise<string | undefined> {
   const botToken = await getWorkspaceBotToken();
-  if (!botToken) return;
+  if (!botToken) return undefined;
 
   const channelName = booking.slack_channel || DEFAULT_CHANNEL;
+  let slackWarning: string | undefined;
 
   if (booking.notify_channel) {
     const message = buildMeetingStartBlockKit(booking as never, organizer, attendeesWithStatus, APP_URL);
@@ -94,6 +102,7 @@ async function sendMeetingStartSlack(
         .eq("id", booking.id);
     } else if (!postResult.ok) {
       console.error(`Failed to post meeting-start message for booking ${booking.id}:`, postResult.error);
+      slackWarning = `Meeting started, but the Slack post to #${channelName} failed: ${postResult.error ?? "unknown error"}`;
     }
   }
 
@@ -111,6 +120,8 @@ async function sendMeetingStartSlack(
         );
       })
   );
+
+  return slackWarning;
 }
 
 export interface CreateBookingInput {
@@ -205,6 +216,9 @@ export async function updateBooking(bookingId: string, input: UpdateBookingInput
   if (!existing) return { error: "Booking not found" };
   if (existing.status === "cancelled" || existing.status === "completed") {
     return { error: `Cannot edit a ${existing.status} meeting` };
+  }
+  if (caller.role !== "hr" && existing.organizer_id !== caller.id) {
+    return { error: "Only the organizer or HR can edit this meeting." };
   }
   // The date field is locked in the edit modal, so this only ever matters for
   // a meeting scheduled today — the same past-time gap createBookingCore
@@ -304,6 +318,7 @@ export async function updateBooking(bookingId: string, input: UpdateBookingInput
 
   const organizer = (existing.organizer as User) || caller;
   const notifyChannel = input.notify_channel ?? true;
+  let slackWarning: string | undefined;
   if (notifyChannel) {
     const botToken = await getWorkspaceBotToken();
     if (botToken) {
@@ -327,6 +342,7 @@ export async function updateBooking(bookingId: string, input: UpdateBookingInput
       );
       if (!result.ok) {
         console.error(`Failed to post meeting-updated message for booking ${bookingId}:`, result.error);
+        slackWarning = `Meeting saved, but the Slack post to #${effectiveChannel} failed: ${result.error ?? "unknown error"}`;
       }
     }
   }
@@ -349,7 +365,7 @@ export async function updateBooking(bookingId: string, input: UpdateBookingInput
 
   revalidatePath("/meeting-room");
   revalidatePath("/calendar");
-  return { success: true };
+  return { success: true, slackWarning };
 }
 
 export async function startMeetingAndNotify(bookingId: string) {
@@ -394,7 +410,7 @@ export async function startMeetingAndNotify(bookingId: string) {
   }));
 
   const organizerUser = (claimed.organizer as User) || caller;
-  await sendMeetingStartSlack(claimed, organizerUser, attendeesWithStatus, supabase);
+  const slackWarning = await sendMeetingStartSlack(claimed, organizerUser, attendeesWithStatus, supabase);
 
   const startedByNote =
     caller.id === organizerUser.id ? `Organized by ${organizerUser.name}` : `Organized by ${organizerUser.name}, started by ${caller.name}`;
@@ -417,7 +433,7 @@ export async function startMeetingAndNotify(bookingId: string) {
 
   revalidatePath("/meeting-room");
   revalidatePath("/calendar");
-  return { success: true };
+  return { success: true, slackWarning };
 }
 
 export async function endMeetingEarly(bookingId: string) {
@@ -571,6 +587,9 @@ export async function cancelBooking(bookingId: string) {
   if (!booking) return { error: "Booking not found" };
   if (booking.status === "cancelled") return { error: "This meeting is already cancelled." };
   if (booking.status === "completed") return { error: "Cannot cancel a completed meeting." };
+  if (caller.role !== "hr" && booking.organizer_id !== caller.id) {
+    return { error: "Only the organizer or HR can cancel this meeting." };
+  }
 
   const { error: updateErr } = await supabase
     .from("meeting_room_bookings")
@@ -581,18 +600,21 @@ export async function cancelBooking(bookingId: string) {
 
   const organizer = (booking.organizer as User) || caller;
 
+  let slackWarning: string | undefined;
   const botToken = await getWorkspaceBotToken();
   if (botToken && booking.notify_channel) {
+    const cancelChannel = booking.slack_channel || DEFAULT_CHANNEL;
     const message = buildMeetingCancelledBlockKit(booking, organizer, caller.name, APP_URL);
     const result = await postChatMessage(
       botToken,
-      booking.slack_channel || DEFAULT_CHANNEL,
+      cancelChannel,
       message.text,
       message.blocks,
       message.color
     );
     if (!result.ok) {
       console.error(`Failed to post cancellation for booking ${bookingId}:`, result.error);
+      slackWarning = `Meeting cancelled, but the Slack post to #${cancelChannel} failed: ${result.error ?? "unknown error"}`;
     }
   }
 
@@ -625,7 +647,7 @@ export async function cancelBooking(bookingId: string) {
 
   revalidatePath("/meeting-room");
   revalidatePath("/calendar");
-  return { success: true };
+  return { success: true, slackWarning };
 }
 
 export async function messageAttendees(bookingId: string, message: string) {

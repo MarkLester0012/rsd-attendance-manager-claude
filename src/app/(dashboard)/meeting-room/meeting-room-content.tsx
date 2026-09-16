@@ -280,6 +280,7 @@ export function MeetingRoomContent({
         toast.error(res.error);
       } else {
         toast.success(`Meeting "${title}" started! Announcements broadcasted.`);
+        if (res.slackWarning) toast.warning(res.slackWarning);
         router.refresh();
       }
     } catch {
@@ -332,6 +333,7 @@ export function MeetingRoomContent({
         toast.error(res.error);
       } else {
         toast.success(`Meeting "${title}" cancelled.`);
+        if (res.slackWarning) toast.warning(res.slackWarning);
         router.refresh();
       }
     } catch {
@@ -803,6 +805,12 @@ export function MeetingRoomContent({
           filteredBookings.map((b) => {
             const isOrganizer = b.organizer_id === currentUser.id;
             const canModify = canManageMeetings || isOrganizer;
+            // Edit/Cancel are narrower than the rest of canModify's actions
+            // (Start/Extend/End Early/Message Attendees stay open to any
+            // leader helping run the room in person) — only the organizer or
+            // HR can edit or cancel someone's booking, matching the server's
+            // own check in actions.ts.
+            const canEditOrCancel = currentUser.role === "hr" || isOrganizer;
 
             // Resolve attendee statuses
             const attendeesWithStatus = (b.attendees || []).map((att) => {
@@ -1023,7 +1031,7 @@ export function MeetingRoomContent({
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                            {b.status === "scheduled" && (
+                            {b.status === "scheduled" && canEditOrCancel && (
                               <DropdownMenuItem onClick={() => setEditingBooking(b)}>
                                 <Pencil className="h-3.5 w-3.5 mr-2" />
                                 Edit Meeting
@@ -1038,7 +1046,7 @@ export function MeetingRoomContent({
                               <MessageSquare className="h-3.5 w-3.5 mr-2" />
                               Message Attendees
                             </DropdownMenuItem>
-                            {b.status === "scheduled" && (
+                            {b.status === "scheduled" && canEditOrCancel && (
                               <DropdownMenuItem
                                 onClick={() => handleCancel(b.id, b.title)}
                                 className="text-destructive focus:text-destructive"

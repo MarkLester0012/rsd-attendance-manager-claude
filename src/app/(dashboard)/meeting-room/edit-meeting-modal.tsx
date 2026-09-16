@@ -139,6 +139,7 @@ export function EditMeetingModal({
       }
 
       toast.success("Meeting updated successfully!");
+      if (res.slackWarning) toast.warning(res.slackWarning);
       onSuccess();
     } catch {
       toast.error("Failed to update meeting");

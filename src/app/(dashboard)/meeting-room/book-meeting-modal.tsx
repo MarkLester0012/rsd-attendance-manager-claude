@@ -27,7 +27,7 @@ import { toast } from "sonner";
 import { format, parseISO } from "date-fns";
 import { Loader2, Search, Check, Users, UserX } from "lucide-react";
 import { createBooking } from "./actions";
-import { resolveAttendeeStatus, timeToMinutes, isBookingInThePast, type LeaveRecord } from "@/lib/utils/meeting-conflicts";
+import { resolveAttendeeStatus, timeToMinutes, minutesToTime, isBookingInThePast, type LeaveRecord } from "@/lib/utils/meeting-conflicts";
 import { parseSlackChannel } from "@/lib/utils/slack-channel";
 import { officeDateString, officeMinutesOfDay } from "@/lib/utils/office-time";
 import { createClient } from "@/lib/supabase/client";
@@ -40,6 +40,23 @@ const TIME_OPTIONS = Array.from({ length: 27 }, (_, i) => {
   const m = totalMinutes % 60;
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 });
+
+const FIRST_START_MINUTES = 7 * 60; // 07:00, matches TIME_OPTIONS' first slot
+const LAST_START_MINUTES = 19 * 60 + 30; // 19:30, matches TIME_OPTIONS' last start slot
+
+/**
+ * For today, defaults to office-now rounded up to the next 30-minute slot
+ * (clamped into the pickable range) instead of a fixed 09:00 — opening the
+ * modal in the afternoon used to default to a start time already in the
+ * past, which the past-time validation would then just reject. Any other
+ * date keeps the plain 09:00 default.
+ */
+function defaultStartTimeFor(meetingDateStr: string, todayStr: string): string {
+  if (meetingDateStr !== todayStr) return "09:00";
+  const rounded = Math.ceil(officeMinutesOfDay() / 30) * 30;
+  const clamped = Math.min(Math.max(rounded, FIRST_START_MINUTES), LAST_START_MINUTES);
+  return minutesToTime(clamped);
+}
 
 interface BookMeetingModalProps {
   open: boolean;
@@ -71,11 +88,13 @@ export function BookMeetingModal({
   // Default to the date currently being viewed, but never pre-fill a date
   // before today (e.g. when opened while browsing a past date's schedule) —
   // 'yyyy-MM-dd' strings compare correctly as plain strings.
-  const [meetingDate, setMeetingDate] = useState(
-    currentDateStr >= todayStr ? currentDateStr : todayStr
+  const initialMeetingDate = currentDateStr >= todayStr ? currentDateStr : todayStr;
+  const [meetingDate, setMeetingDate] = useState(initialMeetingDate);
+  const initialStartTime = defaultStartTimeFor(initialMeetingDate, todayStr);
+  const [startTime, setStartTime] = useState(initialStartTime);
+  const [endTime, setEndTime] = useState(
+    minutesToTime(Math.min(timeToMinutes(initialStartTime) + 60, 20 * 60))
   );
-  const [startTime, setStartTime] = useState("09:00");
-  const [endTime, setEndTime] = useState("10:00");
   const [selectedAttendees, setSelectedAttendees] = useState<Set<string>>(
     new Set([currentUser.id])
   );

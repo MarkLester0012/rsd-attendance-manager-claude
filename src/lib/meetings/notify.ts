@@ -9,6 +9,13 @@ import { buildMeetingBookedBlockKit, buildMeetingInvitedDM } from "@/lib/slack/m
  * points (the web server action and the Slack `/meeting-room book` modal
  * submission) so this is written once, like `createBookingCore` for the DB
  * write.
+ *
+ * Deliberately NOT gated on `booking.notify_channel` — that toggle's own UI
+ * copy ("Posts a Block Kit card to the channel and sends direct messages to
+ * attendees when meeting starts") only ever claimed to cover the channel
+ * post and the meeting-start DMs, never this booking confirmation. Gating it
+ * here too was a bug: turning the toggle off silently suppressed an
+ * organizer's own confirmation of their own booking.
  */
 export async function notifyBookingCreated(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -18,8 +25,6 @@ export async function notifyBookingCreated(
   attendeeIds: string[],
   appUrl: string
 ): Promise<void> {
-  if (!booking.notify_channel) return;
-
   const botToken = await getWorkspaceBotToken();
   if (!botToken) return;
 
