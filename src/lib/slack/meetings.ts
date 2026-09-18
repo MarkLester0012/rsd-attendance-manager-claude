@@ -3,6 +3,8 @@ import type { MeetingAttendeeStatus, MeetingBooking, User } from "@/lib/types";
 import { timeToMinutes, type getLiveRoomStatus } from "@/lib/utils/meeting-conflicts";
 import { OFFICE_TZ } from "@/lib/utils/office-time";
 
+const DEFAULT_CHANNEL = process.env.SLACK_MEETING_ROOM_CHANNEL || "rsd-leader-team";
+
 export interface AttendeeWithStatus {
   user: User;
   status: MeetingAttendeeStatus;
@@ -234,7 +236,7 @@ export function buildMeetingStartBlockKit(
   attendees: AttendeeWithStatus[],
   appUrl: string
 ): SlackMessage {
-  const channelName = meeting.slack_channel || "rsd-leader-team";
+  const channelName = meeting.slack_channel || DEFAULT_CHANNEL;
   const channelRef = channelName.startsWith("#") ? channelName : `#${channelName}`;
   const title = truncate(escapeSlackText(meeting.title), HEADER_TEXT_MAX);
   const description = meeting.description
@@ -314,7 +316,7 @@ export function buildMeetingDM(
   status: MeetingAttendeeStatus,
   appUrl: string
 ): SlackMessage {
-  const channelName = meeting.slack_channel || "rsd-leader-team";
+  const channelName = meeting.slack_channel || DEFAULT_CHANNEL;
   const channelRef = channelName.startsWith("#") ? channelName : `#${channelName}`;
   const title = truncate(escapeSlackText(meeting.title), HEADER_TEXT_MAX);
 
@@ -508,8 +510,8 @@ function formatOfficeTime(isoString: string): string {
  * time a genuinely-extended meeting completes, ended_at naturally lands close
  * to that (already-extended) end_time — a time-diff comparison alone can
  * never actually detect it, and would instead misfire "Extended" for a
- * normal meeting the once-a-minute auto-complete cron happened to catch a
- * minute late.
+ * normal meeting the 15-minute auto-complete cron tick happened to catch a
+ * bit late.
  */
 export function getCompletionStatus(booking: MeetingBooking): string {
   if (booking.was_extended) {
@@ -598,7 +600,7 @@ export function buildScheduleBlockKit(
         const statusLabel = b.status === "in_progress" ? " — *In Progress*" : "";
         const orgName = b.organizer?.name ? escapeSlackText(b.organizer.name) : "Unknown";
         const title = truncate(escapeSlackText(b.title), 200);
-        const channelTag = b.notify_channel ? ` · #${b.slack_channel || "rsd-leader-team"}` : "";
+        const channelTag = b.notify_channel ? ` · #${b.slack_channel || DEFAULT_CHANNEL}` : "";
         return `>*${b.start_time} – ${b.end_time}* — *${title}* (by ${orgName})${channelTag}${statusLabel}`;
       });
 
@@ -628,7 +630,7 @@ export function buildScheduleBlockKit(
       const completedItems = completedBookings.map((b) => {
         const orgName = b.organizer?.name ? escapeSlackText(b.organizer.name) : "Unknown";
         const title = truncate(escapeSlackText(b.title), 200);
-        const channelTag = b.notify_channel ? ` · #${b.slack_channel || "rsd-leader-team"}` : "";
+        const channelTag = b.notify_channel ? ` · #${b.slack_channel || DEFAULT_CHANNEL}` : "";
         const statusDetail = getCompletionStatus(b);
         return `>~*${b.start_time} – ${b.end_time}* — *${title}* (by ${orgName})~${channelTag} · ${statusDetail}`;
       });

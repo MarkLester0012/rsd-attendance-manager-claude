@@ -36,12 +36,16 @@ function isAuthorized(req: Request): boolean {
 
 type BookingRow = MeetingBooking & { organizer: User | null };
 
-/** Starts a single meeting: claims it, sends Slack traffic, records the result. */
+/**
+ * Starts a single meeting: claims it, sends Slack traffic, records the
+ * result. Returns true only when this call actually claimed and started the
+ * booking (false when a manual click already claimed it first).
+ */
 async function startMeeting(
   supabase: ReturnType<typeof createAdminClient>,
   booking: BookingRow,
   attendeesWithStatus: AttendeeWithStatus[]
-): Promise<void> {
+): Promise<boolean> {
   // Claim the booking before sending any Slack traffic. A guarded update means
   // this can only ever succeed once, even if a manual "Start & Notify Slack"
   // click races this same cron tick — the loser sends nothing.
@@ -53,61 +57,64 @@ async function startMeeting(
     .select("id")
     .single();
 
-  if (!claimed) return; // someone else (manual start) already claimed it
-
-  const botToken = await getWorkspaceBotToken();
-  if (!botToken) return;
+  if (!claimed) return false; // someone else (manual start) already claimed it
 
   const organizerUser = booking.organizer;
-  if (!organizerUser) {
-    console.error(`Meeting ${booking.id} has no resolvable organizer; skipping Slack broadcast.`);
-    return;
-  }
+  const organizerName = organizerUser?.name || "the organizer";
 
-  const channelName = booking.slack_channel || DEFAULT_CHANNEL;
+  // Slack posting is best-effort and requires both a bot token and a
+  // resolvable organizer — but the in-app notification below must still run
+  // either way, otherwise a missing SLACK_BOT_TOKEN silently notifies no one.
+  const botToken = await getWorkspaceBotToken();
+  if (botToken && organizerUser) {
+    const channelName = booking.slack_channel || DEFAULT_CHANNEL;
 
-  if (booking.notify_channel) {
-    const message = buildMeetingStartBlockKit(booking, organizerUser, attendeesWithStatus, APP_URL);
-    const postResult = await postChatMessage(
-      botToken,
-      channelName,
-      message.text,
-      message.blocks,
-      message.color
-    );
-    if (postResult.ok && postResult.ts) {
-      await supabase
-        .from("meeting_room_bookings")
-        .update({ slack_message_ts: postResult.ts })
-        .eq("id", booking.id);
-    } else if (!postResult.ok) {
-      console.error(`Failed to post meeting-start message for booking ${booking.id}:`, postResult.error);
+    if (booking.notify_channel) {
+      const message = buildMeetingStartBlockKit(booking, organizerUser, attendeesWithStatus, APP_URL);
+      const postResult = await postChatMessage(
+        botToken,
+        channelName,
+        message.text,
+        message.blocks,
+        message.color
+      );
+      if (postResult.ok && postResult.ts) {
+        await supabase
+          .from("meeting_room_bookings")
+          .update({ slack_message_ts: postResult.ts })
+          .eq("id", booking.id);
+      } else if (!postResult.ok) {
+        console.error(`Failed to post meeting-start message for booking ${booking.id}:`, postResult.error);
+      }
     }
-  }
 
-  await Promise.allSettled(
-    attendeesWithStatus
-      .filter((item) => item.user.slack_user_id)
-      .map((item) => {
-        const dmPayload = buildMeetingDM(booking, organizerUser, item.status, APP_URL);
-        return postDirectMessage(
-          botToken,
-          item.user.slack_user_id as string,
-          dmPayload.text,
-          dmPayload.blocks,
-          dmPayload.color
-        );
-      })
-  );
+    await Promise.allSettled(
+      attendeesWithStatus
+        .filter((item) => item.user.slack_user_id)
+        .map((item) => {
+          const dmPayload = buildMeetingDM(booking, organizerUser, item.status, APP_URL);
+          return postDirectMessage(
+            botToken,
+            item.user.slack_user_id as string,
+            dmPayload.text,
+            dmPayload.blocks,
+            dmPayload.color
+          );
+        })
+    );
+  } else if (!organizerUser) {
+    console.error(`Meeting ${booking.id} has no resolvable organizer; skipping Slack broadcast.`);
+  }
 
   // Session-less admin-client context (no auth.uid()), so this inserts
   // directly rather than going through the create_notifications RPC — same
   // pattern as api/slack/shortcut/route.ts's Slack-booking notification, and
   // the same shape as the manual "Start & Notify Slack" button
-  // (meeting-room/actions.ts's meeting_starting notification).
+  // (meeting-room/actions.ts's meeting_starting notification). Runs
+  // regardless of whether Slack posting happened above.
   const notifyIds = attendeesWithStatus
     .map((item) => item.user.id)
-    .filter((id) => id !== organizerUser.id);
+    .filter((id) => id !== organizerUser?.id);
   if (notifyIds.length > 0) {
     try {
       const { error: notifError } = await supabase.from("notifications").insert(
@@ -115,7 +122,7 @@ async function startMeeting(
           user_id: userId,
           type: "meeting_starting",
           title: `Meeting Starting Now: ${booking.title}`,
-          body: `Organized by ${organizerUser.name}, started automatically in the Meeting Room`,
+          body: `Organized by ${organizerName}, started automatically in the Meeting Room`,
           data: { booking_id: booking.id, meeting_date: booking.meeting_date },
         }))
       );
@@ -126,6 +133,8 @@ async function startMeeting(
       console.error(`Error notifying attendees of auto-started meeting ${booking.id}:`, e);
     }
   }
+
+  return true;
 }
 
 /**
@@ -140,7 +149,7 @@ async function autoCancelAbandonedMeeting(
   supabase: ReturnType<typeof createAdminClient>,
   booking: BookingRow,
   attendees: User[]
-): Promise<void> {
+): Promise<boolean> {
   // Claim before doing any Slack/notification work, so a race with a late
   // manual start or cancel can only ever resolve once — same pattern as
   // startMeeting above.
@@ -152,7 +161,7 @@ async function autoCancelAbandonedMeeting(
     .select("id")
     .single();
 
-  if (!claimed) return;
+  if (!claimed) return false;
 
   const organizerUser = booking.organizer;
   const botToken = await getWorkspaceBotToken();
@@ -193,6 +202,8 @@ async function autoCancelAbandonedMeeting(
       console.error(`Error notifying attendees of auto-cancelled meeting ${booking.id}:`, e);
     }
   }
+
+  return true;
 }
 
 export async function GET(req: Request) {
@@ -210,12 +221,12 @@ export async function GET(req: Request) {
   // "Occupied" indefinitely.
   const { data: staleInProgress } = await supabase
     .from("meeting_room_bookings")
-    .select("id, end_time")
-    .eq("meeting_date", today)
+    .select("id, end_time, meeting_date")
+    .lte("meeting_date", today)
     .eq("status", "in_progress");
 
   const toComplete = (staleInProgress || [])
-    .filter((b) => currentMinutes >= timeToMinutes(b.end_time))
+    .filter((b) => b.meeting_date < today || currentMinutes >= timeToMinutes(b.end_time))
     .map((b) => b.id);
 
   if (toComplete.length > 0) {
@@ -231,7 +242,7 @@ export async function GET(req: Request) {
   const { data: bookings, error: bookingsErr } = await supabase
     .from("meeting_room_bookings")
     .select("*, organizer:users!meeting_room_bookings_organizer_id_fkey(*)")
-    .eq("meeting_date", today)
+    .lte("meeting_date", today)
     .eq("status", "scheduled");
 
   if (bookingsErr) {
@@ -244,14 +255,17 @@ export async function GET(req: Request) {
   const startingMeetings = scheduledBookings.filter((b) => {
     const startMin = timeToMinutes(b.start_time);
     const endMin = timeToMinutes(b.end_time);
-    return currentMinutes >= startMin && currentMinutes < endMin;
+    // Never auto-start a meeting left over from a past date — only today's
+    // bookings can transition to in_progress here.
+    return b.meeting_date === today && currentMinutes >= startMin && currentMinutes < endMin;
   });
 
   // A `scheduled` meeting whose end_time has already passed falls through
   // startingMeetings' `currentMinutes < endMin` check above and would
-  // otherwise never be touched by either pass — this is that catch.
+  // otherwise never be touched by either pass — this is that catch. Also
+  // covers any booking left `scheduled` on a past date entirely.
   const abandonedMeetings = scheduledBookings.filter(
-    (b) => currentMinutes >= timeToMinutes(b.end_time)
+    (b) => b.meeting_date < today || currentMinutes >= timeToMinutes(b.end_time)
   );
 
   const startedIds: string[] = [];
@@ -277,23 +291,26 @@ export async function GET(req: Request) {
       new Set(Array.from(attendeesByBooking.values()).flat().map((u) => u.id))
     );
 
-    const { data: leaves } = await supabase
-      .from("leaves")
-      .select("user_id, leave_type, leave_date, duration, status")
-      .in("user_id", allAttendeeIds.length > 0 ? allAttendeeIds : [""])
-      .eq("leave_date", today)
-      .eq("status", "approved");
+    const { data: leaves } =
+      allAttendeeIds.length > 0
+        ? await supabase
+            .from("leaves")
+            .select("user_id, leave_type, leave_date, duration, status")
+            .in("user_id", allAttendeeIds)
+            .eq("leave_date", today)
+            .eq("status", "approved")
+        : { data: [] as never[] };
 
     for (const booking of startingMeetings) {
       try {
         const attendees = attendeesByBooking.get(booking.id) || [];
         const attendeesWithStatus: AttendeeWithStatus[] = attendees.map((u) => ({
           user: u,
-          status: resolveAttendeeStatus(u.id, today, (leaves as never) || [], booking.start_time),
+          status: resolveAttendeeStatus(u.id, today, leaves || [], booking.start_time),
         }));
 
-        await startMeeting(supabase, booking, attendeesWithStatus);
-        startedIds.push(booking.id);
+        const started = await startMeeting(supabase, booking, attendeesWithStatus);
+        if (started) startedIds.push(booking.id);
       } catch (e) {
         console.error(`Error auto-starting meeting ${booking.id}:`, e);
       }
@@ -302,8 +319,8 @@ export async function GET(req: Request) {
     for (const booking of abandonedMeetings) {
       try {
         const attendees = attendeesByBooking.get(booking.id) || [];
-        await autoCancelAbandonedMeeting(supabase, booking, attendees);
-        cancelledIds.push(booking.id);
+        const cancelled = await autoCancelAbandonedMeeting(supabase, booking, attendees);
+        if (cancelled) cancelledIds.push(booking.id);
       } catch (e) {
         console.error(`Error auto-cancelling abandoned meeting ${booking.id}:`, e);
       }

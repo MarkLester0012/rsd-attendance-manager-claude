@@ -38,6 +38,23 @@ export function isBookingInThePast(
 }
 
 /**
+ * Formats a duration in minutes as "Xh Ym" (e.g. 90 -> "1h 30m").
+ */
+export function formatMinutesAsDuration(totalMinutes: number): string {
+  const mins = Math.max(0, Math.round(totalMinutes));
+  const hours = Math.floor(mins / 60);
+  const minutes = mins % 60;
+  return `${hours}h ${minutes}m`;
+}
+
+/**
+ * Formats the duration between two "HH:mm" times as "Xh Ym".
+ */
+export function formatDuration(startTime: string, endTime: string): string {
+  return formatMinutesAsDuration(timeToMinutes(endTime) - timeToMinutes(startTime));
+}
+
+/**
  * Checks if two time intervals overlap.
  * Assumes start < end for each interval.
  */

@@ -8,6 +8,8 @@ Attendance and leave management system for Ring System Development.
 npm run dev          # Start dev server (Turbopack) on localhost:3000
 npm run build        # Production build
 npm run lint         # ESLint
+npm test             # Run tests (vitest)
+npm run typecheck    # Type check (tsc --noEmit)
 node supabase/seed-production.mjs   # Seed DB (1 HR user, 2 depts, 17 holidays)
 node supabase/seed-database.mjs     # Seed DB (13 users, 5 depts, sample data)
 ```

@@ -1,18 +1,11 @@
+import { TIME_OPTIONS as MEETING_TIME_OPTIONS } from "@/lib/meetings/time-slots";
+
 // private_metadata is capped at 3 000 chars by Slack — a single user id fits
 // with plenty of room to spare.
 export interface BookMeetingModalMetadata {
   organizerId: string;
   slackChannel?: string;
 }
-
-// Standard 30-min time slots from 07:00 to 20:00 — matches TIME_OPTIONS in
-// meeting-room/book-meeting-modal.tsx (the web app's equivalent picker).
-export const MEETING_TIME_OPTIONS: string[] = Array.from({ length: 27 }, (_, i) => {
-  const totalMinutes = 7 * 60 + i * 30;
-  const h = Math.floor(totalMinutes / 60);
-  const m = totalMinutes % 60;
-  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
-});
 
 function timeOptionBlocks(options: string[]) {
   return options.map((t) => ({

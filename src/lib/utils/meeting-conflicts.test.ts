@@ -7,6 +7,8 @@ import {
   resolveAttendeeStatus,
   getLiveRoomStatus,
   isBookingInThePast,
+  formatDuration,
+  formatMinutesAsDuration,
 } from "./meeting-conflicts";
 import type { MeetingBooking } from "@/lib/types";
 
@@ -16,6 +18,24 @@ describe("timeToMinutes & minutesToTime", () => {
     expect(timeToMinutes("14:30")).toBe(870);
     expect(minutesToTime(540)).toBe("09:00");
     expect(minutesToTime(870)).toBe("14:30");
+  });
+});
+
+describe("formatDuration & formatMinutesAsDuration", () => {
+  it("formats a whole-hour duration", () => {
+    expect(formatDuration("09:00", "10:00")).toBe("1h 0m");
+  });
+
+  it("formats an hour-and-minutes duration", () => {
+    expect(formatDuration("09:00", "10:30")).toBe("1h 30m");
+  });
+
+  it("formats a minutes-only duration", () => {
+    expect(formatDuration("09:00", "09:45")).toBe("0h 45m");
+  });
+
+  it("formats a raw minute count", () => {
+    expect(formatMinutesAsDuration(90)).toBe("1h 30m");
   });
 });
 

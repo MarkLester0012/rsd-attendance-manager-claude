@@ -31,15 +31,12 @@ import { resolveAttendeeStatus, timeToMinutes, minutesToTime, isBookingInThePast
 import { parseSlackChannel } from "@/lib/utils/slack-channel";
 import { officeDateString, officeMinutesOfDay } from "@/lib/utils/office-time";
 import { createClient } from "@/lib/supabase/client";
+import { TIME_OPTIONS } from "@/lib/meetings/time-slots";
 import type { User } from "@/lib/types";
 
-// Standard 30-min time slots from 07:00 to 20:00
-const TIME_OPTIONS = Array.from({ length: 27 }, (_, i) => {
-  const totalMinutes = 7 * 60 + i * 30;
-  const h = Math.floor(totalMinutes / 60);
-  const m = totalMinutes % 60;
-  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
-});
+// 20:00 (the last slot) can never be a valid start time — there's no later
+// slot to end at — so it's excluded from the start picker's own options.
+const START_TIME_OPTIONS = TIME_OPTIONS.slice(0, -1);
 
 const FIRST_START_MINUTES = 7 * 60; // 07:00, matches TIME_OPTIONS' first slot
 const LAST_START_MINUTES = 19 * 60 + 30; // 19:30, matches TIME_OPTIONS' last start slot
@@ -132,6 +129,20 @@ export function BookMeetingModal({
       cancelled = true;
     };
   }, [meetingDate, currentDateStr, leaves]);
+
+  // Only slots strictly after the selected start time are valid end times.
+  const endTimeOptions = TIME_OPTIONS.filter((t) => timeToMinutes(t) > timeToMinutes(startTime));
+
+  // Shift the end time by the same delta the start time just moved, clamped
+  // to the last available slot — otherwise moving a 09:00-10:00 meeting to
+  // 15:00 would strand an invalid 10:00 end.
+  const handleStartTimeChange = (newStart: string) => {
+    const delta = timeToMinutes(newStart) - timeToMinutes(startTime);
+    const lastSlotMinutes = timeToMinutes(TIME_OPTIONS[TIME_OPTIONS.length - 1]);
+    const newEndMinutes = Math.min(timeToMinutes(endTime) + delta, lastSlotMinutes);
+    setStartTime(newStart);
+    setEndTime(minutesToTime(newEndMinutes));
+  };
 
   const timeError =
     timeToMinutes(endTime) <= timeToMinutes(startTime)
@@ -258,13 +269,17 @@ export function BookMeetingModal({
 
             <div className="space-y-1.5">
               <Label>Start Time</Label>
-              <Select value={startTime} onValueChange={setStartTime}>
+              <Select value={startTime} onValueChange={handleStartTimeChange}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent className="max-h-52">
-                  {TIME_OPTIONS.map((t) => (
-                    <SelectItem key={t} value={t}>
+                  {START_TIME_OPTIONS.map((t) => (
+                    <SelectItem
+                      key={t}
+                      value={t}
+                      disabled={isBookingInThePast(meetingDate, t, todayStr, officeMinutesOfDay())}
+                    >
                       {t}
                     </SelectItem>
                   ))}
@@ -279,7 +294,7 @@ export function BookMeetingModal({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent className="max-h-52">
-                  {TIME_OPTIONS.map((t) => (
+                  {endTimeOptions.map((t) => (
                     <SelectItem key={t} value={t}>
                       {t}
                     </SelectItem>

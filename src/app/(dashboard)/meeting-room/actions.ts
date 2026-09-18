@@ -27,7 +27,7 @@ import {
 import { createBookingCore, VALID_TIME, type CreateBookingCoreInput } from "@/lib/meetings/create-booking";
 import { notifyBookingCreated } from "@/lib/meetings/notify";
 import { parseSlackChannel } from "@/lib/utils/slack-channel";
-import type { User } from "@/lib/types";
+import type { MeetingBooking, User } from "@/lib/types";
 
 // Server-only var (not NEXT_PUBLIC_): NEXT_PUBLIC_* vars are inlined into the
 // bundle at build time, so if unset at build time every Slack button would
@@ -75,7 +75,7 @@ async function getAuthorizedLeaderOrHR() {
  * every single start).
  */
 async function sendMeetingStartSlack(
-  booking: { id: string; title: string; description: string | null; organizer_id: string; meeting_date: string; start_time: string; end_time: string; status: string; notify_channel: boolean; slack_channel: string | null; slack_message_ts: string | null; started_at: string | null; ended_at: string | null; created_at: string; updated_at: string },
+  booking: MeetingBooking,
   organizer: User,
   attendeesWithStatus: AttendeeWithStatus[],
   supabase: Awaited<ReturnType<typeof createClient>>
@@ -87,7 +87,7 @@ async function sendMeetingStartSlack(
   let slackWarning: string | undefined;
 
   if (booking.notify_channel) {
-    const message = buildMeetingStartBlockKit(booking as never, organizer, attendeesWithStatus, APP_URL);
+    const message = buildMeetingStartBlockKit(booking, organizer, attendeesWithStatus, APP_URL);
     const postResult = await postChatMessage(
       botToken,
       channelName,
@@ -110,7 +110,7 @@ async function sendMeetingStartSlack(
     attendeesWithStatus
       .filter((item) => item.user.slack_user_id)
       .map((item) => {
-        const dmPayload = buildMeetingDM(booking as never, organizer, item.status, APP_URL);
+        const dmPayload = buildMeetingDM(booking, organizer, item.status, APP_URL);
         return postDirectMessage(
           botToken,
           item.user.slack_user_id as string,
@@ -237,7 +237,7 @@ export async function updateBooking(bookingId: string, input: UpdateBookingInput
   const collision = checkMeetingCollision(
     input.start_time,
     input.end_time,
-    (otherBookings as never) || [],
+    otherBookings || [],
     bookingId
   );
   if (collision.hasConflict) {
@@ -275,7 +275,7 @@ export async function updateBooking(bookingId: string, input: UpdateBookingInput
   }
 
   // Reconcile attendees: always keep the organizer.
-  const desiredIds = Array.from(new Set([caller.id, ...input.attendee_ids]));
+  const desiredIds = Array.from(new Set([existing.organizer_id, ...input.attendee_ids]));
   const { data: currentAttendees } = await supabase
     .from("meeting_attendees")
     .select("user_id")
@@ -332,7 +332,7 @@ export async function updateBooking(bookingId: string, input: UpdateBookingInput
         end_time: input.end_time,
         slack_channel: effectiveChannel,
       };
-      const message = buildMeetingUpdatedBlockKit(updatedBooking as never, organizer, caller.name, changes, APP_URL);
+      const message = buildMeetingUpdatedBlockKit(updatedBooking, organizer, caller.name, changes, APP_URL);
       const result = await postChatMessage(
         botToken,
         effectiveChannel,
@@ -397,16 +397,19 @@ export async function startMeetingAndNotify(bookingId: string) {
     .filter((u): u is User => Boolean(u));
 
   const attendeeIds = attendees.map((a) => a.id);
-  const { data: leaves } = await supabase
-    .from("leaves")
-    .select("user_id, leave_type, leave_date, duration, status")
-    .in("user_id", attendeeIds.length > 0 ? attendeeIds : [""])
-    .eq("leave_date", claimed.meeting_date)
-    .eq("status", "approved");
+  const { data: leaves } =
+    attendeeIds.length > 0
+      ? await supabase
+          .from("leaves")
+          .select("user_id, leave_type, leave_date, duration, status")
+          .in("user_id", attendeeIds)
+          .eq("leave_date", claimed.meeting_date)
+          .eq("status", "approved")
+      : { data: [] as never[] };
 
   const attendeesWithStatus: AttendeeWithStatus[] = attendees.map((u) => ({
     user: u,
-    status: resolveAttendeeStatus(u.id, claimed.meeting_date, (leaves as never) || [], claimed.start_time),
+    status: resolveAttendeeStatus(u.id, claimed.meeting_date, leaves || [], claimed.start_time),
   }));
 
   const organizerUser = (claimed.organizer as User) || caller;
@@ -490,7 +493,7 @@ export async function extendMeeting(bookingId: string, additionalMinutes: number
   const collision = checkMeetingCollision(
     booking.start_time,
     newEndTime,
-    (otherBookings as never) || [],
+    otherBookings || [],
     bookingId
   );
 
@@ -591,12 +594,16 @@ export async function cancelBooking(bookingId: string) {
     return { error: "Only the organizer or HR can cancel this meeting." };
   }
 
-  const { error: updateErr } = await supabase
+  const { data: cancelledRow, error: updateErr } = await supabase
     .from("meeting_room_bookings")
     .update({ status: "cancelled" })
     .eq("id", bookingId)
-    .eq("status", booking.status); // guard against a concurrent state change
-  if (updateErr) return { error: updateErr.message };
+    .eq("status", booking.status) // guard against a concurrent state change
+    .select("id")
+    .single();
+  if (updateErr || !cancelledRow) {
+    return { error: "This meeting was already updated by someone else." };
+  }
 
   const organizer = (booking.organizer as User) || caller;
 

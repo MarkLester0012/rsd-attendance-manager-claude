@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 export function RoomStatusBadge() {
   const [isOccupied, setIsOccupied] = useState<boolean | null>(null);
   const [currentMeetingEndTime, setCurrentMeetingEndTime] = useState<string | null>(null);
+  const [bookings, setBookings] = useState<MeetingBooking[]>([]);
 
   useEffect(() => {
     const supabase = createClient();
@@ -20,7 +21,7 @@ export function RoomStatusBadge() {
     async function checkStatus() {
       try {
         const todayStr = officeDateString();
-        const { data: bookings, error } = await supabase
+        const { data, error } = await supabase
           .from("meeting_room_bookings")
           .select("id, title, start_time, end_time, status, meeting_date")
           .eq("meeting_date", todayStr)
@@ -32,7 +33,10 @@ export function RoomStatusBadge() {
           return;
         }
 
-        const live = getLiveRoomStatus(officeMinutesOfDay(), (bookings || []) as MeetingBooking[]);
+        const rows = (data || []) as MeetingBooking[];
+        setBookings(rows);
+
+        const live = getLiveRoomStatus(officeMinutesOfDay(), rows);
 
         setIsOccupied(live.isOccupied);
         setCurrentMeetingEndTime(live.isOccupied && live.currentMeeting ? live.currentMeeting.end_time : null);
@@ -66,6 +70,19 @@ export function RoomStatusBadge() {
       supabase.removeChannel(channel);
     };
   }, []);
+
+  // Occupancy is purely time-derived, so recompute it from the already-fetched
+  // bookings every 60 seconds — no DB read needed. This closes the gap between
+  // a meeting's start/end time passing and the next DB write (e.g. the cron
+  // tick, up to 15 minutes later) that would otherwise leave the badge stale.
+  useEffect(() => {
+    const tick = setInterval(() => {
+      const live = getLiveRoomStatus(officeMinutesOfDay(), bookings);
+      setIsOccupied(live.isOccupied);
+      setCurrentMeetingEndTime(live.isOccupied && live.currentMeeting ? live.currentMeeting.end_time : null);
+    }, 60000);
+    return () => clearInterval(tick);
+  }, [bookings]);
 
   if (isOccupied === null) {
     return null; // Initial loading, avoid layout shift

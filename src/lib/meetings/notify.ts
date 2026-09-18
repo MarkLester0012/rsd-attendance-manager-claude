@@ -28,10 +28,10 @@ export async function notifyBookingCreated(
   const botToken = await getWorkspaceBotToken();
   if (!botToken) return;
 
-  const { data: attendeeUsers } = await supabase
-    .from("users")
-    .select("*")
-    .in("id", attendeeIds.length > 0 ? attendeeIds : [""]);
+  const { data: attendeeUsers } =
+    attendeeIds.length > 0
+      ? await supabase.from("users").select("*").in("id", attendeeIds)
+      : { data: [] as never[] };
 
   const attendees = (attendeeUsers as User[]) || [];
   const others = attendees.filter((u) => u.id !== organizer.id);
@@ -50,12 +50,12 @@ export async function notifyBookingCreated(
     }
   }
 
+  const invitedMessage = buildMeetingInvitedDM(booking, organizer, attendees, appUrl);
   await Promise.allSettled(
     others
       .filter((u) => u.slack_user_id)
-      .map((u) => {
-        const message = buildMeetingInvitedDM(booking, organizer, attendees, appUrl);
-        return postDirectMessage(botToken, u.slack_user_id as string, message.text, message.blocks, message.color);
-      })
+      .map((u) =>
+        postDirectMessage(botToken, u.slack_user_id as string, invitedMessage.text, invitedMessage.blocks, invitedMessage.color)
+      )
   );
 }

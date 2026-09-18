@@ -3,35 +3,11 @@
 import { useState, useMemo, useEffect, useRef, useCallback, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { format, addDays, subDays, parseISO } from "date-fns";
-import {
-  DoorOpen,
-  Clock,
-  Plus,
-  Play,
-  CheckCircle2,
-  XCircle,
-  ChevronLeft,
-  ChevronRight,
-  MessageSquare,
-  Radio,
-  Building2,
-  Laptop,
-  Palmtree,
-  Timer,
-  MoreVertical,
-  Pencil,
-  Loader2,
-} from "lucide-react";
+import { DoorOpen, Plus, ChevronLeft, ChevronRight, Loader2, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import {
   Dialog,
   DialogContent,
@@ -40,12 +16,24 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogAction,
+  AlertDialogCancel,
+} from "@/components/ui/alert-dialog";
 import { DatePickerButton } from "@/components/ui/date-picker-button";
 import { EmojiTextarea } from "@/components/ui/emoji-textarea";
-import { UserAvatar } from "@/components/ui/user-avatar";
 import { BookMeetingModal } from "./book-meeting-modal";
 import { EditMeetingModal } from "./edit-meeting-modal";
+import { RoomStatusHero } from "./room-status-hero";
+import { RoomStats } from "./room-stats";
+import { RoomTimeline } from "./room-timeline";
+import { BookingCard } from "./booking-card";
 import {
   startMeetingAndNotify,
   endMeetingEarly,
@@ -53,24 +41,11 @@ import {
   cancelBooking,
   messageAttendees,
 } from "./actions";
-import {
-  timeToMinutes,
-  minutesToTime,
-  getLiveRoomStatus,
-  resolveAttendeeStatus,
-  type LeaveRecord,
-} from "@/lib/utils/meeting-conflicts";
+import { getLiveRoomStatus, type LeaveRecord } from "@/lib/utils/meeting-conflicts";
 import { officeDateString, officeMinutesOfDay } from "@/lib/utils/office-time";
 import { createClient } from "@/lib/supabase/client";
-import { LEAVE_TYPES } from "@/lib/constants/leave-types";
-import type {
-  MeetingWithAttendees,
-  User,
-  MeetingAttendeeStatus,
-  LeaveTypeCode,
-} from "@/lib/types";
+import type { MeetingWithAttendees, User } from "@/lib/types";
 import { toast } from "sonner";
-import { cn } from "@/lib/utils";
 import { useRegisterPageContext } from "@/hooks/use-register-page-context";
 
 interface MeetingRoomContentProps {
@@ -82,20 +57,6 @@ interface MeetingRoomContentProps {
   highlightMeetingId: string | null;
   /** SLACK_MEETING_ROOM_CHANNEL, server-read (it isn't NEXT_PUBLIC_) — the channel used when a booking doesn't specify one. */
   defaultSlackChannel: string;
-}
-
-// Matches the 07:00-20:00 range offered in the booking modal's time picker,
-// so a booking at either edge of the day is never silently clipped off the
-// timeline.
-const TIMELINE_START_HOUR = 7;
-const TIMELINE_END_HOUR = 20;
-const TIMELINE_TOTAL_MINUTES = (TIMELINE_END_HOUR - TIMELINE_START_HOUR) * 60;
-const TIMELINE_HOURS = TIMELINE_END_HOUR - TIMELINE_START_HOUR;
-
-function durationLabel(duration: string | undefined): string {
-  if (duration === "half_am") return "AM half-day";
-  if (duration === "half_pm") return "PM half-day";
-  return "Full day";
 }
 
 export function MeetingRoomContent({
@@ -114,6 +75,7 @@ export function MeetingRoomContent({
   const [isBookModalOpen, setIsBookModalOpen] = useState(false);
   const [editingBooking, setEditingBooking] = useState<MeetingWithAttendees | null>(null);
   const [messagingBooking, setMessagingBooking] = useState<MeetingWithAttendees | null>(null);
+  const [cancellingBooking, setCancellingBooking] = useState<MeetingWithAttendees | null>(null);
   const [messageText, setMessageText] = useState("");
   const [sendingMessage, setSendingMessage] = useState(false);
   const [filterTab, setFilterTab] = useState<"all" | "in_progress" | "scheduled" | "completed">("all");
@@ -258,6 +220,27 @@ export function MeetingRoomContent({
     });
   }, [bookings, filterTab]);
 
+  // Per-tab counts for the filter Tabs below, computed the same way filteredBookings is.
+  const inProgressCount = useMemo(
+    () => bookings.filter((b) => b.status === "in_progress").length,
+    [bookings]
+  );
+  const scheduledCount = useMemo(
+    () => bookings.filter((b) => b.status === "scheduled").length,
+    [bookings]
+  );
+  const pastCount = useMemo(
+    () => bookings.filter((b) => b.status === "completed" || b.status === "cancelled").length,
+    [bookings]
+  );
+
+  const FILTER_TAB_LABELS: Record<typeof filterTab, string> = {
+    all: "All",
+    in_progress: "In Progress",
+    scheduled: "Scheduled",
+    completed: "Past",
+  };
+
   useRegisterPageContext("Meeting Room", {
     date: currentDateStr,
     roomStatus: liveStatus.isOccupied ? "occupied" : "available",
@@ -324,8 +307,14 @@ export function MeetingRoomContent({
     }
   };
 
-  const handleCancel = async (id: string, title: string) => {
-    if (!window.confirm(`Are you sure you want to cancel "${title}"?`)) return;
+  const handleCancel = (id: string, _title: string) => {
+    const booking = bookings.find((b) => b.id === id);
+    if (booking) setCancellingBooking(booking);
+  };
+
+  const confirmCancel = async () => {
+    if (!cancellingBooking) return;
+    const { id, title } = cancellingBooking;
     setActionLoading(id);
     try {
       const res = await cancelBooking(id);
@@ -340,6 +329,7 @@ export function MeetingRoomContent({
       toast.error("Failed to cancel meeting");
     } finally {
       setActionLoading(null);
+      setCancellingBooking(null);
     }
   };
 
@@ -366,32 +356,6 @@ export function MeetingRoomContent({
     }
   }, [messagingBooking, messageText]);
 
-  // Helper for attendee status pill — colors match the "in_office/virtual/on_leave"
-  // badges used in the attendee picker inside book-meeting-modal.tsx.
-  const renderAttendeeStatusPill = (status: MeetingAttendeeStatus) => {
-    switch (status) {
-      case "virtual":
-        return (
-          <span className="inline-flex items-center gap-1 text-[11px] font-medium text-blue-500 bg-blue-500/10 px-2 py-0.5 rounded-full border border-blue-500/30">
-            <Laptop className="h-3 w-3" /> WFH (Huddle)
-          </span>
-        );
-      case "on_leave":
-        return (
-          <span className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-500 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/30">
-            <Palmtree className="h-3 w-3" /> On Leave
-          </span>
-        );
-      case "in_office":
-      default:
-        return (
-          <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/30">
-            <Building2 className="h-3 w-3" /> In-Office
-          </span>
-        );
-    }
-  };
-
   return (
     <div className="space-y-6">
       {/* Header bar */}
@@ -414,291 +378,30 @@ export function MeetingRoomContent({
       </div>
 
       {/* Live Room Status Hero Banner (Shown prominently) */}
-      <Card
-        className={cn(
-          "border-2 transition-all duration-300 shadow-sm",
-          !isCurrentDayToday
-            ? "border-border"
-            : liveStatus.isOccupied
-            ? "border-amber-500/50"
-            : "border-emerald-500/40"
-        )}
-      >
-        <CardContent className="p-5 sm:p-6">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-5">
-            <div className="space-y-2">
-              <div className="flex items-center gap-2.5">
-                <span className="relative flex h-3.5 w-3.5">
-                  {isCurrentDayToday && liveStatus.isOccupied && (
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 bg-amber-400" />
-                  )}
-                  <span
-                    className={cn(
-                      "relative inline-flex rounded-full h-3.5 w-3.5",
-                      !isCurrentDayToday
-                        ? "bg-muted-foreground/40"
-                        : liveStatus.isOccupied
-                        ? "bg-amber-500"
-                        : "bg-emerald-500"
-                    )}
-                  />
-                </span>
-                <span
-                  className={cn(
-                    "text-xs font-bold uppercase tracking-wider",
-                    !isCurrentDayToday
-                      ? "text-muted-foreground"
-                      : liveStatus.isOccupied
-                      ? "text-amber-700 dark:text-amber-400"
-                      : "text-emerald-700 dark:text-emerald-400"
-                  )}
-                >
-                  {!isCurrentDayToday
-                    ? "Viewing Schedule"
-                    : liveStatus.isOccupied
-                    ? "Meeting Room is Currently Occupied"
-                    : "Meeting Room is Currently Available"}
-                </span>
-              </div>
+      <RoomStatusHero
+        isCurrentDayToday={isCurrentDayToday}
+        currentDateStr={currentDateStr}
+        liveStatus={liveStatus}
+        bookings={bookings}
+        defaultSlackChannel={defaultSlackChannel}
+        canManageMeetings={canManageMeetings}
+        actionLoading={actionLoading}
+        handleStartMeeting={handleStartMeeting}
+        handleExtend={handleExtend}
+        handleEndEarly={handleEndEarly}
+      />
 
-              {!isCurrentDayToday ? (
-                <div>
-                  <h3 className="text-xl font-semibold text-foreground">
-                    {format(parseISO(currentDateStr), "EEEE, MMMM d")}
-                  </h3>
-                  <p className="text-sm text-muted-foreground">
-                    {(() => {
-                      const activeCount = bookings.filter(
-                        (b) => b.status === "scheduled" || b.status === "in_progress"
-                      ).length;
-                      return activeCount > 0
-                        ? `${activeCount} meeting${activeCount === 1 ? "" : "s"} scheduled for this date.`
-                        : "No meetings scheduled for this date.";
-                    })()}
-                  </p>
-                </div>
-              ) : liveStatus.isOccupied && liveStatus.currentMeeting ? (
-                <div className="space-y-1">
-                  <h3 className="text-xl font-bold text-foreground">
-                    {liveStatus.currentMeeting.title}
-                  </h3>
-                  <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
-                    <span className="inline-flex items-center gap-1 font-medium text-foreground">
-                      <Clock className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-                      {liveStatus.currentMeeting.start_time} - {liveStatus.currentMeeting.end_time}
-                    </span>
-                    <span>•</span>
-                    <span>
-                      Organized by{" "}
-                      <strong>{liveStatus.currentMeeting.organizer?.name || "Organizer"}</strong>
-                    </span>
-                    {liveStatus.currentMeeting.notify_channel && (
-                      <Badge variant="secondary" className="gap-1 text-xs">
-                        <MessageSquare className="h-3 w-3 text-blue-500" /> #
-                        {liveStatus.currentMeeting.slack_channel || defaultSlackChannel}
-                      </Badge>
-                    )}
-                  </div>
-                </div>
-              ) : (
-                <div>
-                  <h3 className="text-xl font-semibold text-foreground">
-                    Ready for Ad-hoc or Scheduled Meetings
-                  </h3>
-                  <p className="text-sm text-muted-foreground">
-                    {liveStatus.nextMeeting ? (
-                      <>
-                        Next booking today:{" "}
-                        <strong className="text-foreground">
-                          &quot;{liveStatus.nextMeeting.title}&quot;
-                        </strong>{" "}
-                        at <strong>{liveStatus.nextMeeting.start_time}</strong>
-                      </>
-                    ) : (
-                      "No further meetings are scheduled for today."
-                    )}
-                  </p>
-                </div>
-              )}
-            </div>
-
-            {/* Right side live actions */}
-            <div className="flex flex-wrap items-center gap-2.5">
-              {liveStatus.isOccupied && liveStatus.currentMeeting ? (
-                <>
-                  {canManageMeetings && (
-                    <>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={actionLoading === liveStatus.currentMeeting.id}
-                        onClick={() => handleExtend(liveStatus.currentMeeting!.id, 15)}
-                        className="text-xs"
-                      >
-                        +15m Extend
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="destructive"
-                        disabled={actionLoading === liveStatus.currentMeeting.id}
-                        onClick={() => handleEndEarly(liveStatus.currentMeeting!.id)}
-                        className="text-xs"
-                      >
-                        End Meeting Early
-                      </Button>
-                    </>
-                  )}
-                  <a
-                    href={`https://slack.com/app_redirect?channel=${encodeURIComponent(
-                      liveStatus.currentMeeting.slack_channel || defaultSlackChannel
-                    )}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:underline px-2 py-1"
-                    title="Open Slack channel / huddle"
-                  >
-                    <Radio className="h-3.5 w-3.5 text-blue-500 animate-pulse" />
-                    Slack Huddle
-                  </a>
-                </>
-              ) : null}
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      {/* Stat row */}
+      <RoomStats bookings={bookings} isCurrentDayToday={isCurrentDayToday} liveStatus={liveStatus} />
 
       {/* Hourly Visual Timeline Track */}
-      <Card
-        className={cn(
-          "shadow-sm border-border transition-opacity",
-          isDateChangePending && "opacity-50 pointer-events-none"
-        )}
-      >
-        <CardHeader className="pb-3">
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="text-base font-semibold">
-                {isCurrentDayToday ? "Today's" : format(parseISO(currentDateStr), "MMM d")} Room Timeline
-              </CardTitle>
-              <CardDescription>
-                Visual schedule overview from {String(TIMELINE_START_HOUR).padStart(2, "0")}:00 to{" "}
-                {String(TIMELINE_END_HOUR).padStart(2, "0")}:00
-              </CardDescription>
-            </div>
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <span className="inline-flex items-center gap-1">
-                <span className="h-2.5 w-2.5 rounded-full bg-blue-500" /> Scheduled
-              </span>
-              <span className="inline-flex items-center gap-1">
-                <span className="h-2.5 w-2.5 rounded-full bg-amber-500" /> In Progress
-              </span>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="relative pt-2 pb-6">
-            {/* Timeline base track */}
-            <div className="relative h-10 w-full rounded-lg bg-muted/50 border border-border/60 overflow-hidden">
-              {/* Hourly division lines */}
-              {Array.from({ length: TIMELINE_HOURS + 1 }).map((_, idx) => {
-                const percent = (idx / TIMELINE_HOURS) * 100;
-                return (
-                  <div
-                    key={idx}
-                    className="absolute top-0 bottom-0 border-l border-border/40 pointer-events-none"
-                    style={{ left: `${percent}%` }}
-                  />
-                );
-              })}
-
-              {/* Booking blocks on timeline */}
-              {bookings
-                .filter((b) => b.status === "scheduled" || b.status === "in_progress")
-                .map((b) => {
-                  const startMin = timeToMinutes(b.start_time);
-                  const endMin = timeToMinutes(b.end_time);
-                  const timelineStartMin = TIMELINE_START_HOUR * 60;
-                  const timelineEndMin = TIMELINE_END_HOUR * 60;
-
-                  // Bound within timeline
-                  const clampedStart = Math.max(timelineStartMin, startMin);
-                  const clampedEnd = Math.min(timelineEndMin, endMin);
-
-                  if (clampedEnd <= clampedStart) return null;
-
-                  const leftPercent =
-                    ((clampedStart - timelineStartMin) / TIMELINE_TOTAL_MINUTES) * 100;
-                  const widthPercent =
-                    ((clampedEnd - clampedStart) / TIMELINE_TOTAL_MINUTES) * 100;
-
-                  const isInProgress = b.status === "in_progress";
-
-                  return (
-                    <div
-                      key={b.id}
-                      className={cn(
-                        "absolute top-1 bottom-1 rounded px-2 flex items-center justify-between text-xs font-medium text-white truncate shadow-sm transition-all",
-                        isInProgress
-                          ? "bg-amber-600 border border-amber-400"
-                          : "bg-blue-600 border border-blue-400"
-                      )}
-                      style={{
-                        left: `${leftPercent}%`,
-                        width: `${Math.max(widthPercent, 2)}%`,
-                      }}
-                      title={`${b.title} (${b.start_time} - ${b.end_time})`}
-                    >
-                      <span className="truncate">{b.title}</span>
-                      <span className="hidden sm:inline text-[10px] opacity-90 ml-1">
-                        {b.start_time}
-                      </span>
-                    </div>
-                  );
-                })}
-
-              {/* Current time vertical indicator line (if viewing today) */}
-              {isCurrentDayToday &&
-                currentTimeMinutes >= TIMELINE_START_HOUR * 60 &&
-                currentTimeMinutes <= TIMELINE_END_HOUR * 60 && (
-                  <div
-                    className="absolute top-0 bottom-0 w-0.5 bg-red-500 z-10 shadow"
-                    style={{
-                      left: `${((currentTimeMinutes - TIMELINE_START_HOUR * 60) / TIMELINE_TOTAL_MINUTES) * 100}%`,
-                    }}
-                    title={`Current time: ${minutesToTime(currentTimeMinutes)}`}
-                  >
-                    <div className="h-2 w-2 -ml-[3px] -mt-0.5 rounded-full bg-red-600" />
-                  </div>
-                )}
-            </div>
-
-            {/* Time labels below bar — positioned with the same percent math as
-                the gridlines above so they line up exactly (a flex `justify-between`
-                row of unequal-width labels does not align with fixed percent
-                positions). */}
-            <div className="relative mt-2 h-4 text-[11px] text-muted-foreground font-mono">
-              {Array.from({ length: TIMELINE_HOURS + 1 }).map((_, idx) => {
-                const hour = TIMELINE_START_HOUR + idx;
-                const percent = (idx / TIMELINE_HOURS) * 100;
-                const isFirst = idx === 0;
-                const isLast = idx === TIMELINE_HOURS;
-                return (
-                  <span
-                    key={idx}
-                    className="absolute whitespace-nowrap"
-                    style={{
-                      left: `${percent}%`,
-                      transform: isFirst ? undefined : isLast ? "translateX(-100%)" : "translateX(-50%)",
-                    }}
-                  >
-                    {String(hour).padStart(2, "0")}:00
-                  </span>
-                );
-              })}
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      <RoomTimeline
+        isCurrentDayToday={isCurrentDayToday}
+        currentDateStr={currentDateStr}
+        isDateChangePending={isDateChangePending}
+        bookings={bookings}
+        currentTimeMinutes={currentTimeMinutes}
+      />
 
       {/* Date Navigation & Controls */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-2">
@@ -746,11 +449,6 @@ export function MeetingRoomContent({
               dateFormat="EEEE, MMMM d, yyyy"
               className="min-w-[220px]"
             />
-            {isCurrentDayToday && (
-              <Badge variant="secondary" className="text-[10px] font-normal">
-                Today
-              </Badge>
-            )}
           </div>
         </div>
 
@@ -765,13 +463,13 @@ export function MeetingRoomContent({
               All ({bookings.length})
             </TabsTrigger>
             <TabsTrigger value="in_progress" className="text-xs">
-              In Progress
+              In Progress ({inProgressCount})
             </TabsTrigger>
             <TabsTrigger value="scheduled" className="text-xs">
-              Scheduled
+              Scheduled ({scheduledCount})
             </TabsTrigger>
             <TabsTrigger value="completed" className="text-xs">
-              Past
+              Past ({pastCount})
             </TabsTrigger>
           </TabsList>
         </Tabs>
@@ -787,7 +485,7 @@ export function MeetingRoomContent({
               <p className="text-sm text-muted-foreground max-w-sm mt-1">
                 {filterTab === "all"
                   ? `There are no meeting room bookings on ${format(parseISO(currentDateStr), "MMM d, yyyy")}.`
-                  : `No meetings in status "${filterTab}" on this date.`}
+                  : `No ${FILTER_TAB_LABELS[filterTab]} meetings on this date.`}
               </p>
               {canManageMeetings && (
                 <Button
@@ -802,268 +500,33 @@ export function MeetingRoomContent({
             </CardContent>
           </Card>
         ) : (
-          filteredBookings.map((b) => {
-            const isOrganizer = b.organizer_id === currentUser.id;
-            const canModify = canManageMeetings || isOrganizer;
-            // Edit/Cancel are narrower than the rest of canModify's actions
-            // (Start/Extend/End Early/Message Attendees stay open to any
-            // leader helping run the room in person) — only the organizer or
-            // HR can edit or cancel someone's booking, matching the server's
-            // own check in actions.ts.
-            const canEditOrCancel = currentUser.role === "hr" || isOrganizer;
-
-            // Resolve attendee statuses
-            const attendeesWithStatus = (b.attendees || []).map((att) => {
-              const status = resolveAttendeeStatus(att.user_id, b.meeting_date, leaves, b.start_time);
-              const leaveRecord = leaves.find(
-                (l) => l.user_id === att.user_id && l.leave_date === b.meeting_date && l.status === "approved"
-              );
-              return { ...att, resolvedStatus: status, leaveRecord };
-            });
-
-            return (
-              <Card
-                key={b.id}
-                ref={(el) => {
-                  if (el) cardRefs.current.set(b.id, el);
-                  else cardRefs.current.delete(b.id);
-                }}
-                className={cn(
-                  "transition-all duration-200 shadow-sm border",
-                  b.id === highlightedId && "ring-2 ring-primary ring-offset-2 ring-offset-background",
-                  b.status === "in_progress"
-                    ? "border-amber-400 dark:border-amber-700 bg-amber-50/30 dark:bg-amber-950/10"
-                    : b.status === "cancelled"
-                    ? "opacity-60 bg-muted/30"
-                    : "border-border hover:border-border/80"
-                )}
-              >
-                <CardContent className="p-4 sm:p-5">
-                  <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
-                    {/* Main Meeting Details */}
-                    <div className="space-y-3 flex-1">
-                      {/* Status and Time badges */}
-                      <div className="flex flex-wrap items-center gap-2">
-                        {/* Time slot badge */}
-                        <Badge
-                          variant="secondary"
-                          className="font-mono text-xs px-2.5 py-1 gap-1.5 bg-primary/10 text-primary border-primary/20"
-                        >
-                          <Clock className="h-3 w-3" />
-                          {b.start_time} - {b.end_time}
-                        </Badge>
-
-                        {/* Status badge */}
-                        {b.status === "in_progress" && (
-                          <Badge className="bg-amber-600 hover:bg-amber-600 text-white gap-1 text-xs animate-pulse">
-                            <Radio className="h-3 w-3" /> In Progress
-                          </Badge>
-                        )}
-                        {b.status === "scheduled" && (
-                          <Badge variant="outline" className="text-blue-600 dark:text-blue-400 border-blue-300 text-xs">
-                            Scheduled
-                          </Badge>
-                        )}
-                        {b.status === "completed" && (
-                          <Badge variant="secondary" className="text-emerald-600 dark:text-emerald-400 text-xs gap-1">
-                            <CheckCircle2 className="h-3 w-3" /> Completed
-                          </Badge>
-                        )}
-                        {b.status === "cancelled" && (
-                          <Badge variant="destructive" className="text-xs gap-1">
-                            <XCircle className="h-3 w-3" /> Cancelled
-                          </Badge>
-                        )}
-
-                        {/* Slack integration indicator */}
-                        {b.notify_channel && (
-                          <Badge
-                            variant="outline"
-                            className="text-xs text-muted-foreground gap-1 border-border/70"
-                          >
-                            <MessageSquare className="h-3 w-3 text-blue-500" />
-                            #{b.slack_channel || defaultSlackChannel}
-                          </Badge>
-                        )}
-                      </div>
-
-                      {/* Title & Description */}
-                      <div>
-                        <h4
-                          className={cn(
-                            "text-base font-semibold text-foreground",
-                            b.status === "cancelled" && "line-through text-muted-foreground"
-                          )}
-                        >
-                          {b.title}
-                        </h4>
-                        {b.description && (
-                          <p className="text-sm text-muted-foreground mt-0.5 line-clamp-2">
-                            {b.description}
-                          </p>
-                        )}
-                      </div>
-
-                      {/* Organizer */}
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                        <span>Organized by:</span>
-                        <div className="flex items-center gap-1.5 font-medium text-foreground">
-                          <UserAvatar
-                            name={b.organizer?.name || "Organizer"}
-                            size="xs"
-                            className="h-5 w-5 text-[10px]"
-                          />
-                          <span>{b.organizer?.name || "Organizer"}</span>
-                        </div>
-                      </div>
-
-                      {/* Attendees with detected status */}
-                      <div className="space-y-1.5 pt-1">
-                        <span className="text-xs font-medium text-muted-foreground">
-                          Attendees ({attendeesWithStatus.length}):
-                        </span>
-                        <div className="flex flex-wrap gap-1.5">
-                          {attendeesWithStatus.map((att) => (
-                            <Popover key={att.id}>
-                              <PopoverTrigger asChild>
-                                <button
-                                  type="button"
-                                  className="inline-flex items-center gap-1.5 bg-muted/60 hover:bg-muted px-2 py-1 rounded-md text-xs border border-border/50"
-                                >
-                                  <UserAvatar
-                                    name={att.user?.name || "User"}
-                                    size="xs"
-                                    className="h-4 w-4 text-[9px]"
-                                  />
-                                  <span className="font-medium text-foreground">
-                                    {att.user?.name || "Unknown"}
-                                  </span>
-                                  {renderAttendeeStatusPill(att.resolvedStatus)}
-                                </button>
-                              </PopoverTrigger>
-                              <PopoverContent align="start" className="w-64 text-sm">
-                                <div className="space-y-1.5">
-                                  <p className="font-medium text-foreground">{att.user?.name}</p>
-                                  <div className="text-xs text-muted-foreground space-y-1">
-                                    <p>
-                                      Role: <span className="text-foreground capitalize">{att.user?.role}</span>
-                                    </p>
-                                    {att.user?.department?.name && (
-                                      <p>
-                                        Department:{" "}
-                                        <span className="text-foreground">{att.user.department.name}</span>
-                                      </p>
-                                    )}
-                                    <p>
-                                      Slack:{" "}
-                                      {att.user?.slack_user_id ? (
-                                        <span className="text-emerald-600 dark:text-emerald-400">Linked</span>
-                                      ) : (
-                                        <span className="text-muted-foreground">Not linked</span>
-                                      )}
-                                    </p>
-                                    {att.leaveRecord && (
-                                      <p>
-                                        {LEAVE_TYPES[att.leaveRecord.leave_type as LeaveTypeCode]?.label ||
-                                          att.leaveRecord.leave_type}{" "}
-                                        — {durationLabel(att.leaveRecord.duration)}
-                                      </p>
-                                    )}
-                                  </div>
-                                </div>
-                              </PopoverContent>
-                            </Popover>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Right side actions */}
-                    {canModify && b.status !== "cancelled" && b.status !== "completed" && (
-                      <div className="flex md:flex-col items-end justify-end gap-2 shrink-0">
-                        {b.status === "scheduled" && (
-                          <Button
-                            size="sm"
-                            onClick={() => handleStartMeeting(b.id, b.title)}
-                            disabled={actionLoading === b.id}
-                            className="gap-1.5 text-xs shadow-sm"
-                          >
-                            <Play className="h-3.5 w-3.5 fill-current" />
-                            Start & Notify Slack
-                          </Button>
-                        )}
-
-                        {b.status === "in_progress" && (
-                          <>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => handleExtend(b.id, 15)}
-                              disabled={actionLoading === b.id}
-                              className="text-xs gap-1"
-                            >
-                              <Timer className="h-3.5 w-3.5" />
-                              +15m
-                            </Button>
-
-                            <Button
-                              size="sm"
-                              variant="destructive"
-                              onClick={() => handleEndEarly(b.id)}
-                              disabled={actionLoading === b.id}
-                              className="text-xs"
-                            >
-                              End Early
-                            </Button>
-                          </>
-                        )}
-
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              className="h-8 w-8"
-                              disabled={actionLoading === b.id}
-                              title="More actions"
-                            >
-                              <MoreVertical className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            {b.status === "scheduled" && canEditOrCancel && (
-                              <DropdownMenuItem onClick={() => setEditingBooking(b)}>
-                                <Pencil className="h-3.5 w-3.5 mr-2" />
-                                Edit Meeting
-                              </DropdownMenuItem>
-                            )}
-                            <DropdownMenuItem
-                              onClick={() => {
-                                setMessageText("");
-                                setMessagingBooking(b);
-                              }}
-                            >
-                              <MessageSquare className="h-3.5 w-3.5 mr-2" />
-                              Message Attendees
-                            </DropdownMenuItem>
-                            {b.status === "scheduled" && canEditOrCancel && (
-                              <DropdownMenuItem
-                                onClick={() => handleCancel(b.id, b.title)}
-                                className="text-destructive focus:text-destructive"
-                              >
-                                <XCircle className="h-3.5 w-3.5 mr-2" />
-                                Cancel Meeting
-                              </DropdownMenuItem>
-                            )}
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </div>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })
+          filteredBookings.map((b) => (
+            <BookingCard
+              key={b.id}
+              booking={b}
+              currentUser={currentUser}
+              leaves={leaves}
+              defaultSlackChannel={defaultSlackChannel}
+              canManageMeetings={canManageMeetings}
+              isHighlighted={b.id === highlightedId}
+              actionLoading={actionLoading}
+              isCurrentDayToday={isCurrentDayToday}
+              currentTimeMinutes={currentTimeMinutes}
+              onCardRef={(el) => {
+                if (el) cardRefs.current.set(b.id, el);
+                else cardRefs.current.delete(b.id);
+              }}
+              handleStartMeeting={handleStartMeeting}
+              handleExtend={handleExtend}
+              handleEndEarly={handleEndEarly}
+              handleCancel={handleCancel}
+              onEdit={(booking) => setEditingBooking(booking)}
+              onMessage={(booking) => {
+                setMessageText("");
+                setMessagingBooking(booking);
+              }}
+            />
+          ))
         )}
       </div>
 
@@ -1136,6 +599,32 @@ export function MeetingRoomContent({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Cancel Meeting Confirmation */}
+      <AlertDialog
+        open={!!cancellingBooking}
+        onOpenChange={(o) => {
+          if (!o) setCancellingBooking(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Cancel &quot;{cancellingBooking?.title}&quot;?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Attendees will be notified in Slack and in-app. This can&apos;t be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep it</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmCancel}
+              className="bg-destructive text-destructive-foreground shadow-sm hover:bg-destructive/90"
+            >
+              Cancel meeting
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
