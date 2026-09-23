@@ -17,17 +17,10 @@ import { officeDateString, officeMinutesOfDay } from "@/lib/utils/office-time";
 import { normalizeSlackChannel, isValidSlackChannel } from "@/lib/utils/slack-channel";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { withTimeout } from "@/lib/supabase/with-timeout";
+import { APP_URL, DEFAULT_CHANNEL } from "@/lib/meetings/config";
 import type { MeetingBooking } from "@/lib/types";
 
 export const runtime = "nodejs";
-
-// Server-only var (not NEXT_PUBLIC_) so it resolves at request time rather than
-// being inlined at build time — see APP_URL note in meeting-room/actions.ts.
-const APP_URL = process.env.APP_URL || "http://localhost:3000";
-if (!process.env.APP_URL && process.env.NODE_ENV === "production") {
-  console.error("APP_URL is not set — Slack links in this route will point at localhost.");
-}
-const DEFAULT_CHANNEL = process.env.SLACK_MEETING_ROOM_CHANNEL || "rsd-leader-team";
 
 // ─── shared helpers ───────────────────────────────────────────────────────────
 

@@ -3,6 +3,7 @@ import {
   buildScheduleBlockKit,
   buildMeetingBookedBlockKit,
   buildMeetingInvitedDM,
+  buildMeetingCancelledBlockKit,
   buildMeetingExtendedNoticeDM,
   getCompletionStatus,
 } from "./meetings";
@@ -297,6 +298,25 @@ describe("booking-confirmation DMs", () => {
     expect(jsonBlocks).not.toContain("*Attendees:* <@U12345>");
     expect(jsonBlocks).toContain(">Weekly sync");
     expect(jsonBlocks).not.toContain("You've been invited");
+  });
+});
+
+describe("buildMeetingCancelledBlockKit", () => {
+  const appUrl = "http://localhost:3000";
+
+  it("uses the shared 2-field Date & Time layout instead of a stranded 3rd field", () => {
+    const message = buildMeetingCancelledBlockKit(mockBooking1, mockOrganizer, "Alice Leader", appUrl);
+    const jsonBlocks = JSON.stringify(message.blocks);
+
+    // dateTimeFields formats the date (e.g. "Tuesday, Sep 15"), not the raw
+    // 'yyyy-MM-dd' string the old inline 3-field section printed.
+    expect(jsonBlocks).toContain("Tuesday, Sep 15");
+    expect(jsonBlocks).not.toContain("2026-09-15");
+
+    const dateTimeSection = (message.blocks as { fields?: object[] }[]).find(
+      (b) => Array.isArray((b as { fields?: object[] }).fields)
+    ) as { fields: object[] } | undefined;
+    expect(dateTimeSection?.fields).toHaveLength(2);
   });
 });
 
