@@ -3,24 +3,14 @@ import { timingSafeEqual } from "crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { timeToMinutes } from "@/lib/utils/meeting-conflicts";
 import { officeDateString, officeMinutesOfDay } from "@/lib/utils/office-time";
-import { getWorkspaceBotToken, postChatMessage, postDirectMessage } from "@/lib/slack/client";
-import {
-  buildMeetingStartBlockKit,
-  buildMeetingDM,
-  buildMeetingCancelledBlockKit,
-  type AttendeeWithStatus,
-} from "@/lib/slack/meetings";
+import { getWorkspaceBotToken, postChatMessage } from "@/lib/slack/client";
+import { buildMeetingCancelledBlockKit, type AttendeeWithStatus } from "@/lib/slack/meetings";
+import { postMeetingStartChannelMessage, sendMeetingStartDMs } from "@/lib/meetings/notify";
 import { resolveAttendeeStatus } from "@/lib/utils/meeting-conflicts";
+import { APP_URL, DEFAULT_CHANNEL } from "@/lib/meetings/config";
 import type { MeetingBooking, User } from "@/lib/types";
 
 export const runtime = "nodejs";
-
-// Server-only var — see APP_URL note in meeting-room/actions.ts.
-const APP_URL = process.env.APP_URL || "http://localhost:3000";
-if (!process.env.APP_URL && process.env.NODE_ENV === "production") {
-  console.error("APP_URL is not set — Slack meeting links will point at localhost.");
-}
-const DEFAULT_CHANNEL = process.env.SLACK_MEETING_ROOM_CHANNEL || "rsd-leader-team";
 
 function isAuthorized(req: Request): boolean {
   const secret = process.env.CRON_SECRET;
@@ -67,41 +57,8 @@ async function startMeeting(
   // either way, otherwise a missing SLACK_BOT_TOKEN silently notifies no one.
   const botToken = await getWorkspaceBotToken();
   if (botToken && organizerUser) {
-    const channelName = booking.slack_channel || DEFAULT_CHANNEL;
-
-    if (booking.notify_channel) {
-      const message = buildMeetingStartBlockKit(booking, organizerUser, attendeesWithStatus, APP_URL);
-      const postResult = await postChatMessage(
-        botToken,
-        channelName,
-        message.text,
-        message.blocks,
-        message.color
-      );
-      if (postResult.ok && postResult.ts) {
-        await supabase
-          .from("meeting_room_bookings")
-          .update({ slack_message_ts: postResult.ts })
-          .eq("id", booking.id);
-      } else if (!postResult.ok) {
-        console.error(`Failed to post meeting-start message for booking ${booking.id}:`, postResult.error);
-      }
-    }
-
-    await Promise.allSettled(
-      attendeesWithStatus
-        .filter((item) => item.user.slack_user_id)
-        .map((item) => {
-          const dmPayload = buildMeetingDM(booking, organizerUser, item.status, APP_URL);
-          return postDirectMessage(
-            botToken,
-            item.user.slack_user_id as string,
-            dmPayload.text,
-            dmPayload.blocks,
-            dmPayload.color
-          );
-        })
-    );
+    await postMeetingStartChannelMessage(supabase, booking, organizerUser, attendeesWithStatus, APP_URL, botToken);
+    await sendMeetingStartDMs(botToken, booking, organizerUser, attendeesWithStatus, APP_URL);
   } else if (!organizerUser) {
     console.error(`Meeting ${booking.id} has no resolvable organizer; skipping Slack broadcast.`);
   }

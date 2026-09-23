@@ -2,8 +2,7 @@ import { format, parseISO, isValid } from "date-fns";
 import type { MeetingAttendeeStatus, MeetingBooking, User } from "@/lib/types";
 import { timeToMinutes, type getLiveRoomStatus } from "@/lib/utils/meeting-conflicts";
 import { OFFICE_TZ } from "@/lib/utils/office-time";
-
-const DEFAULT_CHANNEL = process.env.SLACK_MEETING_ROOM_CHANNEL || "rsd-leader-team";
+import { DEFAULT_CHANNEL } from "@/lib/meetings/config";
 
 export interface AttendeeWithStatus {
   user: User;
@@ -410,14 +409,7 @@ export function buildMeetingCancelledBlockKit(
   const blocks: object[] = [
     { type: "header", text: { type: "plain_text", text: "Meeting Cancelled", emoji: false } },
     { type: "section", text: { type: "mrkdwn", text: `*${title}*` } },
-    {
-      type: "section",
-      fields: [
-        { type: "mrkdwn", text: `*Date:*\n${meeting.meeting_date}` },
-        { type: "mrkdwn", text: `*Time:*\n${meeting.start_time} – ${meeting.end_time}` },
-        { type: "mrkdwn", text: `*Organizer:*\n${formatUserTag(organizer)}` },
-      ],
-    },
+    dateTimeFields(meeting, organizer),
     {
       type: "context",
       elements: [

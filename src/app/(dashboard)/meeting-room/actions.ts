@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import {
   checkMeetingCollision,
@@ -8,16 +9,11 @@ import {
   minutesToTime,
   resolveAttendeeStatus,
   isBookingInThePast,
+  isWithinStartWindow,
 } from "@/lib/utils/meeting-conflicts";
 import { officeDateString, officeMinutesOfDay } from "@/lib/utils/office-time";
+import { getWorkspaceBotToken, postChatMessage, postDirectMessage } from "@/lib/slack/client";
 import {
-  getWorkspaceBotToken,
-  postChatMessage,
-  postDirectMessage,
-} from "@/lib/slack/client";
-import {
-  buildMeetingStartBlockKit,
-  buildMeetingDM,
   buildMeetingUpdatedBlockKit,
   buildMeetingCancelledBlockKit,
   buildAttendeeMessageDM,
@@ -25,19 +21,10 @@ import {
   type AttendeeWithStatus,
 } from "@/lib/slack/meetings";
 import { createBookingCore, VALID_TIME, type CreateBookingCoreInput } from "@/lib/meetings/create-booking";
-import { notifyBookingCreated } from "@/lib/meetings/notify";
+import { notifyBookingCreated, postMeetingStartChannelMessage, sendMeetingStartDMs } from "@/lib/meetings/notify";
 import { parseSlackChannel } from "@/lib/utils/slack-channel";
-import type { MeetingBooking, User } from "@/lib/types";
-
-// Server-only var (not NEXT_PUBLIC_): NEXT_PUBLIC_* vars are inlined into the
-// bundle at build time, so if unset at build time every Slack button would
-// permanently point at localhost regardless of the runtime environment.
-// APP_URL is read at request time instead.
-const APP_URL = process.env.APP_URL || "http://localhost:3000";
-if (!process.env.APP_URL && process.env.NODE_ENV === "production") {
-  console.error("APP_URL is not set — Slack meeting links will point at localhost.");
-}
-const DEFAULT_CHANNEL = process.env.SLACK_MEETING_ROOM_CHANNEL || "rsd-leader-team";
+import { APP_URL, DEFAULT_CHANNEL } from "@/lib/meetings/config";
+import type { User } from "@/lib/types";
 
 async function getAuthorizedLeaderOrHR() {
   const supabase = await createClient();
@@ -64,64 +51,6 @@ async function getAuthorizedLeaderOrHR() {
   }
 
   return { error: null, caller, supabase };
-}
-
-/**
- * Sends channel + per-attendee DM Slack notifications for a meeting starting
- * now. Returns a short warning string when the channel post itself failed
- * (bad channel name, bot not invited, etc.) so a caller with a live request
- * can surface it — undefined otherwise, including when no bot token is
- * configured at all (a global config issue, not something worth a toast on
- * every single start).
- */
-async function sendMeetingStartSlack(
-  booking: MeetingBooking,
-  organizer: User,
-  attendeesWithStatus: AttendeeWithStatus[],
-  supabase: Awaited<ReturnType<typeof createClient>>
-): Promise<string | undefined> {
-  const botToken = await getWorkspaceBotToken();
-  if (!botToken) return undefined;
-
-  const channelName = booking.slack_channel || DEFAULT_CHANNEL;
-  let slackWarning: string | undefined;
-
-  if (booking.notify_channel) {
-    const message = buildMeetingStartBlockKit(booking, organizer, attendeesWithStatus, APP_URL);
-    const postResult = await postChatMessage(
-      botToken,
-      channelName,
-      message.text,
-      message.blocks,
-      message.color
-    );
-    if (postResult.ok && postResult.ts) {
-      await supabase
-        .from("meeting_room_bookings")
-        .update({ slack_message_ts: postResult.ts })
-        .eq("id", booking.id);
-    } else if (!postResult.ok) {
-      console.error(`Failed to post meeting-start message for booking ${booking.id}:`, postResult.error);
-      slackWarning = `Meeting started, but the Slack post to #${channelName} failed: ${postResult.error ?? "unknown error"}`;
-    }
-  }
-
-  await Promise.allSettled(
-    attendeesWithStatus
-      .filter((item) => item.user.slack_user_id)
-      .map((item) => {
-        const dmPayload = buildMeetingDM(booking, organizer, item.status, APP_URL);
-        return postDirectMessage(
-          botToken,
-          item.user.slack_user_id as string,
-          dmPayload.text,
-          dmPayload.blocks,
-          dmPayload.color
-        );
-      })
-  );
-
-  return slackWarning;
 }
 
 export interface CreateBookingInput {
@@ -160,23 +89,33 @@ export async function createBooking(input: CreateBookingInput) {
 
   const { booking: newBooking, attendeeIds } = result;
 
-  const notifyIds = attendeeIds.filter((id) => id !== caller.id);
-  if (notifyIds.length > 0) {
-    const { error: notifError } = await supabase.rpc("create_notifications", {
-      payload: notifyIds.map((userId) => ({
-        user_id: userId,
-        type: "meeting_scheduled" as const,
-        title: `Meeting Scheduled: ${newBooking.title}`,
-        body: `${newBooking.meeting_date} from ${newBooking.start_time} to ${newBooking.end_time} by ${caller.name}`,
-        data: { booking_id: newBooking.id, meeting_date: newBooking.meeting_date },
-      })),
-    });
-    if (notifError) {
-      console.error("Failed to notify attendees of new booking:", notifError.message);
-    }
-  }
+  // Per-attendee DMs and the in-app notification insert don't affect the
+  // response the UI is waiting on (createBooking has no channel post, so
+  // there's no slackWarning to compute synchronously) — deferred to after()
+  // so the action resolves as soon as the booking itself is written.
+  after(async () => {
+    try {
+      const notifyIds = attendeeIds.filter((id) => id !== caller.id);
+      if (notifyIds.length > 0) {
+        const { error: notifError } = await supabase.rpc("create_notifications", {
+          payload: notifyIds.map((userId) => ({
+            user_id: userId,
+            type: "meeting_scheduled" as const,
+            title: `Meeting Scheduled: ${newBooking.title}`,
+            body: `${newBooking.meeting_date} from ${newBooking.start_time} to ${newBooking.end_time} by ${caller.name}`,
+            data: { booking_id: newBooking.id, meeting_date: newBooking.meeting_date },
+          })),
+        });
+        if (notifError) {
+          console.error("Failed to notify attendees of new booking:", notifError.message);
+        }
+      }
 
-  await notifyBookingCreated(supabase, newBooking, caller, attendeeIds, APP_URL);
+      await notifyBookingCreated(supabase, newBooking, caller, attendeeIds, APP_URL);
+    } catch (e) {
+      console.error(`Error sending post-booking notifications for booking ${newBooking.id}:`, e);
+    }
+  });
 
   revalidatePath("/meeting-room");
   revalidatePath("/calendar");
@@ -255,6 +194,48 @@ export async function updateBooking(bookingId: string, input: UpdateBookingInput
   // rather than reset it to the env default.
   const nextChannel = parsedChannel.value ?? existing.slack_channel;
 
+  // Reconcile attendees first (before the row update below): the row update
+  // fires realtime, and meeting_attendees isn't itself in the realtime
+  // publication, so reconciling after it would let another viewer's
+  // refetchBookings briefly read the old attendee list with no later event
+  // to correct it. Always keep the organizer.
+  const desiredIds = Array.from(new Set([existing.organizer_id, ...input.attendee_ids]));
+  const { data: currentAttendees, error: currentAttendeesErr } = await supabase
+    .from("meeting_attendees")
+    .select("user_id")
+    .eq("booking_id", bookingId);
+  if (currentAttendeesErr) {
+    return { error: currentAttendeesErr.message };
+  }
+  const currentIds = (currentAttendees || []).map((a) => a.user_id);
+
+  const toAdd = desiredIds.filter((id) => !currentIds.includes(id));
+  const toRemove = currentIds.filter((id) => !desiredIds.includes(id));
+
+  if (toAdd.length > 0) {
+    const { error: addErr } = await supabase
+      .from("meeting_attendees")
+      .insert(toAdd.map((userId) => ({ booking_id: bookingId, user_id: userId })));
+    if (addErr) {
+      return { error: `Failed to update attendees: ${addErr.message}` };
+    }
+  }
+  if (toRemove.length > 0) {
+    const { error: removeErr } = await supabase
+      .from("meeting_attendees")
+      .delete()
+      .eq("booking_id", bookingId)
+      .in("user_id", toRemove);
+    if (removeErr) {
+      // toAdd (if any) already committed above — undo it so a delete failure
+      // doesn't leave attendees half-reconciled.
+      if (toAdd.length > 0) {
+        await supabase.from("meeting_attendees").delete().eq("booking_id", bookingId).in("user_id", toAdd);
+      }
+      return { error: `Failed to update attendees: ${removeErr.message}` };
+    }
+  }
+
   const { error: updateErr } = await supabase
     .from("meeting_room_bookings")
     .update({
@@ -268,34 +249,21 @@ export async function updateBooking(bookingId: string, input: UpdateBookingInput
     .eq("id", bookingId);
 
   if (updateErr) {
+    // Attendees were already reconciled above — undo that too, so a failed
+    // row update (e.g. a concurrent overlap) doesn't leave attendees changed
+    // while the booking itself reverts to its prior time/title.
+    if (toAdd.length > 0) {
+      await supabase.from("meeting_attendees").delete().eq("booking_id", bookingId).in("user_id", toAdd);
+    }
+    if (toRemove.length > 0) {
+      await supabase
+        .from("meeting_attendees")
+        .insert(toRemove.map((userId) => ({ booking_id: bookingId, user_id: userId })));
+    }
     if (updateErr.code === "23P01") {
       return { error: "The meeting room is already booked for an overlapping time slot." };
     }
     return { error: updateErr.message };
-  }
-
-  // Reconcile attendees: always keep the organizer.
-  const desiredIds = Array.from(new Set([existing.organizer_id, ...input.attendee_ids]));
-  const { data: currentAttendees } = await supabase
-    .from("meeting_attendees")
-    .select("user_id")
-    .eq("booking_id", bookingId);
-  const currentIds = (currentAttendees || []).map((a) => a.user_id);
-
-  const toAdd = desiredIds.filter((id) => !currentIds.includes(id));
-  const toRemove = currentIds.filter((id) => !desiredIds.includes(id));
-
-  if (toAdd.length > 0) {
-    await supabase
-      .from("meeting_attendees")
-      .insert(toAdd.map((userId) => ({ booking_id: bookingId, user_id: userId })));
-  }
-  if (toRemove.length > 0) {
-    await supabase
-      .from("meeting_attendees")
-      .delete()
-      .eq("booking_id", bookingId)
-      .in("user_id", toRemove);
   }
 
   // Describe what changed, for the Slack notice and the in-app notification.
@@ -372,6 +340,27 @@ export async function startMeetingAndNotify(bookingId: string) {
   const { error: authErr, caller, supabase } = await getAuthorizedLeaderOrHR();
   if (authErr || !caller) return { error: authErr };
 
+  const { data: bookingTime, error: bookingTimeErr } = await supabase
+    .from("meeting_room_bookings")
+    .select("meeting_date, start_time, end_time")
+    .eq("id", bookingId)
+    .single();
+  if (bookingTimeErr || !bookingTime) return { error: "Booking not found" };
+
+  if (
+    !isWithinStartWindow(
+      bookingTime.meeting_date,
+      bookingTime.start_time,
+      bookingTime.end_time,
+      officeDateString(),
+      officeMinutesOfDay()
+    )
+  ) {
+    return {
+      error: "This meeting can only be started from 15 minutes before its start time until it ends.",
+    };
+  }
+
   // Claim the booking before doing any Slack work, so a manual click racing
   // the auto-start cron can only ever win once — the loser gets no row back
   // and sends nothing.
@@ -413,26 +402,44 @@ export async function startMeetingAndNotify(bookingId: string) {
   }));
 
   const organizerUser = (claimed.organizer as User) || caller;
-  const slackWarning = await sendMeetingStartSlack(claimed, organizerUser, attendeesWithStatus, supabase);
+
+  // Only the channel post is awaited synchronously — its failure produces
+  // the slackWarning toast the UI surfaces. Per-attendee DMs and the in-app
+  // notification insert don't affect that response, so they're deferred to
+  // after().
+  const botToken = await getWorkspaceBotToken();
+  const slackWarning = botToken
+    ? await postMeetingStartChannelMessage(supabase, claimed, organizerUser, attendeesWithStatus, APP_URL, botToken)
+    : undefined;
 
   const startedByNote =
     caller.id === organizerUser.id ? `Organized by ${organizerUser.name}` : `Organized by ${organizerUser.name}, started by ${caller.name}`;
 
   const notifyIds = attendeeIds.filter((id) => id !== caller.id);
-  if (notifyIds.length > 0) {
-    const { error: notifError } = await supabase.rpc("create_notifications", {
-      payload: notifyIds.map((userId) => ({
-        user_id: userId,
-        type: "meeting_starting" as const,
-        title: `Meeting Starting Now: ${claimed.title}`,
-        body: `${startedByNote} in the Meeting Room`,
-        data: { booking_id: claimed.id, meeting_date: claimed.meeting_date },
-      })),
-    });
-    if (notifError) {
-      console.error("Failed to notify attendees of meeting start:", notifError.message);
+
+  after(async () => {
+    try {
+      if (botToken) {
+        await sendMeetingStartDMs(botToken, claimed, organizerUser, attendeesWithStatus, APP_URL);
+      }
+      if (notifyIds.length > 0) {
+        const { error: notifError } = await supabase.rpc("create_notifications", {
+          payload: notifyIds.map((userId) => ({
+            user_id: userId,
+            type: "meeting_starting" as const,
+            title: `Meeting Starting Now: ${claimed.title}`,
+            body: `${startedByNote} in the Meeting Room`,
+            data: { booking_id: claimed.id, meeting_date: claimed.meeting_date },
+          })),
+        });
+        if (notifError) {
+          console.error("Failed to notify attendees of meeting start:", notifError.message);
+        }
+      }
+    } catch (e) {
+      console.error(`Error sending post-start notifications for booking ${claimed.id}:`, e);
     }
-  }
+  });
 
   revalidatePath("/meeting-room");
   revalidatePath("/calendar");
@@ -462,6 +469,10 @@ export async function endMeetingEarly(bookingId: string) {
 }
 
 export async function extendMeeting(bookingId: string, additionalMinutes: number = 15) {
+  if (additionalMinutes !== 15 && additionalMinutes !== 30) {
+    return { error: "Meetings can only be extended by 15 or 30 minutes." };
+  }
+
   const { error: authErr, supabase } = await getAuthorizedLeaderOrHR();
   if (authErr) return { error: authErr };
 
@@ -504,10 +515,13 @@ export async function extendMeeting(bookingId: string, additionalMinutes: number
     };
   }
 
-  const { error: updateErr } = await supabase
+  const { data: updatedRow, error: updateErr } = await supabase
     .from("meeting_room_bookings")
     .update({ end_time: newEndTime, was_extended: true })
-    .eq("id", bookingId);
+    .eq("id", bookingId)
+    .in("status", ["scheduled", "in_progress"])
+    .select("id")
+    .single();
 
   if (updateErr) {
     if (updateErr.code === "23P01") {
@@ -515,8 +529,13 @@ export async function extendMeeting(bookingId: string, additionalMinutes: number
     }
     return { error: updateErr.message };
   }
+  if (!updatedRow) {
+    return { error: "This meeting was already updated by someone else." };
+  }
 
-  // Courtesy heads-up to organizers of that day's other, later meetings.
+  // Courtesy heads-up to the organizer of the immediately-next meeting that
+  // day (the one whose start_time is closest after this one, among those
+  // with a different organizer) — only their buffer actually shrinks.
   // checkMeetingCollision above already guarantees this extension can never
   // overlap their booking, so this is purely informational — gated on
   // notify_channel like every other Slack touchpoint for this booking.
@@ -528,7 +547,9 @@ export async function extendMeeting(bookingId: string, additionalMinutes: number
       .neq("id", bookingId)
       .neq("organizer_id", booking.organizer_id)
       .in("status", ["scheduled", "in_progress"])
-      .gt("start_time", booking.start_time);
+      .gt("start_time", booking.start_time)
+      .order("start_time", { ascending: true })
+      .limit(1);
 
     const seenOrganizerIds = new Set<string>();
     const recipients: User[] = [];
@@ -637,20 +658,28 @@ export async function cancelBooking(bookingId: string) {
   const cancelledByNote =
     caller.id === organizer.id ? `by ${organizer.name}` : `by ${caller.name} (organized by ${organizer.name})`;
 
-  if (notifyIds.length > 0) {
-    const { error: notifError } = await supabase.rpc("create_notifications", {
-      payload: notifyIds.map((userId) => ({
-        user_id: userId,
-        type: "meeting_cancelled" as const,
-        title: `Meeting Cancelled: ${booking.title}`,
-        body: `The meeting scheduled on ${booking.meeting_date} (${booking.start_time} - ${booking.end_time}) was cancelled ${cancelledByNote}.`,
-        data: { booking_id: booking.id, meeting_date: booking.meeting_date },
-      })),
-    });
-    if (notifError) {
-      console.error("Failed to notify attendees of cancellation:", notifError.message);
+  // In-app notification insert doesn't affect the response (the channel post
+  // above already produced slackWarning) — deferred to after().
+  after(async () => {
+    try {
+      if (notifyIds.length > 0) {
+        const { error: notifError } = await supabase.rpc("create_notifications", {
+          payload: notifyIds.map((userId) => ({
+            user_id: userId,
+            type: "meeting_cancelled" as const,
+            title: `Meeting Cancelled: ${booking.title}`,
+            body: `The meeting scheduled on ${booking.meeting_date} (${booking.start_time} - ${booking.end_time}) was cancelled ${cancelledByNote}.`,
+            data: { booking_id: booking.id, meeting_date: booking.meeting_date },
+          })),
+        });
+        if (notifError) {
+          console.error("Failed to notify attendees of cancellation:", notifError.message);
+        }
+      }
+    } catch (e) {
+      console.error(`Error notifying attendees of cancellation for booking ${booking.id}:`, e);
     }
-  }
+  });
 
   revalidatePath("/meeting-room");
   revalidatePath("/calendar");
@@ -683,33 +712,43 @@ export async function messageAttendees(bookingId: string, message: string) {
     .filter((u): u is User => Boolean(u));
 
   const recipients = attendees.filter((u) => u.id !== caller.id);
+  // sentTo is computed synchronously above (from the already-fetched
+  // attendee list) so the response isn't waiting on any Slack call — the DM
+  // send and the in-app notification insert are both deferred to after().
+  const sentTo = recipients.length;
 
-  const botToken = await getWorkspaceBotToken();
-  if (botToken) {
-    const dmPayload = buildAttendeeMessageDM(booking, organizer, caller.name, trimmed, APP_URL);
-    await Promise.allSettled(
-      recipients
-        .filter((u) => u.slack_user_id)
-        .map((u) =>
-          postDirectMessage(botToken, u.slack_user_id as string, dmPayload.text, dmPayload.blocks, dmPayload.color)
-        )
-    );
-  }
+  after(async () => {
+    try {
+      const botToken = await getWorkspaceBotToken();
+      if (botToken) {
+        const dmPayload = buildAttendeeMessageDM(booking, organizer, caller.name, trimmed, APP_URL);
+        await Promise.allSettled(
+          recipients
+            .filter((u) => u.slack_user_id)
+            .map((u) =>
+              postDirectMessage(botToken, u.slack_user_id as string, dmPayload.text, dmPayload.blocks, dmPayload.color)
+            )
+        );
+      }
 
-  if (recipients.length > 0) {
-    const { error: notifError } = await supabase.rpc("create_notifications", {
-      payload: recipients.map((u) => ({
-        user_id: u.id,
-        type: "meeting_message" as const,
-        title: `Message about: ${booking.title}`,
-        body: `${caller.name}: ${trimmed.slice(0, 200)}`,
-        data: { booking_id: booking.id, meeting_date: booking.meeting_date },
-      })),
-    });
-    if (notifError) {
-      console.error("Failed to notify attendees of message:", notifError.message);
+      if (recipients.length > 0) {
+        const { error: notifError } = await supabase.rpc("create_notifications", {
+          payload: recipients.map((u) => ({
+            user_id: u.id,
+            type: "meeting_message" as const,
+            title: `Message about: ${booking.title}`,
+            body: `${caller.name}: ${trimmed.slice(0, 200)}`,
+            data: { booking_id: booking.id, meeting_date: booking.meeting_date },
+          })),
+        });
+        if (notifError) {
+          console.error("Failed to notify attendees of message:", notifError.message);
+        }
+      }
+    } catch (e) {
+      console.error(`Error sending message notifications for booking ${booking.id}:`, e);
     }
-  }
+  });
 
-  return { success: true, sentTo: recipients.length };
+  return { success: true, sentTo };
 }

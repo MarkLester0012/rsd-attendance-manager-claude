@@ -1,9 +1,18 @@
 "use client";
 
+import type { MouseEvent } from "react";
 import { format, parseISO } from "date-fns";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { timeToMinutes, minutesToTime } from "@/lib/utils/meeting-conflicts";
+import {
+  timeToMinutes,
+  minutesToTime,
+  isBookingInThePast,
+  nearestSlotFromFraction,
+  floorSlotFromFraction,
+  isStartTimeBooked,
+} from "@/lib/utils/meeting-conflicts";
+import { officeDateString } from "@/lib/utils/office-time";
 import { MEETING_ROOM_START_HOUR, MEETING_ROOM_END_HOUR } from "@/lib/meetings/time-slots";
 import type { MeetingWithAttendees } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -22,6 +31,11 @@ interface RoomTimelineProps {
   isDateChangePending: boolean;
   bookings: MeetingWithAttendees[];
   currentTimeMinutes: number;
+  canManageMeetings: boolean;
+  /** Opens the book modal prefilled with the clicked slot. Only called for leader/HR, and only on today or a future date. */
+  onSlotClick: (time: string) => void;
+  /** Scrolls to and highlights the clicked booking's card. Available to every role. */
+  onBookingClick: (id: string) => void;
 }
 
 export function RoomTimeline({
@@ -30,7 +44,33 @@ export function RoomTimeline({
   isDateChangePending,
   bookings,
   currentTimeMinutes,
+  canManageMeetings,
+  onSlotClick,
+  onBookingClick,
 }: RoomTimelineProps) {
+  const todayStr = officeDateString();
+  // Click-to-book only makes sense on today or a future date — a past date's
+  // book modal clamps its date to today anyway, so a clicked slot there would
+  // silently open the wrong day.
+  const canClickToBook = canManageMeetings && currentDateStr >= todayStr;
+
+  const handleTrackClick = (e: MouseEvent<HTMLDivElement>) => {
+    if (!canClickToBook) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const fraction = rect.width > 0 ? (e.clientX - rect.left) / rect.width : 0;
+    let slot = nearestSlotFromFraction(fraction, TIMELINE_START_HOUR, TIMELINE_END_HOUR);
+    // Rounding to the nearest slot can land on the start of an adjacent
+    // booking (e.g. clicking just before an 11:00 meeting) — fall back to
+    // the floor slot rather than defeat the conflict-aware picker.
+    if (isStartTimeBooked(slot, bookings)) {
+      slot = floorSlotFromFraction(fraction, TIMELINE_START_HOUR, TIMELINE_END_HOUR);
+    }
+    if (isCurrentDayToday && isBookingInThePast(currentDateStr, slot, todayStr, currentTimeMinutes)) {
+      return;
+    }
+    onSlotClick(slot);
+  };
+
   return (
     <Card
       className={cn(
@@ -45,8 +85,9 @@ export function RoomTimeline({
               {isCurrentDayToday ? "Today's" : format(parseISO(currentDateStr), "MMM d")} Room Timeline
             </CardTitle>
             <CardDescription>
-              Visual schedule overview from {String(TIMELINE_START_HOUR).padStart(2, "0")}:00 to{" "}
+              {String(TIMELINE_START_HOUR).padStart(2, "0")}:00 to{" "}
               {String(TIMELINE_END_HOUR).padStart(2, "0")}:00
+              {canClickToBook ? " — click an empty slot to book" : ""}
             </CardDescription>
           </div>
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -66,7 +107,13 @@ export function RoomTimeline({
         <TooltipProvider>
           <div className="relative pt-2 pb-6">
             {/* Timeline base track */}
-            <div className="relative h-10 w-full rounded-lg bg-muted/50 border border-border/60 overflow-hidden">
+            <div
+              className={cn(
+                "relative h-10 w-full rounded-lg bg-muted/50 border border-border/60 overflow-hidden",
+                canClickToBook && "cursor-pointer hover:bg-muted/70 transition-colors"
+              )}
+              onClick={handleTrackClick}
+            >
               {/* Hourly division lines */}
               {Array.from({ length: TIMELINE_HOURS + 1 }).map((_, idx) => {
                 const percent = (idx / TIMELINE_HOURS) * 100;
@@ -117,7 +164,7 @@ export function RoomTimeline({
                       <TooltipTrigger asChild>
                         <div
                           className={cn(
-                            "absolute top-1 bottom-1 rounded px-2 flex items-center justify-between text-xs font-medium text-white truncate shadow-sm transition-all overflow-hidden",
+                            "absolute top-1 bottom-1 rounded px-2 flex items-center justify-between text-xs font-medium text-white truncate shadow-sm transition-all overflow-hidden cursor-pointer",
                             isInProgress
                               ? "bg-amber-600 border border-amber-400"
                               : isCompleted
@@ -128,7 +175,10 @@ export function RoomTimeline({
                             left: `${leftPercent}%`,
                             width: `${Math.max(widthPercent, 2)}%`,
                           }}
-                          title={`${b.title} (${b.start_time} - ${b.end_time})`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onBookingClick(b.id);
+                          }}
                         >
                           <span className="truncate">{b.title}</span>
                           <span className="hidden sm:inline text-[10px] opacity-90 ml-1">

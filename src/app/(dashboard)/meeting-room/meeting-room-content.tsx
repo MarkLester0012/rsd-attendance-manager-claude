@@ -3,11 +3,10 @@
 import { useState, useMemo, useEffect, useRef, useCallback, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { format, addDays, subDays, parseISO } from "date-fns";
-import { DoorOpen, Plus, ChevronLeft, ChevronRight, Loader2, MessageSquare } from "lucide-react";
+import { DoorOpen, Plus, ChevronLeft, ChevronRight, ChevronDown, Loader2, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog,
   DialogContent,
@@ -30,8 +29,7 @@ import { DatePickerButton } from "@/components/ui/date-picker-button";
 import { EmojiTextarea } from "@/components/ui/emoji-textarea";
 import { BookMeetingModal } from "./book-meeting-modal";
 import { EditMeetingModal } from "./edit-meeting-modal";
-import { RoomStatusHero } from "./room-status-hero";
-import { RoomStats } from "./room-stats";
+import { NowStrip } from "./_components/now-strip";
 import { RoomTimeline } from "./room-timeline";
 import { BookingCard } from "./booking-card";
 import {
@@ -41,10 +39,12 @@ import {
   cancelBooking,
   messageAttendees,
 } from "./actions";
-import { getLiveRoomStatus, type LeaveRecord } from "@/lib/utils/meeting-conflicts";
+import { getLiveRoomStatus, timeToMinutes, type LeaveRecord } from "@/lib/utils/meeting-conflicts";
 import { officeDateString, officeMinutesOfDay } from "@/lib/utils/office-time";
+import { MEETING_BOOKINGS_SELECT } from "@/lib/meetings/queries";
 import { createClient } from "@/lib/supabase/client";
 import type { MeetingWithAttendees, User } from "@/lib/types";
+import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { useRegisterPageContext } from "@/hooks/use-register-page-context";
 
@@ -78,38 +78,44 @@ export function MeetingRoomContent({
   const [cancellingBooking, setCancellingBooking] = useState<MeetingWithAttendees | null>(null);
   const [messageText, setMessageText] = useState("");
   const [sendingMessage, setSendingMessage] = useState(false);
-  const [filterTab, setFilterTab] = useState<"all" | "in_progress" | "scheduled" | "completed">("all");
+  const [showEarlier, setShowEarlier] = useState(false);
+  const [prefillStartTime, setPrefillStartTime] = useState<string | null>(null);
   const [currentTimeMinutes, setCurrentTimeMinutes] = useState(() => officeMinutesOfDay());
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [highlightedId, setHighlightedId] = useState<string | null>(highlightMeetingId);
+  const [pendingScrollId, setPendingScrollId] = useState<string | null>(null);
   const [isDateChangePending, startDateChangeTransition] = useTransition();
 
   const cardRefs = useRef(new Map<string, HTMLDivElement>());
+  const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Sync state when props change
+  // Sync state when the viewed date actually changes (prev/next/today/a deep
+  // link) — not on every parent re-render. Every mutating action already
+  // calls revalidatePath, which causes this page's server props to refresh
+  // and initialBookings to get a new array identity even when the date
+  // hasn't changed; syncing on that identity alone let a stale server-
+  // rendered snapshot clobber a newer state already applied by the realtime
+  // subscription below (see refetchBookings). Keying on currentDateStr
+  // instead means a same-date refresh no longer touches `bookings` here —
+  // the realtime subscription (or an action's own refetchBookings() call) is
+  // the sole path for in-place updates.
   useEffect(() => {
     setBookings(initialBookings);
-  }, [initialBookings]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentDateStr]);
 
   // Refetch bookings for the currently-viewed date. Used by the realtime
   // subscription below so a meeting started/cancelled/auto-transitioned by
   // someone else (or by the cron) shows up here without a manual reload —
   // mirrors the query in page.tsx and the pattern in room-status-badge.tsx.
+  // Also called directly after this tab's own actions succeed (instead of
+  // router.refresh()), since it's a single narrow query rather than a full
+  // page re-render and doesn't depend on the realtime channel being up.
   const refetchBookings = useCallback(async () => {
     const supabase = createClient();
     const { data, error } = await supabase
       .from("meeting_room_bookings")
-      .select(`
-        *,
-        organizer:users!meeting_room_bookings_organizer_id_fkey(*),
-        attendees:meeting_attendees(
-          id,
-          booking_id,
-          user_id,
-          created_at,
-          user:users(*, department:departments(*))
-        )
-      `)
+      .select(MEETING_BOOKINGS_SELECT)
       .eq("meeting_date", currentDateStr)
       .order("start_time", { ascending: true });
 
@@ -147,17 +153,50 @@ export function MeetingRoomContent({
     };
   }, [currentDateStr, refetchBookings]);
 
+  // Scrolls to and briefly highlights a booking's card — used by both the
+  // notification deep-link below and the timeline's block-click. A completed
+  // or cancelled booking's card only exists once the collapsed "Earlier"
+  // section is expanded, so this expands it first and defers the actual
+  // scroll to the effect below (cardRefs isn't populated for an unmounted
+  // card yet).
+  const focusBooking = useCallback(
+    (id: string) => {
+      const booking = bookings.find((b) => b.id === id);
+      if (booking && (booking.status === "completed" || booking.status === "cancelled")) {
+        setShowEarlier(true);
+      }
+      setHighlightedId(id);
+      setPendingScrollId(id);
+      if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
+      highlightTimerRef.current = setTimeout(() => setHighlightedId(null), 3000);
+    },
+    [bookings]
+  );
+
+  useEffect(() => {
+    return () => {
+      if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
+    };
+  }, []);
+
   // Scroll to and briefly highlight the meeting a notification linked to.
   useEffect(() => {
     if (!highlightMeetingId) return;
-    const el = cardRefs.current.get(highlightMeetingId);
-    if (el) {
-      el.scrollIntoView({ behavior: "smooth", block: "center" });
-    }
-    const t = setTimeout(() => setHighlightedId(null), 3000);
-    return () => clearTimeout(t);
+    focusBooking(highlightMeetingId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [highlightMeetingId]);
+
+  // Runs the actual scroll once the target card is mounted — after a
+  // showEarlier expansion commits, or immediately for an already-visible
+  // Now/Upcoming card.
+  useEffect(() => {
+    if (!pendingScrollId) return;
+    const el = cardRefs.current.get(pendingScrollId);
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      setPendingScrollId(null);
+    }
+  }, [pendingScrollId, showEarlier]);
 
   // Keep clock updated every 30 seconds
   useEffect(() => {
@@ -209,37 +248,22 @@ export function MeetingRoomContent({
     handleDateChange(officeDateString());
   };
 
-  // Filter bookings
-  const filteredBookings = useMemo(() => {
-    return bookings.filter((b) => {
-      if (filterTab === "all") return true;
-      if (filterTab === "in_progress") return b.status === "in_progress";
-      if (filterTab === "scheduled") return b.status === "scheduled";
-      if (filterTab === "completed") return b.status === "completed" || b.status === "cancelled";
-      return true;
-    });
-  }, [bookings, filterTab]);
-
-  // Per-tab counts for the filter Tabs below, computed the same way filteredBookings is.
-  const inProgressCount = useMemo(
-    () => bookings.filter((b) => b.status === "in_progress").length,
+  // Grouped sections replacing the old 4-tab filter — "Now" (in progress),
+  // "Upcoming" (scheduled, soonest first), and a collapsible "Earlier"
+  // (completed + cancelled). A single room has few meetings a day, so
+  // grouping beats hiding things behind tabs.
+  const nowBookings = useMemo(() => bookings.filter((b) => b.status === "in_progress"), [bookings]);
+  const upcomingBookings = useMemo(
+    () =>
+      bookings
+        .filter((b) => b.status === "scheduled")
+        .sort((a, b) => timeToMinutes(a.start_time) - timeToMinutes(b.start_time)),
     [bookings]
   );
-  const scheduledCount = useMemo(
-    () => bookings.filter((b) => b.status === "scheduled").length,
+  const earlierBookings = useMemo(
+    () => bookings.filter((b) => b.status === "completed" || b.status === "cancelled"),
     [bookings]
   );
-  const pastCount = useMemo(
-    () => bookings.filter((b) => b.status === "completed" || b.status === "cancelled").length,
-    [bookings]
-  );
-
-  const FILTER_TAB_LABELS: Record<typeof filterTab, string> = {
-    all: "All",
-    in_progress: "In Progress",
-    scheduled: "Scheduled",
-    completed: "Past",
-  };
 
   useRegisterPageContext("Meeting Room", {
     date: currentDateStr,
@@ -264,7 +288,7 @@ export function MeetingRoomContent({
       } else {
         toast.success(`Meeting "${title}" started! Announcements broadcasted.`);
         if (res.slackWarning) toast.warning(res.slackWarning);
-        router.refresh();
+        refetchBookings();
       }
     } catch {
       toast.error("Failed to start meeting");
@@ -281,7 +305,7 @@ export function MeetingRoomContent({
         toast.error(res.error);
       } else {
         toast.success("Meeting ended. Room is now available.");
-        router.refresh();
+        refetchBookings();
       }
     } catch {
       toast.error("Failed to end meeting");
@@ -298,7 +322,7 @@ export function MeetingRoomContent({
         toast.error(res.error);
       } else {
         toast.success(`Meeting extended to ${res.newEndTime}`);
-        router.refresh();
+        refetchBookings();
       }
     } catch {
       toast.error("Failed to extend meeting");
@@ -307,7 +331,13 @@ export function MeetingRoomContent({
     }
   };
 
-  const handleCancel = (id: string, _title: string) => {
+  // Opens the book modal prefilled with a timeline slot click's rounded time.
+  const handleTimelineSlotClick = useCallback((time: string) => {
+    setPrefillStartTime(time);
+    setIsBookModalOpen(true);
+  }, []);
+
+  const handleCancel = (id: string) => {
     const booking = bookings.find((b) => b.id === id);
     if (booking) setCancellingBooking(booking);
   };
@@ -323,7 +353,7 @@ export function MeetingRoomContent({
       } else {
         toast.success(`Meeting "${title}" cancelled.`);
         if (res.slackWarning) toast.warning(res.slackWarning);
-        router.refresh();
+        refetchBookings();
       }
     } catch {
       toast.error("Failed to cancel meeting");
@@ -356,62 +386,51 @@ export function MeetingRoomContent({
     }
   }, [messagingBooking, messageText]);
 
+  const openBookModal = () => {
+    setPrefillStartTime(null);
+    setIsBookModalOpen(true);
+  };
+
+  const renderCard = (b: MeetingWithAttendees) => (
+    <BookingCard
+      key={b.id}
+      booking={b}
+      currentUser={currentUser}
+      leaves={leaves}
+      defaultSlackChannel={defaultSlackChannel}
+      canManageMeetings={canManageMeetings}
+      isHighlighted={b.id === highlightedId}
+      actionLoading={actionLoading}
+      isCurrentDayToday={isCurrentDayToday}
+      currentTimeMinutes={currentTimeMinutes}
+      onCardRef={(el) => {
+        if (el) cardRefs.current.set(b.id, el);
+        else cardRefs.current.delete(b.id);
+      }}
+      handleStartMeeting={handleStartMeeting}
+      handleExtend={handleExtend}
+      handleEndEarly={handleEndEarly}
+      handleCancel={handleCancel}
+      onEdit={(booking) => setEditingBooking(booking)}
+      onMessage={(booking) => {
+        setMessageText("");
+        setMessagingBooking(booking);
+      }}
+    />
+  );
+
   return (
     <div className="space-y-6">
-      {/* Header bar */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-sm text-muted-foreground">
-          Physical meeting room occupancy, calendar schedules, and automated Slack announcements.
-        </p>
-
-        <div className="flex items-center gap-2">
-          {canManageMeetings ? (
-            <Button onClick={() => setIsBookModalOpen(true)} className="gap-1.5 shadow-sm">
-              <Plus className="h-4 w-4" /> Book Room
-            </Button>
-          ) : (
-            <Badge variant="outline" className="text-xs text-muted-foreground py-1 px-2.5">
-              Leaders & HR can book
-            </Badge>
-          )}
-        </div>
-      </div>
-
-      {/* Live Room Status Hero Banner (Shown prominently) */}
-      <RoomStatusHero
-        isCurrentDayToday={isCurrentDayToday}
-        currentDateStr={currentDateStr}
-        liveStatus={liveStatus}
-        bookings={bookings}
-        defaultSlackChannel={defaultSlackChannel}
-        canManageMeetings={canManageMeetings}
-        actionLoading={actionLoading}
-        handleStartMeeting={handleStartMeeting}
-        handleExtend={handleExtend}
-        handleEndEarly={handleEndEarly}
-      />
-
-      {/* Stat row */}
-      <RoomStats bookings={bookings} isCurrentDayToday={isCurrentDayToday} liveStatus={liveStatus} />
-
-      {/* Hourly Visual Timeline Track */}
-      <RoomTimeline
-        isCurrentDayToday={isCurrentDayToday}
-        currentDateStr={currentDateStr}
-        isDateChangePending={isDateChangePending}
-        bookings={bookings}
-        currentTimeMinutes={currentTimeMinutes}
-      />
-
-      {/* Date Navigation & Controls */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-2">
-        <div className="flex items-center gap-2">
+      {/* Toolbar: date navigation on the left, Book Room on the right */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2">
           <Button
             variant="outline"
             size="icon"
             onClick={handlePrevDay}
             disabled={isDateChangePending}
             title="Previous Day"
+            aria-label="Previous Day"
           >
             {isDateChangePending ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -436,112 +455,126 @@ export function MeetingRoomContent({
             onClick={handleNextDay}
             disabled={isDateChangePending}
             title="Next Day"
+            aria-label="Next Day"
           >
             <ChevronRight className="h-4 w-4" />
           </Button>
 
-          <div className="flex items-center gap-2 ml-2">
-            <DatePickerButton
-              value={parseISO(currentDateStr)}
-              onChange={(d) => d && handleDateChange(format(d, "yyyy-MM-dd"))}
-              disabled={isDateChangePending}
-              align="center"
-              dateFormat="EEEE, MMMM d, yyyy"
-              className="min-w-[220px]"
-            />
-          </div>
+          <DatePickerButton
+            value={parseISO(currentDateStr)}
+            onChange={(d) => d && handleDateChange(format(d, "yyyy-MM-dd"))}
+            disabled={isDateChangePending}
+            align="center"
+            dateFormat="EEEE, MMMM d, yyyy"
+            className="min-w-[220px]"
+          />
         </div>
 
-        {/* Filter Tabs */}
-        <Tabs
-          value={filterTab}
-          onValueChange={(val) => setFilterTab(val as typeof filterTab)}
-          className="w-auto"
-        >
-          <TabsList className="grid grid-cols-4 w-full sm:w-auto h-9">
-            <TabsTrigger value="all" className="text-xs">
-              All ({bookings.length})
-            </TabsTrigger>
-            <TabsTrigger value="in_progress" className="text-xs">
-              In Progress ({inProgressCount})
-            </TabsTrigger>
-            <TabsTrigger value="scheduled" className="text-xs">
-              Scheduled ({scheduledCount})
-            </TabsTrigger>
-            <TabsTrigger value="completed" className="text-xs">
-              Past ({pastCount})
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
+        <div className="flex items-center gap-2">
+          {canManageMeetings ? (
+            <Button onClick={openBookModal} className="gap-1.5 shadow-sm">
+              <Plus className="h-4 w-4" /> Book Room
+            </Button>
+          ) : (
+            <Badge variant="outline" className="text-xs text-muted-foreground py-1 px-2.5">
+              Leaders & HR can book
+            </Badge>
+          )}
+        </div>
       </div>
 
-      {/* Bookings List */}
-      <div className="space-y-3">
-        {filteredBookings.length === 0 ? (
-          <Card className="border-dashed border-border bg-card/40">
-            <CardContent className="flex flex-col items-center justify-center py-12 text-center">
-              <DoorOpen className="h-10 w-10 text-muted-foreground/60 mb-3" />
-              <h3 className="text-base font-semibold text-foreground">No meetings found</h3>
-              <p className="text-sm text-muted-foreground max-w-sm mt-1">
-                {filterTab === "all"
-                  ? `There are no meeting room bookings on ${format(parseISO(currentDateStr), "MMM d, yyyy")}.`
-                  : `No ${FILTER_TAB_LABELS[filterTab]} meetings on this date.`}
-              </p>
-              {canManageMeetings && (
-                <Button
-                  onClick={() => setIsBookModalOpen(true)}
-                  variant="outline"
-                  size="sm"
-                  className="mt-4 gap-1.5"
-                >
-                  <Plus className="h-4 w-4" /> Schedule a Meeting
-                </Button>
-              )}
-            </CardContent>
-          </Card>
-        ) : (
-          filteredBookings.map((b) => (
-            <BookingCard
-              key={b.id}
-              booking={b}
-              currentUser={currentUser}
-              leaves={leaves}
-              defaultSlackChannel={defaultSlackChannel}
-              canManageMeetings={canManageMeetings}
-              isHighlighted={b.id === highlightedId}
-              actionLoading={actionLoading}
-              isCurrentDayToday={isCurrentDayToday}
-              currentTimeMinutes={currentTimeMinutes}
-              onCardRef={(el) => {
-                if (el) cardRefs.current.set(b.id, el);
-                else cardRefs.current.delete(b.id);
-              }}
-              handleStartMeeting={handleStartMeeting}
-              handleExtend={handleExtend}
-              handleEndEarly={handleEndEarly}
-              handleCancel={handleCancel}
-              onEdit={(booking) => setEditingBooking(booking)}
-              onMessage={(booking) => {
-                setMessageText("");
-                setMessagingBooking(booking);
-              }}
-            />
-          ))
-        )}
-      </div>
+      {/* Now strip — merges the old hero + stat cards into one compact card */}
+      <NowStrip
+        isCurrentDayToday={isCurrentDayToday}
+        currentDateStr={currentDateStr}
+        liveStatus={liveStatus}
+        bookings={bookings}
+        defaultSlackChannel={defaultSlackChannel}
+        canManageMeetings={canManageMeetings}
+        actionLoading={actionLoading}
+        handleStartMeeting={handleStartMeeting}
+        handleExtend={handleExtend}
+        handleEndEarly={handleEndEarly}
+      />
+
+      {/* Hourly Visual Timeline Track — click an empty slot to book, click a block to jump to its card */}
+      <RoomTimeline
+        isCurrentDayToday={isCurrentDayToday}
+        currentDateStr={currentDateStr}
+        isDateChangePending={isDateChangePending}
+        bookings={bookings}
+        currentTimeMinutes={currentTimeMinutes}
+        canManageMeetings={canManageMeetings}
+        onSlotClick={handleTimelineSlotClick}
+        onBookingClick={focusBooking}
+      />
+
+      {/* Agenda: Now / Upcoming / Earlier */}
+      {nowBookings.length === 0 && upcomingBookings.length === 0 && earlierBookings.length === 0 ? (
+        <Card className="border-dashed border-border bg-card/40">
+          <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+            <DoorOpen className="h-10 w-10 text-muted-foreground/60 mb-3" />
+            <h3 className="text-base font-semibold text-foreground">No meetings found</h3>
+            <p className="text-sm text-muted-foreground max-w-sm mt-1">
+              There are no meeting room bookings on {format(parseISO(currentDateStr), "MMM d, yyyy")}.
+            </p>
+            {canManageMeetings && (
+              <Button onClick={openBookModal} variant="outline" size="sm" className="mt-4 gap-1.5">
+                <Plus className="h-4 w-4" /> Schedule a Meeting
+              </Button>
+            )}
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-6">
+          {nowBookings.length > 0 && (
+            <div className="space-y-3">
+              <h3 className="text-sm font-semibold text-foreground">Now</h3>
+              {nowBookings.map(renderCard)}
+            </div>
+          )}
+
+          {upcomingBookings.length > 0 && (
+            <div className="space-y-3">
+              <h3 className="text-sm font-semibold text-foreground">Upcoming</h3>
+              {upcomingBookings.map(renderCard)}
+            </div>
+          )}
+
+          {earlierBookings.length > 0 && (
+            <div className="space-y-3">
+              <button
+                type="button"
+                onClick={() => setShowEarlier((v) => !v)}
+                className="flex items-center gap-1.5 text-sm font-semibold text-muted-foreground hover:text-foreground transition-colors"
+                aria-expanded={showEarlier}
+              >
+                <ChevronDown className={cn("h-4 w-4 transition-transform", !showEarlier && "-rotate-90")} />
+                Earlier ({earlierBookings.length})
+              </button>
+              {showEarlier && earlierBookings.map(renderCard)}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Book Meeting Modal */}
       {isBookModalOpen && (
         <BookMeetingModal
           open={isBookModalOpen}
-          onClose={() => setIsBookModalOpen(false)}
+          onClose={() => {
+            setIsBookModalOpen(false);
+            setPrefillStartTime(null);
+          }}
           currentUser={currentUser}
           users={allUsers}
           leaves={leaves}
           currentDateStr={currentDateStr}
+          bookings={bookings}
           defaultSlackChannel={defaultSlackChannel}
+          initialStartTime={prefillStartTime ?? undefined}
           onSuccess={() => {
-            router.refresh();
+            refetchBookings();
           }}
         />
       )}
@@ -554,10 +587,11 @@ export function MeetingRoomContent({
           booking={editingBooking}
           users={allUsers}
           leaves={leaves}
+          bookings={bookings}
           defaultSlackChannel={defaultSlackChannel}
           onSuccess={() => {
             setEditingBooking(null);
-            router.refresh();
+            refetchBookings();
           }}
         />
       )}
