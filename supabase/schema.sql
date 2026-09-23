@@ -805,7 +805,7 @@ create policy "meeting_room_bookings_delete" on public.meeting_room_bookings
     exists (
       select 1 from public.users
       where auth_id = auth.uid()
-      and role in ('leader', 'hr')
+      and (role = 'hr' or (role in ('leader', 'hr') and id = meeting_room_bookings.organizer_id))
     )
   );
 
@@ -813,9 +813,10 @@ create policy "meeting_attendees_insert" on public.meeting_attendees
   for insert to authenticated
   with check (
     exists (
-      select 1 from public.users
-      where auth_id = auth.uid()
-      and role in ('leader', 'hr')
+      select 1 from public.users u
+      join public.meeting_room_bookings b on b.id = meeting_attendees.booking_id
+      where u.auth_id = auth.uid()
+      and (u.role = 'hr' or (u.role = 'leader' and u.id = b.organizer_id))
     )
   );
 
@@ -823,9 +824,10 @@ create policy "meeting_attendees_delete" on public.meeting_attendees
   for delete to authenticated
   using (
     exists (
-      select 1 from public.users
-      where auth_id = auth.uid()
-      and role in ('leader', 'hr')
+      select 1 from public.users u
+      join public.meeting_room_bookings b on b.id = meeting_attendees.booking_id
+      where u.auth_id = auth.uid()
+      and (u.role = 'hr' or (u.role = 'leader' and u.id = b.organizer_id))
     )
   );
 
@@ -841,6 +843,27 @@ create policy "meeting_attendees_update" on public.meeting_attendees
 
 create trigger meeting_room_bookings_updated_at before update on public.meeting_room_bookings
   for each row execute function public.handle_updated_at();
+
+-- meeting_room_bookings_update's RLS policy is deliberately open to any
+-- leader/HR (Start/Extend/End Early must work for any leader, not just the
+-- organizer) — this trigger is what actually pins organizer_id, since RLS's
+-- WITH CHECK can't reference OLD to compare against the previous value.
+create or replace function public.prevent_organizer_reassignment()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+begin
+  if new.organizer_id is distinct from old.organizer_id then
+    raise exception 'organizer_id cannot be changed once a meeting is booked';
+  end if;
+  return new;
+end;
+$$;
+
+create trigger meeting_room_bookings_pin_organizer
+  before update on public.meeting_room_bookings
+  for each row execute function public.prevent_organizer_reassignment();
 
 alter publication supabase_realtime add table public.meeting_room_bookings;
 
