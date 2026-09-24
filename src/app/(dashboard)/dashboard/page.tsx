@@ -1,5 +1,6 @@
 import { getAINews } from "@/lib/news/client";
 import { createClient } from "@/lib/supabase/server";
+import { WFH_LIKE_TYPES } from "@/lib/constants/leave-types";
 import { DashboardContent } from "./dashboard-content";
 
 export default async function DashboardPage() {
@@ -86,7 +87,7 @@ export default async function DashboardPage() {
     wfhThisMonth?.reduce((sum, l) => sum + l.duration_value, 0) || 0;
 
   const actualAbsent = todayLeaves?.filter(
-    (l) => !["WFH", "NW", "RGA"].includes(l.leave_type)
+    (l) => ![...WFH_LIKE_TYPES, "NW", "RGA"].includes(l.leave_type)
   ).length || 0;
   const inOfficeCount = (totalUsers || 0) - actualAbsent;
 

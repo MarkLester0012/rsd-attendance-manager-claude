@@ -92,7 +92,7 @@ src/
     use-register-page-context.ts # Registers per-page context for the AI assistant
   lib/
     constants/
-      leave-types.ts     # 10 leave types with rules (VL, PL, ML, SPL, SL, NW, RGA, AB, WFH, BL)
+      leave-types.ts     # 11 leave types with rules (VL, PL, ML, SPL, SL, NW, RGA, AB, WFH, BL, EWFH)
       navigation.ts      # Role-based nav items
     supabase/
       client.ts          # Browser client
@@ -142,15 +142,16 @@ Navigation is role-gated via `src/lib/constants/navigation.ts`. Page-level acces
 
 ## Leave System
 
-10 leave types defined in `src/lib/constants/leave-types.ts`:
+11 leave types defined in `src/lib/constants/leave-types.ts`:
 - **Balance-deducting**: VL, PL, ML, SPL, SL, AB
-- **Non-deducting**: NW (No Work), RGA (RGA Office), WFH (Work From Home), BL (Birthday Leave)
+- **Non-deducting**: NW (No Work), RGA (RGA Office), WFH (Work From Home), BL (Birthday Leave), EWFH (Extended WFH)
 - HR users have unlimited leave balance
 - Leave overlap checking is enforced
 - Half-day support: `whole`, `half_am`, `half_pm`
-- Split-day pairing: a secondary half-day leave may only be SL, NW, RGA, AB, or WFH (`SECONDARY_LEAVE_TYPES` in leave-types.ts), and never the same type as the primary
-- WFH and BL are excluded from "leaves used" counts (payslip-stats, reports)
+- Split-day pairing: a secondary half-day leave may only be SL, NW, RGA, AB, WFH, or EWFH (`SECONDARY_LEAVE_TYPES` in leave-types.ts), and never the same type as the primary
+- WFH, EWFH, and BL are excluded from "leaves used" counts (payslip-stats, reports)
 - Birthday Leave (BL) does not deduct balance but still requires approval, is capped at 1 day per calendar year (enforced client-side in leave-modal.tsx, applies to all roles including HR), and is excluded from worked days for payroll/transportation-allowance calculations (`NON_WORKING_TYPES` in `src/lib/utils/payroll-stats.ts`)
+- Extended WFH (EWFH) is auto-approved and non-deducting like WFH, but has no monthly cap of its own and earns no WFH/commute transportation allowance (`WFH_LIKE_TYPES` in leave-types.ts covers presence/meetings/attendance for both; only WFH counts toward credits and pay). It can only be filed for a month once the user's approved WFH for that month reaches `WFH_MONTHLY_CAP` — otherwise the leave modal blocks the request and tells them to file regular WFH first (enforced client-side in leave-modal.tsx).
 - Payroll uses semi-monthly pay periods: 26th–10th and 11th–25th (`src/lib/utils/pay-period.ts`); holidays falling on weekends are excluded from holiday counts
 
 ## Integrations

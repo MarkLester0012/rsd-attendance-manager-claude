@@ -34,6 +34,7 @@ import {
   WFH_MONTHLY_CAP,
   WFH_DAILY_GLOBAL_CAP,
   BIRTHDAY_LEAVE_YEARLY_CAP,
+  WFH_LIKE_TYPES,
 } from "@/lib/constants/leave-types";
 import type { User, LeaveEntry, LeaveTypeCode, LeaveDuration } from "@/lib/types";
 import { createNotifications } from "@/lib/notifications";
@@ -202,18 +203,21 @@ export function LeaveModal({
 
       // WFH validations — check for each WFH entry
       const wfhEntries = entries.filter((e) => e.type === "WFH");
+
+      // Group target dates by month — used by both the WFH monthly cap check
+      // and the EWFH gate below.
+      const monthGroups = new Map<string, Date[]>();
+      for (const d of targetDates) {
+        const key = format(d, "yyyy-MM");
+        if (!monthGroups.has(key)) monthGroups.set(key, []);
+        monthGroups.get(key)!.push(d);
+      }
+
+      // Sum WFH duration being added per date (could be 0.5 if one entry is WFH)
+      const wfhDurationPerDate = wfhEntries.reduce((sum, e) => sum + e.durVal, 0);
+
       if (wfhEntries.length > 0) {
-        // Monthly cap check — group dates by month
-        const monthGroups = new Map<string, Date[]>();
-        for (const d of targetDates) {
-          const key = format(d, "yyyy-MM");
-          if (!monthGroups.has(key)) monthGroups.set(key, []);
-          monthGroups.get(key)!.push(d);
-        }
-
-        // Sum WFH duration being added per date (could be 0.5 if one entry is WFH)
-        const wfhDurationPerDate = wfhEntries.reduce((sum, e) => sum + e.durVal, 0);
-
+        // Monthly cap check
         for (const [monthKey, monthDates] of monthGroups) {
           const [year, month] = monthKey.split("-").map(Number);
           const startOfMonth = new Date(year, month - 1, 1);
@@ -239,14 +243,56 @@ export function LeaveModal({
             return;
           }
         }
+      }
 
-        // Daily global cap for each date
+      // Extended WFH gate — only usable once the user's approved WFH for the
+      // month reaches WFH_MONTHLY_CAP. The WFH being filed in this same
+      // submission counts too, so a WFH AM + EWFH PM split day can go
+      // through in one request.
+      const ewfhEntries = entries.filter((e) => e.type === "EWFH");
+      if (ewfhEntries.length > 0) {
+        for (const [monthKey, monthDates] of monthGroups) {
+          const [year, month] = monthKey.split("-").map(Number);
+          const startOfMonth = new Date(year, month - 1, 1);
+          const endOfMonth = new Date(year, month, 0);
+          let query = supabase
+            .from("leaves")
+            .select("duration_value")
+            .eq("user_id", user.id)
+            .eq("leave_type", "WFH")
+            .eq("status", "approved")
+            .gte("leave_date", format(startOfMonth, "yyyy-MM-dd"))
+            .lte("leave_date", format(endOfMonth, "yyyy-MM-dd"));
+          if (isEditMode && existingLeave) {
+            query = query.neq("id", existingLeave.id);
+          }
+          const { data: monthWfh } = await query;
+
+          const currentMonthWfh =
+            monthWfh?.reduce((sum, l) => sum + l.duration_value, 0) || 0;
+          const totalMonthWfh = currentMonthWfh + monthDates.length * wfhDurationPerDate;
+
+          if (totalMonthWfh < WFH_MONTHLY_CAP) {
+            const remaining = WFH_MONTHLY_CAP - totalMonthWfh;
+            toast.error(
+              `Extended WFH is only available once all ${WFH_MONTHLY_CAP} WFH days for ${format(startOfMonth, "MMMM")} are used. You still have ${remaining} WFH day(s) left. File regular WFH first.`
+            );
+            setIsSubmitting(false);
+            return;
+          }
+        }
+      }
+
+      // Daily global cap — shared between WFH and Extended WFH, since both
+      // put someone in the "virtual" bucket for the same 12-slot cap.
+      const wfhLikeEntries = entries.filter((e) => WFH_LIKE_TYPES.includes(e.type));
+      if (wfhLikeEntries.length > 0) {
         for (const dateStr of dateStrs) {
           const { count: dailyWfh } = await supabase
             .from("leaves")
             .select("*", { count: "exact", head: true })
             .eq("leave_date", dateStr)
-            .eq("leave_type", "WFH")
+            .in("leave_type", WFH_LIKE_TYPES)
             .eq("status", "approved");
 
           if ((dailyWfh || 0) >= WFH_DAILY_GLOBAL_CAP) {

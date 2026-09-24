@@ -228,6 +228,25 @@ describe("resolveAttendeeStatus", () => {
     );
     expect(status).toBe("virtual");
   });
+
+  it("resolves to virtual when user has approved Extended WFH (EWFH)", () => {
+    const status = resolveAttendeeStatus(
+      "u1",
+      "2026-09-04",
+      [{ user_id: "u1", leave_type: "EWFH", leave_date: "2026-09-04", status: "approved" }],
+      "14:00"
+    );
+    expect(status).toBe("virtual");
+  });
+
+  it("handles a split day of SL (AM) + EWFH (PM) per half", () => {
+    const leaves = [
+      { user_id: "u1", leave_type: "SL", leave_date: "2026-09-04", duration: "half_am", status: "approved" },
+      { user_id: "u1", leave_type: "EWFH", leave_date: "2026-09-04", duration: "half_pm", status: "approved" },
+    ];
+    expect(resolveAttendeeStatus("u1", "2026-09-04", leaves, "09:00")).toBe("on_leave");
+    expect(resolveAttendeeStatus("u1", "2026-09-04", leaves, "15:00")).toBe("virtual");
+  });
 });
 
 describe("findApplicableLeave", () => {

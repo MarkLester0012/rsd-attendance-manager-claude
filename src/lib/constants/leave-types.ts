@@ -112,6 +112,16 @@ export const LEAVE_TYPES: Record<LeaveTypeCode, LeaveTypeConfig> = {
     colorClass: "leave-bl",
     cssVar: "--leave-bl",
   },
+  EWFH: {
+    code: "EWFH",
+    label: "Extended WFH",
+    requiresApproval: false,
+    deductsBalance: false,
+    allowHalfDay: true,
+    requiresReason: false,
+    colorClass: "leave-ewfh",
+    cssVar: "--leave-ewfh",
+  },
 };
 
 export const LEAVE_TYPE_LIST = Object.values(LEAVE_TYPES);
@@ -133,17 +143,25 @@ export const AUTO_APPROVED_TYPES: LeaveTypeCode[] = [
   "RGA",
   "AB",
   "WFH",
+  "EWFH",
 ];
 export const NON_DEDUCTIBLE_TYPES: LeaveTypeCode[] = Object.values(LEAVE_TYPES)
   .filter((t) => !t.deductsBalance)
   .map((t) => t.code);
-export const HALF_DAY_TYPES: LeaveTypeCode[] = ["SL", "VL", "WFH"];
+export const HALF_DAY_TYPES: LeaveTypeCode[] = ["SL", "VL", "WFH", "EWFH"];
 
 // Leave types allowed in the secondary (other-half) slot of a split-day
-export const SECONDARY_LEAVE_TYPES: LeaveTypeCode[] = ["SL", "NW", "RGA", "AB", "WFH"];
+export const SECONDARY_LEAVE_TYPES: LeaveTypeCode[] = ["SL", "NW", "RGA", "AB", "WFH", "EWFH"];
+
+// Working from home (presence/slots): both WFH and Extended WFH put someone
+// in the "virtual"/WFH bucket for meetings, attendance and the daily 12-slot
+// cap. Only WFH itself uses monthly credits or earns the WFH allowance —
+// EWFH is what's filed once those credits run out.
+export const WFH_LIKE_TYPES: LeaveTypeCode[] = ["WFH", "EWFH"];
 
 // Non-deducting types that still count as "present" (in-office-equivalent).
 // Used by the attendance page to distinguish NW/RGA (present) from actual
-// absences like BL (non-deducting but still an absence). WFH is handled
-// separately by each consumer since it has its own bucket.
+// absences like BL (non-deducting but still an absence). WFH/EWFH are
+// handled separately by each consumer since they have their own bucket
+// (see WFH_LIKE_TYPES).
 export const PRESENT_TYPES: LeaveTypeCode[] = ["NW", "RGA"];

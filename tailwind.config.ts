@@ -62,6 +62,7 @@ const config: Config = {
           rga: "hsl(var(--leave-rga))",
           spl: "hsl(var(--leave-spl))",
           bl: "hsl(var(--leave-bl))",
+          ewfh: "hsl(var(--leave-ewfh))",
         },
         // Status colors
         status: {

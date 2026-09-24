@@ -1,4 +1,5 @@
-import type { MeetingAttendeeStatus, MeetingBooking, MeetingStatus } from "@/lib/types";
+import type { MeetingAttendeeStatus, MeetingBooking, MeetingStatus, LeaveTypeCode } from "@/lib/types";
+import { WFH_LIKE_TYPES } from "@/lib/constants/leave-types";
 
 /**
  * Converts "HH:mm" time string into minutes from midnight (0..1439).
@@ -160,7 +161,7 @@ export function findApplicableLeave(
     return true; // whole-day leave (or duration not provided) covers the full day
   });
 
-  return applicable.find((l) => l.leave_type === "WFH") || applicable[0];
+  return applicable.find((l) => WFH_LIKE_TYPES.includes(l.leave_type as LeaveTypeCode)) || applicable[0];
 }
 
 /**
@@ -176,7 +177,7 @@ export function resolveAttendeeStatus(
 ): MeetingAttendeeStatus {
   const leave = findApplicableLeave(userId, dateStr, leaves, meetingStartTime);
   if (!leave) return "in_office";
-  return leave.leave_type === "WFH" ? "virtual" : "on_leave";
+  return WFH_LIKE_TYPES.includes(leave.leave_type as LeaveTypeCode) ? "virtual" : "on_leave";
 }
 
 /**

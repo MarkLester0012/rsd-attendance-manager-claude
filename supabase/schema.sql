@@ -37,7 +37,7 @@ create table public.users (
 create table public.leaves (
   id uuid default uuid_generate_v4() primary key,
   user_id uuid not null references public.users(id) on delete cascade,
-  leave_type text not null check (leave_type in ('VL','PL','ML','SPL','SL','NW','RGA','AB','WFH','BL')),
+  leave_type text not null check (leave_type in ('VL','PL','ML','SPL','SL','NW','RGA','AB','WFH','BL','EWFH')),
   leave_date date not null,
   duration text not null default 'whole' check (duration in ('whole', 'half_am', 'half_pm')),
   duration_value numeric(2,1) not null default 1.0,
@@ -200,16 +200,16 @@ create policy "leaves_select" on public.leaves for select to authenticated using
 create policy "leaves_insert" on public.leaves for insert to authenticated
   with check (
     user_id = (select id from public.users where auth_id = auth.uid())
-    and (status = 'pending' or leave_type in ('SL', 'NW', 'RGA', 'AB', 'WFH'))
+    and (status = 'pending' or leave_type in ('SL', 'NW', 'RGA', 'AB', 'WFH', 'EWFH'))
   );
 create policy "leaves_update_own" on public.leaves for update to authenticated
   using (
     user_id = (select id from public.users where auth_id = auth.uid())
-    and (status = 'pending' or leave_type in ('SL', 'NW', 'RGA', 'AB', 'WFH'))
+    and (status = 'pending' or leave_type in ('SL', 'NW', 'RGA', 'AB', 'WFH', 'EWFH'))
   )
   with check (
     user_id = (select id from public.users where auth_id = auth.uid())
-    and (status = 'pending' or leave_type in ('SL', 'NW', 'RGA', 'AB', 'WFH'))
+    and (status = 'pending' or leave_type in ('SL', 'NW', 'RGA', 'AB', 'WFH', 'EWFH'))
   );
 create policy "leaves_update_review" on public.leaves for update to authenticated
   using (exists (select 1 from public.users where auth_id = auth.uid() and role in ('leader', 'hr')))

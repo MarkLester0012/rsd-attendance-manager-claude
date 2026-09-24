@@ -28,9 +28,10 @@ const COMPANY_HR_RULES = `
 COMPANY HR POLICIES & RULES:
 1. Leave Types that deduct balance: VL (Vacation Leave), PL (Paternity Leave), ML (Maternity Leave), SPL (Special Leave), SL (Sick Leave), AB (Absent).
 2. Leave Types that DO NOT deduct balance: NW (No Work), RGA (RGA Office), WFH (Work From Home), BL (Birthday Leave).
-3. Approvals: All leaves require approval EXCEPT for "Sick Leave" (SL), "No Work" (NW), "RGA Office" (RGA), "Absent" (AB), and "Work From Home" (WFH), which are auto-approved. "Birthday Leave" (BL) does NOT deduct balance but still requires approval.
+3. Approvals: All leaves require approval EXCEPT for "Sick Leave" (SL), "No Work" (NW), "RGA Office" (RGA), "Absent" (AB), "Work From Home" (WFH), and "Extended WFH" (EWFH), which are auto-approved. "Birthday Leave" (BL) does NOT deduct balance but still requires approval.
 4. Half-days: Supported for AM or PM.
 5. Limits: WFH has a strict monthly cap per user and a daily global cap across all users. Birthday Leave (BL) is capped at 1 day per calendar year, for all users including HR. HR users have unlimited leave balance.
+6. Extended WFH (EWFH): a separate WFH-like type for once a user's 8 WFH days for the month are used up. It does not deduct balance, requires no approval, and — unlike WFH — earns no ₱120 WFH allowance and no commute allowance.
 `;
 
 const TRANSPORTATION_ALLOWANCE_RULES = `
@@ -41,6 +42,7 @@ TRANSPORTATION ALLOWANCE RULES:
 4. Car/Motorcycle/Walk and primary Jeep/Bus use effective_days; Jeep/Bus as a SECONDARY/additive mode use days_worked instead.
 5. HR can override unit_price, gas_mileage, or refund_pct per mode via snapshot config.
 6. Locked snapshots cannot be edited; each snapshot allows at most one pending change request.
+7. Extended WFH (EWFH) days are excluded from wfh_days and leave_days entirely — they earn no WFH allowance and no commute credit.
 `;
 
 interface UserProfile {
