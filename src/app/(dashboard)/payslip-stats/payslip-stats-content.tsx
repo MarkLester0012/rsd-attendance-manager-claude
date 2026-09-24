@@ -7,7 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 import { getSemiMonthlyPeriods, getCurrentSemiMonthlyPeriod } from "@/lib/utils/pay-period";
 import { buildPayrollStats } from "@/lib/utils/payroll-stats";
 import { formatPHP } from "@/lib/utils/allowance-calculator";
-import { LEAVE_TYPES, LEAVE_TYPE_LIST } from "@/lib/constants/leave-types";
+import { LEAVE_TYPES, LEAVE_TYPE_LIST, WFH_LIKE_TYPES } from "@/lib/constants/leave-types";
 import { useRegisterPageContext } from "@/hooks/use-register-page-context";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { UserCard } from "@/components/shared/user-card";
@@ -259,10 +259,12 @@ export function PayslipStatsContent({
   }, [selectedEmployee, activePeriod, holidayDates, leaves]);
 
   const selectedAllowance = selectedEmployee ? allowanceMap.get(selectedEmployee.id) : undefined;
-  const selectedWfh = selectedStats?.leave_breakdown.WFH ?? 0;
+  const selectedWfh = selectedStats
+    ? WFH_LIKE_TYPES.reduce((sum, t) => sum + (selectedStats.leave_breakdown[t] ?? 0), 0)
+    : 0;
   const selectedTotalLeaves = selectedStats
     ? Object.entries(selectedStats.leave_breakdown)
-        .filter(([code]) => code !== "WFH")
+        .filter(([code]) => !WFH_LIKE_TYPES.includes(code as LeaveTypeCode))
         .reduce((s, [, v]) => s + v, 0)
     : 0;
 
@@ -418,9 +420,9 @@ export function PayslipStatsContent({
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {employeeStats.map(({ employee, stats }) => {
             const allowance = allowanceMap.get(employee.id);
-            const wfh = stats.leave_breakdown.WFH ?? 0;
+            const wfh = WFH_LIKE_TYPES.reduce((sum, t) => sum + (stats.leave_breakdown[t] ?? 0), 0);
             const totalLeaves = Object.entries(stats.leave_breakdown)
-              .filter(([code]) => code !== "WFH")
+              .filter(([code]) => !WFH_LIKE_TYPES.includes(code as LeaveTypeCode))
               .reduce((s, [, v]) => s + v, 0);
             return (
               <UserCard

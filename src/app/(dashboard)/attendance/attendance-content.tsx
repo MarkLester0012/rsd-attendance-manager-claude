@@ -35,7 +35,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { LEAVE_TYPES, PRESENT_TYPES } from "@/lib/constants/leave-types";
+import { LEAVE_TYPES, PRESENT_TYPES, WFH_LIKE_TYPES } from "@/lib/constants/leave-types";
 import { cn } from "@/lib/utils";
 import { UserAvatar } from "@/components/ui/user-avatar";
 import { createClient } from "@/lib/supabase/client";
@@ -227,10 +227,10 @@ export function AttendanceContent({
 
   // Unfiltered totals for summary counters (day view only)
   // Dedupe by user_id so split-day users aren't double-counted
-  const usersWithWfh = new Set(leaves.filter((l) => l.leave_type === "WFH").map((l) => l.user_id));
+  const usersWithWfh = new Set(leaves.filter((l) => WFH_LIKE_TYPES.includes(l.leave_type)).map((l) => l.user_id));
   const usersOnLeave = new Set(
     leaves
-      .filter((l) => !PRESENT_TYPES.includes(l.leave_type) && l.leave_type !== "WFH")
+      .filter((l) => !PRESENT_TYPES.includes(l.leave_type) && !WFH_LIKE_TYPES.includes(l.leave_type))
       .map((l) => l.user_id)
   );
   // A user with both a deductible leave and WFH counts as on-leave (not in-office)
@@ -263,9 +263,9 @@ export function AttendanceContent({
       if (viewMode === "day" && statusFilter !== "all") {
         const userStatus = getStatusForUser(u.id);
         const userTypes = userStatus.leaves.map((l) => l.leave_type);
-        const hasWfh = userTypes.includes("WFH");
+        const hasWfh = userTypes.some((t) => WFH_LIKE_TYPES.includes(t));
         const hasAbsenceLeave = userTypes.some(
-          (t) => !PRESENT_TYPES.includes(t) && t !== "WFH"
+          (t) => !PRESENT_TYPES.includes(t) && !WFH_LIKE_TYPES.includes(t)
         );
         const isNonLeaveOnly = userTypes.length > 0 && userTypes.every(
           (t) => PRESENT_TYPES.includes(t)

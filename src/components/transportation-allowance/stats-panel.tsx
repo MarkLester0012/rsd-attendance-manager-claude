@@ -1,7 +1,8 @@
 import { Loader2 } from "lucide-react";
-import { LEAVE_TYPES } from "@/lib/constants/leave-types";
+import { LEAVE_TYPES, WFH_LIKE_TYPES } from "@/lib/constants/leave-types";
 import { cn } from "@/lib/utils";
 import type { EmployeeStats } from "@/lib/utils/transportation-defaults";
+import type { LeaveTypeCode } from "@/lib/types";
 
 interface StatsPanelProps {
   stats: EmployeeStats;
@@ -11,7 +12,10 @@ interface StatsPanelProps {
 }
 
 export function StatsPanel({ stats, title = "Pay Period Stats", loading, compact }: StatsPanelProps) {
-  const leaveEntries = Object.entries(stats.leave_breakdown).filter(([code]) => code !== "WFH");
+  const leaveEntries = Object.entries(stats.leave_breakdown).filter(
+    ([code]) => !WFH_LIKE_TYPES.includes(code as LeaveTypeCode)
+  );
+  const ewfhDays = stats.leave_breakdown.EWFH ?? 0;
 
   return (
     <div className={cn("rounded-xl border border-border bg-muted/40", compact ? "p-3 space-y-2" : "p-4 space-y-3")}>
@@ -51,6 +55,14 @@ export function StatsPanel({ stats, title = "Pay Period Stats", loading, compact
             <span className={cn("text-muted-foreground", compact && "text-muted-foreground/80")}>WFH days</span>
             <span className="font-semibold text-foreground">{stats.wfh_days}</span>
           </div>
+          {ewfhDays > 0 && (
+            <div className="flex items-center justify-between">
+              <span className={cn("text-muted-foreground", compact && "text-muted-foreground/80")}>
+                Extended WFH days (no allowance)
+              </span>
+              <span className="font-semibold text-foreground">{ewfhDays}</span>
+            </div>
+          )}
           <div className="flex items-center justify-between">
             <span className="text-muted-foreground font-medium">Days worked</span>
             <span className="font-bold text-foreground">{stats.days_worked}</span>

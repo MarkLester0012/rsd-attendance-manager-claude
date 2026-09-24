@@ -129,6 +129,18 @@ describe("buildPayrollStats — days worked (WFH/RGA count as worked)", () => {
     expect(stats.days_worked).toBe(0);
   });
 
+  it("counts Extended WFH (EWFH) as a worked day, like WFH", () => {
+    const stats = buildPayrollStats(
+      "u1",
+      START,
+      END,
+      [],
+      [leave("u1", "EWFH", "2026-06-02")]
+    );
+    expect(stats.present_days).toBe(9); // 10 - 1 recorded
+    expect(stats.days_worked).toBe(10); // EWFH is not in NON_WORKING_TYPES
+  });
+
   it("handles half-day WFH paired with half-day SL on the same date (split-day)", () => {
     const stats = buildPayrollStats(
       "u1",

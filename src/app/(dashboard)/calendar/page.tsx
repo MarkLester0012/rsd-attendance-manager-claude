@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { CalendarContent } from "./calendar-content";
-import { NON_DEDUCTIBLE_TYPES } from "@/lib/constants/leave-types";
+import { NON_DEDUCTIBLE_TYPES, WFH_LIKE_TYPES } from "@/lib/constants/leave-types";
 
 export default async function CalendarPage() {
   const supabase = await createClient();
@@ -42,7 +42,7 @@ export default async function CalendarPage() {
   const { data: monthWfhAll } = await supabase
     .from("leaves")
     .select("leave_date, duration_value, user:users!user_id(name)")
-    .eq("leave_type", "WFH")
+    .in("leave_type", WFH_LIKE_TYPES)
     .eq("status", "approved")
     .gte("leave_date", startOfMonth)
     .lte("leave_date", endOfMonth)

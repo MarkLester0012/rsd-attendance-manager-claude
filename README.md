@@ -1,6 +1,6 @@
 # RSD Attendance Manager
 
-A full-stack attendance and leave management system built for Ring System Development. Handles employee leave requests, approvals, project assignments, office attendance, Redmine time tracking, and internal communication — all in a single dark-themed web application.
+A full-stack attendance and leave management system built for Ring System Development. Handles employee leave requests, approvals, project assignments, office attendance, transportation allowance, Redmine time tracking, Slack integration, and an AI chat assistant — all in a single dark-themed web application.
 
 ---
 
@@ -72,6 +72,32 @@ The app uses **two different calendar implementations** depending on context:
 
 The `/calendar` page renders a 7-column CSS grid, computing all cells manually with `startOfWeek`, `endOfWeek`, `addDays`, and `isSameMonth` from date-fns. No third-party calendar widget is involved.
 
+### Animation
+
+| Technology | Purpose |
+|---|---|
+| [Framer Motion](https://www.framer.com/motion/) v12 | Open/close animations for the AI chat assistant widget |
+
+### Markdown Rendering
+
+| Technology | Purpose |
+|---|---|
+| [react-markdown](https://github.com/remarkjs/react-markdown) v10 + [remark-gfm](https://github.com/remarkjs/remark-gfm) | Renders the AI chat assistant's markdown-formatted responses (tables, lists, code blocks) |
+
+### Emoji Support
+
+| Technology | Purpose |
+|---|---|
+| [emoji-mart](https://github.com/missive/emoji-mart) + `@emoji-mart/data` + `@emoji-mart/react` | Emoji picker UI, used by the shared `EmojiTextarea` component |
+
+`EmojiTextarea` (`src/components/ui/emoji-textarea.tsx`) wraps the standard `Textarea` with an emoji picker button and is used wherever users enter freeform text (suggestions, comments, announcements, etc.). On display, `:shortcode:` text is converted to native emoji via `emojify()` (`src/lib/emoji.ts`).
+
+### Data Export
+
+| Technology | Purpose |
+|---|---|
+| [exceljs](https://github.com/exceljs/exceljs) v4 | Generates downloadable Excel (.xlsx) reports for transportation allowance data (`src/lib/utils/export-allowance.ts`) |
+
 ### Notifications
 
 | Technology | Purpose |
@@ -85,14 +111,14 @@ The `/calendar` page renders a 7-column CSS grid, computing all cells manually w
 |---|---|
 | Redmine API | Time entry creation, issue detail lookup, activity list fetch |
 | Slack OAuth | Account linking; EOD message parsing for automatic time import |
-| [OpenRouter](https://openrouter.ai/) | In-app AI assistant — streaming chat grounded in page context |
+| [OpenRouter](https://openrouter.ai/) | Backs the AI chat assistant via a single global server-side API key |
 
 ---
 
 ## Features
 
 ### Leave Management
-- 9 leave types with individual rules (see table below)
+- 11 leave types with individual rules (see table below)
 - Balance-deducting vs. non-deducting enforcement
 - Half-day support: AM or PM
 - Leave overlap detection across submitted dates
@@ -115,6 +141,8 @@ The `/calendar` page renders a 7-column CSS grid, computing all cells manually w
 | NW | No Work | No | No |
 | RGA | RGA Office | No | No |
 | WFH | Work From Home | No | Yes |
+| BL | Birthday Leave | No | Yes |
+| EWFH | Extended WFH | No | No |
 
 ### Approvals
 - HR and leaders review and act on pending leave requests
@@ -149,6 +177,15 @@ The `/calendar` page renders a 7-column CSS grid, computing all cells manually w
 - Color coding: green (≥ 8h), yellow (< 8h), red dot (failed submissions), yellow dot (unsaved drafts)
 - Click any cell to open a detail drawer listing all entries for that day
 
+### AI Chat Assistant
+- Floating chat widget available on supported pages, lets users ask natural-language questions about the data currently shown on screen
+- Scoped to the **current page only** — does not run open-ended database queries or access data outside what the page already displays
+- Backed by OpenRouter via a single global server-side API key (not per-user, not encrypted)
+- Pages opt in by publishing a summarized snapshot of their on-screen data via `useRegisterPageContext(pageTitle, data)` — context is registered on mount/update and cleared on unmount so it never leaks across navigation
+- Currently wired into: Dashboard, My Leaves, My Calendar, Office Attendance, Reports
+- Chat history is ephemeral — resets whenever the route changes; responses are streamed as plain text with no database persistence
+- Responses render as Markdown (tables, lists, code blocks) via `react-markdown` + `remark-gfm`
+
 ### Transportation Allowance
 Monthly transportation allowance based on each employee's commute mode and attendance.
 
@@ -169,6 +206,10 @@ Monthly transportation allowance based on each employee's commute mode and atten
 | Jeep | ₱15/ride | — | 100% | `unit_price × rides × effective_days × refund%` |
 | Bus | ₱20/ride | — | 100% | same as Jeep |
 | Work From Home | ₱120/day | — | 100% | `unit_price × min(wfh_days, 8) × refund%` |
+
+- Employees can submit a monthly allowance **submission request** (proposed distance, mode, days worked, etc.) for HR review; only one pending submission request is allowed per employee per month
+- Employees can also request a **distance/mode change** against an existing snapshot, with a reason; HR approves or rejects with an optional note
+- HR can export snapshot data for a given month/pay period to an Excel (.xlsx) file
 
 ### In-App Notifications (Real-time)
 - Bell icon in the header with unread count badge
@@ -235,11 +276,13 @@ Monthly transportation allowance based on each employee's commute mode and atten
 
 | Role | Pages |
 |---|---|
-| `member` | Dashboard, My Calendar, Attendance, My Leaves, Suggestions, Profile, Time Logger, Transportation Allowance, Settings |
-| `leader` | + Approvals, Reports (read), Team (read) |
-| `hr` | + Team management, Holidays, Projects, Announcements (full CRUD), Reports |
+| `member` | Dashboard, My Calendar, Office Attendance, My Leaves, Suggestions, Profile, Time Logger, Transportation Allowance, Settings → Integrations (Slack) |
+| `leader` | + Approvals, Team Members (read), Projects |
+| `hr` | + Team Members (management), Holidays, Announcements (full CRUD), Reports |
 
 Navigation items are role-gated via `src/lib/constants/navigation.ts`. Page-level access is enforced server-side on every route.
+
+> **Note**: `/projects` is restricted to the `leader` role and `/reports` is restricted to the `hr` role, as enforced in each page's server component (`projects/page.tsx`, `reports/page.tsx`).
 
 ---
 
@@ -252,17 +295,18 @@ src/
     (dashboard)/               # All authenticated routes (shared layout with sidebar)
       dashboard/               # Overview with leave balance and attendance summary
       calendar/                # Personal leave calendar (custom grid, date-fns)
-      attendance/              # Office attendance log
+      attendance/              # Office attendance log (derived from leaves/users/projects)
       my-leaves/               # Personal leave history and application
       approvals/               # Leave approval queue (leader/hr)
-      team/                    # Team management and user registration (hr)
+      team/                    # Team management and user registration (leader read / hr manage)
       holidays/                # Holiday management (hr)
-      projects/                # Project and member management (hr)
-      reports/                 # Recharts-powered analytics (leader/hr)
+      projects/                # Project and member management (leader)
+      reports/                 # Recharts-powered analytics (hr)
       announcements/           # Company announcements (hr posts, all view)
       suggestions/             # Suggestion box with comments and voting
       profile/                 # User profile settings
-      time-logger/             # Redmine time entry logger
+      time-logger/             # Redmine time entry logger (Slack + manual entry)
+      transportation-allowance/ # Transportation allowance management
       settings/
         integrations/slack/    # Slack OAuth connection management
     api/
@@ -273,17 +317,19 @@ src/
     ai-chat/                   # Floating AI assistant widget + chat UI
     layout/                    # Sidebar, Header, NotificationPanel, DashboardShell
     leaves/                    # LeaveModal — shared leave apply/edit/cancel component
+    shared/                    # Cross-feature shared components
+    ai-chat/                   # Floating AI chat widget and content panel
     time-logger/               # DateNav, MonthView, EntryTable, SettingsDialog, BulkApplyDialog, etc.
-    transportation-allowance/  # TA snapshot and request UI components
+    transportation-allowance/  # Transportation allowance UI components
     auth/                      # Login form
   hooks/
     use-user.ts                # Current authenticated user hook
     use-pending-count.ts       # Live pending approvals count (Supabase Realtime)
     use-notifications.ts       # Live in-app notifications (Supabase Realtime)
-    use-register-page-context.ts # Registers per-page context for the AI assistant
+    use-register-page-context.ts # Registers/clears page data snapshot for the AI chat assistant
   lib/
     constants/
-      leave-types.ts           # 9 leave type definitions with rules and CSS color variables
+      leave-types.ts           # 11 leave type definitions with rules and CSS color variables
       navigation.ts            # Role-based navigation items
     ai/
       client.ts                # OpenRouter chat client (SSE streaming)
@@ -291,19 +337,36 @@ src/
     news/
       client.ts                # Dashboard "AI News" — Google News RSS, cached daily
     notifications.ts           # createNotification / createNotifications helpers
+    emoji.ts                   # emojify() — converts :shortcode: to native emoji
     supabase/
       client.ts                # Browser Supabase client
       server.ts                # Server component Supabase client
       middleware.ts            # Auth session refresh middleware
       admin.ts                 # Service-role client (user registration only)
+    slack/
+      client.ts                # Slack API client
+      modal.ts                 # Time-logger modal builder
+      signature.ts             # Webhook signature verification
+      state.ts                 # Modal state persistence
+      encryption.ts            # OAuth token encryption
+    redmine/
+      client.ts                # Redmine REST API client
+      parser.ts                # Formats descriptions/comments for Redmine
+      encryption.ts            # API key encryption
+    ai/
+      client.ts                # OpenRouter API client
+      format-context.ts        # Formats per-page context for the AI assistant
     types/index.ts             # All TypeScript interfaces and union types
     utils.ts                   # cn() Tailwind class merge helper
+    utils/                     # Domain-specific utilities (allowance calculator, pay period, export)
   stores/
-    sidebar-store.ts           # Sidebar collapsed/expanded (Zustand)
-    theme-store.ts             # Theme state (Zustand)
+    sidebar-store.ts            # Sidebar collapsed/expanded (Zustand)
+    theme-store.ts              # Theme state (Zustand)
   middleware.ts                # Next.js middleware — refreshes auth session on every request
 supabase/
   schema.sql                   # Full DB schema: tables, indexes, RLS policies, triggers, realtime
+  seed-production.mjs          # Clean seed script (1 HR user, 2 departments, 17 holidays)
+  seed-database.mjs            # Full seed with sample data (13 users, 5 departments)
 ```
 
 ---
@@ -315,13 +378,23 @@ Create a `.env.local` file:
 ```env
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
-SUPABASE_SERVICE_ROLE_KEY=
-OPENROUTER_API_KEY=
+SUPABASE_SERVICE_ROLE_KEY=         # Used by admin.ts for user registration
+
+# Slack integration
+SLACK_CLIENT_ID=
+SLACK_CLIENT_SECRET=
+SLACK_SIGNING_SECRET=              # Webhook signature verification
+SLACK_ENCRYPTION_KEY=              # Encrypts stored OAuth tokens
+
+# Redmine integration
+REDMINE_URL=
+REDMINE_ENCRYPTION_KEY=            # Encrypts stored API keys
+
+# AI chat assistant (OpenRouter)
+OPENROUTER_API_KEY=                # Single global server-side key
 ```
 
-> `SUPABASE_SERVICE_ROLE_KEY` is only used server-side for user registration via the Supabase Admin API. It is never exposed to the browser.
->
-> Slack and Redmine integrations need additional env vars — see `CLAUDE.md` for the full list.
+> `SUPABASE_SERVICE_ROLE_KEY` is only used server-side for user registration via the Supabase Admin API. It is never exposed to the browser. The Slack/Redmine encryption keys and the OpenRouter key are likewise server-side only.
 
 ---
 
@@ -334,15 +407,29 @@ npm run build      # Production build
 npm run lint       # ESLint
 ```
 
+### Database Seeding
+
+```bash
+node supabase/seed-production.mjs   # Clean seed: 1 HR user, 2 departments, 17 holidays
+node supabase/seed-database.mjs     # Full seed with sample data: 13 users, 5 departments
+```
+
+> Do not use `supabase/seed.sql` — it inserts directly into `auth.users`, which Supabase does not support. Use one of the seed scripts above instead.
+
 ---
 
 ## Database
 
-The full schema is in `supabase/schema.sql`. Apply it via the Supabase SQL editor or CLI before running the app.
+The full schema is in `supabase/schema.sql`. Apply it via the Supabase SQL editor or CLI before running the app, then seed it with one of the scripts in [Development](#development).
 
-Key tables: `users`, `departments`, `leaves`, `holidays`, `projects`, `project_members`, `attendance`, `suggestions`, `suggestion_comments`, `suggestion_votes`, `announcements`, `notifications`, `time_log_entries`, `redmine_config`, `redmine_project_fields`, `slack_integrations`
+Key tables: `users`, `departments`, `leaves`, `holidays`, `projects`, `project_members`, `suggestions`, `suggestion_upvotes`, `suggestion_comments`, `suggestion_comment_votes`, `announcements`, `notifications`, `time_log_entries`, `redmine_configs`, `redmine_project_fields`, `allowance_snapshots`, `distance_change_requests`, `allowance_submission_requests`
 
 All tables have Row Level Security (RLS) enabled. Policies ensure users can only access their own data, with HR and leader roles granted broader read access where appropriate.
+
+> **Notes**:
+> - There is no dedicated `attendance` table — the Office Attendance page is derived from `leaves`, `users`, and `projects` data.
+> - Slack account linking is stored as `slack_user_id` / `slack_team_id` columns on `users` (added via `supabase/alter-slack-integration.sql`), not a separate table.
+> - `allowance_snapshots`, `distance_change_requests`, and `allowance_submission_requests` back the Transportation Allowance feature.
 
 ---
 
@@ -350,6 +437,6 @@ All tables have Row Level Security (RLS) enabled. Policies ensure users can only
 
 - **Theme**: Dark mode only (`<html class="dark">`)
 - **Accent color**: Red (`#EF1D26`)
-- **Font**: Inter (via `next/font`)
+- **Font**: Inter (via `next/font/google`)
 - **Style**: Glass/backdrop-blur cards, subtle borders (`border-border/50`), CSS variable-driven leave type colors
 - **Scrollbars**: Custom thin scrollbar (`scrollbar-thin` utility) used throughout — 6px width, muted color thumb, transparent track

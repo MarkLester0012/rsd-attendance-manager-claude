@@ -43,7 +43,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { LEAVE_TYPES, NON_DEDUCTIBLE_TYPES, WFH_DAILY_GLOBAL_CAP, WFH_MONTHLY_CAP } from "@/lib/constants/leave-types";
+import { LEAVE_TYPES, NON_DEDUCTIBLE_TYPES, WFH_DAILY_GLOBAL_CAP, WFH_MONTHLY_CAP, WFH_LIKE_TYPES } from "@/lib/constants/leave-types";
 import { cn } from "@/lib/utils";
 import type { User, LeaveEntry, Holiday, MeetingWithAttendees } from "@/lib/types";
 
@@ -239,7 +239,7 @@ export function CalendarContent({
       supabase
         .from("leaves")
         .select("leave_date, duration_value, user:users!user_id(name)")
-        .eq("leave_type", "WFH")
+        .in("leave_type", WFH_LIKE_TYPES)
         .eq("status", "approved")
         .gte("leave_date", start)
         .lte("leave_date", end)
